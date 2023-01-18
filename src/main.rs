@@ -173,7 +173,7 @@ fn main() -> Result<()> {
     let mut window = Window::new("Kiss3d: cube");
     let mut cubes = vec![];
     for i in 0..(BUCKETS_PER_OCTAVE * OCTAVES) {
-        let mut c = window.add_cube(1.0, 1.0, 1.0);
+        let mut c = window.add_sphere(1.0);
         let (transl_x, transl_y) = (
             (((i + BUCKETS_PER_OCTAVE - 3 * (BUCKETS_PER_OCTAVE / 12)) as f32)
                 / (BUCKETS_PER_OCTAVE as f32)
