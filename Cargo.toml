@@ -1,0 +1,15 @@
+[package]
+name = "pitchvis-rs"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+cpal = "0.14.2"
+anyhow = "1.0"
+rustfft = "6.1.0"
+ndarray = "0.15.6"
+apodize = "1.0.0"
+num-complex = "0.4.2"
+kiss3d = "0.35.0"
