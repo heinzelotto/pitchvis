@@ -3,19 +3,19 @@ use std::f32::consts::PI;
 use anyhow::Result;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use kiss3d::light::Light;
-use kiss3d::nalgebra::{UnitQuaternion, Vector3};
+use kiss3d::nalgebra::{Point3, UnitQuaternion, Vector3};
 use kiss3d::window::Window;
 use num_complex::{Complex32, ComplexFloat};
 use rustfft::num_traits::Zero;
 use rustfft::FftPlanner;
 
 const SR: usize = 22050;
-const N_FFT: usize = 4096;
+const N_FFT: usize = 8192;
 const FREQ_A1: f32 = 55.0;
 const SPARSITY_QUANTILE: f32 = 0.98;
 
 const OCTAVES: usize = 5;
-const BUCKETS_PER_OCTAVE: usize = 36;
+const BUCKETS_PER_OCTAVE: usize = 48;
 
 const FPS: f32 = 50.0;
 const COLORS: [(f32, f32, f32); 12] = [
@@ -48,6 +48,17 @@ fn calculate_color(bucket: usize) -> (f32, f32, f32) {
     )
 }
 
+fn arg_min(sl: &[f32]) -> usize {
+    // we have no NaNs
+    sl.iter()
+        .enumerate()
+        .fold(
+            (0, f32::MAX),
+            |cur, x| if *x.1 < cur.1 { (x.0, *x.1) } else { cur },
+        )
+        .0
+}
+
 fn arg_max(sl: &[f32]) -> usize {
     // we have no NaNs
     sl.iter()
@@ -67,6 +78,7 @@ fn cqt_kernel(
     octaves: usize,
 ) -> sprs::CsMat<Complex32> {
     let num_buckets = buckets_per_octave * octaves;
+    // TODO: use different window lengths for every pitch
     let window = apodize::hanning_iter(n).collect::<Vec<f64>>();
     let mut planner = FftPlanner::new();
     let fft = planner.plan_fft_forward(N_FFT as usize);
@@ -144,6 +156,8 @@ fn main() -> Result<()> {
 
     let cqt_kernel = cqt_kernel(SR, N_FFT, FREQ_A1, BUCKETS_PER_OCTAVE, OCTAVES);
 
+    // TODO: harmonic/percussion source separation possible with our one-sided spectrum?
+
     let mut ring_buffer = Vec::new();
     ring_buffer.resize(SR as usize, 0f32);
     let ring_buffer = std::sync::Mutex::from(ring_buffer);
@@ -157,12 +171,12 @@ fn main() -> Result<()> {
             let mut rb = ring_buffer_input_thread_clone.lock().unwrap();
             rb.drain(..data.len());
             rb.extend_from_slice(&data);
-            println!(
-                "callback called fs {}, {:?}, {}",
-                data.len(),
-                info.timestamp().capture,
-                rb.len()
-            );
+            // println!(
+            //     "callback called fs {}, {:?}, {}",
+            //     data.len(),
+            //     info.timestamp().capture,
+            //     rb.len()
+            // );
         },
         move |err| panic!("{}", err),
     )?;
@@ -174,22 +188,23 @@ fn main() -> Result<()> {
     let mut cubes = vec![];
     for i in 0..(BUCKETS_PER_OCTAVE * OCTAVES) {
         let mut c = window.add_sphere(1.0);
+        let radius = 1.3 * (0.5 + i as f32 / BUCKETS_PER_OCTAVE as f32);
         let (transl_x, transl_y) = (
             (((i + BUCKETS_PER_OCTAVE - 3 * (BUCKETS_PER_OCTAVE / 12)) as f32)
                 / (BUCKETS_PER_OCTAVE as f32)
                 * 2.0
                 * PI)
                 .cos()
-                * (i as f32 / BUCKETS_PER_OCTAVE as f32 * 2.0),
+                * radius,
             (((i + BUCKETS_PER_OCTAVE - 3 * (BUCKETS_PER_OCTAVE / 12)) as f32)
                 / (BUCKETS_PER_OCTAVE as f32)
                 * 2.0
                 * PI)
                 .sin()
-                * (i as f32 / BUCKETS_PER_OCTAVE as f32 * 2.0),
+                * radius,
         );
         c.prepend_to_local_translation(&kiss3d::nalgebra::Translation::from([
-            -transl_x, transl_y, 0.0,
+            transl_x, transl_y, 0.0,
         ]));
         cubes.push(c);
     }
@@ -198,8 +213,14 @@ fn main() -> Result<()> {
 
     let rot = UnitQuaternion::from_axis_angle(&Vector3::y_axis(), 0.014);
 
+    let mut cam = kiss3d::camera::ArcBall::new(Point3::new(0.0, 0.0, 19.0), Point3::origin());
+
+    window.set_line_width(0.7);
+
     stream.play()?;
     loop {
+        let t_loop= std::time::Instant::now();
+
         let t_cqt = std::time::Instant::now();
         let mut x = ring_buffer.lock().unwrap()[(SR - N_FFT)..]
             .iter()
@@ -209,38 +230,69 @@ fn main() -> Result<()> {
 
         // signal fft'd
         let mut x_cqt = vec![Complex32::zero(); BUCKETS_PER_OCTAVE * OCTAVES];
-        dbg!(cqt_kernel.shape(), x_cqt.len(), x.len());
 
         sprs::prod::mul_acc_mat_vec_csr(cqt_kernel.view(), &x, &mut x_cqt);
         let x_cqt: Vec<f32> = x_cqt
             .iter()
-            .map(|z| (z.abs().log(10.0) + 1.0).max(0.0) / 2.0)
+            .map(|z| (z.abs() * z.abs()).log(10.0).max(-2.0) + 2.0)
+            // TODO: proper amp -> db conversion
             .collect();
 
-        println!("CQT calculated in {}ms", t_cqt.elapsed().as_millis());
+        // TODO: median filter
 
+        // println!("CQT calculated in {}ms", t_cqt.elapsed().as_millis());
+
+        let k_min = arg_min(&x_cqt);
         let k_max = arg_max(&x_cqt);
+        let min = x_cqt[k_min];
         let max = x_cqt[k_max];
-        println!("max at idx {k_max}: {max}");
+        // println!("x_cqt[{k_min}] = {min}, x_cqt[{k_max}] = {max}");
 
         let t_render = std::time::Instant::now();
+
+        // draw spectrum
+        for i in 0..(BUCKETS_PER_OCTAVE * OCTAVES - 1) {
+            let x = i as f32 / (BUCKETS_PER_OCTAVE * OCTAVES) as f32 * 7.0 - 13.5;
+            let x_next = (i + 1) as f32 / (BUCKETS_PER_OCTAVE * OCTAVES) as f32 * 7.0 - 13.5;
+            window.draw_line(
+                &Point3::new(x, x_cqt[i] + 3.0, 0.0),
+                &Point3::new(x_next, x_cqt[i + 1] + 3.0, 0.0),
+                &Point3::new(0.7, 0.9, 0.0),
+            );
+        }
+
+        // draw pitch spider net
+        for i in 0..12 {
+            let radius = OCTAVES as f32 * 2.2;
+            window.draw_line(
+                &Point3::new(0.0, 0.0, 0.0),
+                &Point3::new(
+                    radius * (i as f32 / 12.0 * 2.0 * PI).cos(),
+                    radius * (i as f32 / 12.0 * 2.0 * PI).sin(),
+                    0.0,
+                ),
+                &Point3::new(0.05, 0.05, 0.05),
+            );
+        }
 
         for (i, c) in cubes.iter_mut().enumerate() {
             c.prepend_to_local_rotation(&rot);
             let (r, g, b) = calculate_color(
                 (i + BUCKETS_PER_OCTAVE - 3 * (BUCKETS_PER_OCTAVE / 12)) % BUCKETS_PER_OCTAVE,
             );
-            c.set_color(r, g, b);
+            c.set_color(r * x_cqt[i] / max, g * x_cqt[i] / max, b * x_cqt[i] / max);
             //c.set_local_scale((x_cqt[i] / 10.0).max(0.1), (x_cqt[i] / 10.0).max(0.1), (x_cqt[i] / 10.0).max(0.1));
-            c.set_local_scale(x_cqt[i], x_cqt[i], x_cqt[i]);
+            c.set_local_scale(x_cqt[i] / 4.0, x_cqt[i] / 4.0, x_cqt[i] / 4.0);
             //c.set_local_scale(1.0, 1.0, 1.0);
         }
 
-        if !window.render() {
+        if !window.render_with_camera(&mut cam) {
             break;
         }
 
-        println!("rendered in {}ms", t_render.elapsed().as_millis());
+        // println!("rendered in {}ms", t_render.elapsed().as_millis());
+        let loop_duration = t_loop.elapsed();
+        std::thread::sleep(std::time::Duration::from_millis(25).saturating_sub(loop_duration));
     }
 
     Ok(())
