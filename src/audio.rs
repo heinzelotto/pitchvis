@@ -8,7 +8,7 @@ pub struct AudioStream {
 }
 
 impl AudioStream {
-    pub fn new(sr: usize) -> Result<Self> {
+    pub fn new(sr: usize, buf_size: usize) -> Result<Self> {
         dbg!(cpal::available_hosts());
 
         let host = cpal::default_host();
@@ -28,7 +28,7 @@ impl AudioStream {
         };
 
         let mut ring_buffer = Vec::new();
-        ring_buffer.resize(sr, 0f32);
+        ring_buffer.resize(buf_size, 0f32);
         let ring_buffer = std::sync::Mutex::from(ring_buffer);
         let ring_buffer = std::sync::Arc::new(ring_buffer);
 

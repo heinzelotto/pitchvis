@@ -4,17 +4,20 @@ mod audio;
 mod cqt;
 mod display;
 
+// TODO: make program arguments
 const SR: usize = 22050;
-const N_FFT: usize = 8192;
+const BUFSIZE: usize = 2 * SR;
+const N_FFT: usize = 2 * 16384;
 const FREQ_A1: f32 = 55.0;
-const SPARSITY_QUANTILE: f32 = 0.98;
+const BUCKETS_PER_OCTAVE: usize = 96;
 const OCTAVES: usize = 5;
-const BUCKETS_PER_OCTAVE: usize = 48;
+const SPARSITY_QUANTILE: f32 = 0.0;
+const Q: f32 = 0.57;
 
 const FPS: f32 = 50.0;
 
 fn main() -> Result<()> {
-    let audio_stream = audio::AudioStream::new(SR)?;
+    let audio_stream = audio::AudioStream::new(SR, BUFSIZE)?;
     let cqt = cqt::Cqt::new(
         SR,
         N_FFT,
@@ -22,6 +25,7 @@ fn main() -> Result<()> {
         BUCKETS_PER_OCTAVE,
         OCTAVES,
         SPARSITY_QUANTILE,
+        Q,
     );
     let mut display = display::Display::new(OCTAVES, BUCKETS_PER_OCTAVE);
 
@@ -32,7 +36,7 @@ fn main() -> Result<()> {
 
         // let t_cqt = std::time::Instant::now();
         let mut x = vec![0.0_f32; N_FFT];
-        x.copy_from_slice(&audio_stream.ring_buffer.lock().unwrap()[(SR - N_FFT)..]);
+        x.copy_from_slice(&audio_stream.ring_buffer.lock().unwrap()[(BUFSIZE - N_FFT)..]);
 
         let x_cqt = cqt.calculate_cqt_instant_in_db(&x);
         // println!("CQT calculated in {}ms", t_cqt.elapsed().as_millis());

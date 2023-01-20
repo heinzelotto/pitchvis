@@ -63,6 +63,8 @@ pub struct Display {
     cubes: Vec<kiss3d::scene::SceneNode>,
     octaves: usize,
     buckets_per_octave: usize,
+    history: Vec<Vec<f32>>,
+    //x_cqt_smoothed: Vec<f32>,
 }
 
 impl Display {
@@ -100,15 +102,54 @@ impl Display {
             cubes,
             octaves,
             buckets_per_octave,
+            history: vec![],
+            //x_cqt_smoothed : vec![0.0; octaves * buckets_per_octave],
         }
     }
 
     pub fn render(&mut self, x_cqt: &[f32]) -> bool {
+        let num_buckets = self.octaves * self.buckets_per_octave;
+
+        assert!(num_buckets == x_cqt.len());
+
         let k_min = arg_min(&x_cqt);
         let k_max = arg_max(&x_cqt);
         let min = x_cqt[k_min];
         let max = x_cqt[k_max];
-        //println!("x_cqt[{k_min}] = {min}, x_cqt[{k_max}] = {max}");
+        println!("x_cqt[{k_min}] = {min}, x_cqt[{k_max}] = {max}");
+
+        // smooth by averaging over the history
+        let mut x_cqt_smoothed = vec![0.0; num_buckets];
+        self.history.push(x_cqt.to_vec());
+        // for i in 0..self.history.len() {
+        //     self.x_cqt_smoothed[i] += x_cqt[i] / 15.0;
+        // }
+        if self.history.len() > 3 {
+            // for i in 0..self.history.len() {
+            //     self.x_cqt_smoothed[i] -= (self.history.last().unwrap())[i] / 15.0;
+            // }
+            self.history.drain(0..1);
+        }
+        for i in 0..num_buckets {
+            let mut v = vec![];
+            for t in 0..self.history.len() {
+                v.push(self.history[t][i]);
+            }
+            // Median
+            // v.sort_by(|a, b| {
+            //     if a == b {
+            //         std::cmp::Ordering::Equal
+            //     } else if a < b {
+            //         std::cmp::Ordering::Less
+            //     } else {
+            //         std::cmp::Ordering::Greater
+            //     }
+            // });
+            // x_cqt_smoothed[i] = v[self.history.len() / 2];
+
+            // arithmetic mean
+            x_cqt_smoothed[i] = v.iter().sum::<f32>() / 3.0;
+        }
 
         // draw spectrum
         for i in 0..(self.buckets_per_octave * self.octaves - 1) {
@@ -116,8 +157,8 @@ impl Display {
             let x_next =
                 (i + 1) as f32 / (self.buckets_per_octave * self.octaves) as f32 * 7.0 - 13.5;
             self.window.draw_line(
-                &Point3::new(x, x_cqt[i] + 3.0, 0.0),
-                &Point3::new(x_next, x_cqt[i + 1] + 3.0, 0.0),
+                &Point3::new(x, x_cqt_smoothed[i] / 10.0 + 3.0, 0.0),
+                &Point3::new(x_next, x_cqt_smoothed[i + 1] / 10.0 + 3.0, 0.0),
                 &Point3::new(0.7, 0.9, 0.0),
             );
         }
@@ -140,9 +181,26 @@ impl Display {
                 (i + self.buckets_per_octave - 3 * (self.buckets_per_octave / 12))
                     % self.buckets_per_octave,
             );
-            c.set_color(r * x_cqt[i] / max, g * x_cqt[i] / max, b * x_cqt[i] / max);
+            let local_maximum = (i <= 1
+                || (x_cqt_smoothed[i] > x_cqt_smoothed[i - 1]
+                    && x_cqt_smoothed[i] > x_cqt_smoothed[i - 2]))
+                && (i >= num_buckets - 2
+                    || (x_cqt_smoothed[i] > x_cqt_smoothed[i + 1]
+                        && x_cqt_smoothed[i] > x_cqt_smoothed[i + 2]));
+            let color_coefficient =
+                (x_cqt_smoothed[i] / max).powf(if local_maximum { 0.5 } else { 1.5 });
+            c.set_color(
+                r * color_coefficient,
+                g * color_coefficient,
+                b * color_coefficient,
+            );
             //c.set_local_scale((x_cqt[i] / 10.0).max(0.1), (x_cqt[i] / 10.0).max(0.1), (x_cqt[i] / 10.0).max(0.1));
-            c.set_local_scale(x_cqt[i] / 4.0, x_cqt[i] / 4.0, x_cqt[i] / 4.0);
+            let scale_factor = 1.0 / 30.0 * (0.7 + 0.3 * local_maximum as i32 as f32);
+            c.set_local_scale(
+                x_cqt_smoothed[i] * scale_factor,
+                x_cqt_smoothed[i] * scale_factor,
+                x_cqt_smoothed[i] * scale_factor,
+            );
             //c.set_local_scale(1.0, 1.0, 1.0);
         }
 
