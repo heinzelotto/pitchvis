@@ -152,7 +152,7 @@ fn cqt_kernel(
 
         assert!(window_k_rounded < n_fft);
 
-        let window = apodize::hanning_iter(window_k_rounded).collect::<Vec<f64>>();
+        let window = apodize::hamming_iter(window_k_rounded).collect::<Vec<f64>>();
 
         let mut v = vec![Complex32::zero(); n_fft];
         for i in 0..window_k_rounded {

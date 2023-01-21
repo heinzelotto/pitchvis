@@ -1,8 +1,9 @@
+use find_peaks::PeakFinder;
 use kiss3d::camera::ArcBall;
 use kiss3d::light::Light;
 use kiss3d::nalgebra::Point3;
 use kiss3d::window::Window;
-use num_complex::Complex32;
+use std::collections::HashSet;
 use std::f32::consts::PI;
 
 const COLORS: [(f32, f32, f32); 12] = [
@@ -118,16 +119,28 @@ impl Display {
         let max = x_cqt[k_max];
         println!("x_cqt[{k_min}] = {min}, x_cqt[{k_max}] = {max}");
 
+        // find peaks
+        let mut fp = PeakFinder::new(&x_cqt);
+        fp.with_min_prominence(10.);
+        fp.with_min_height(5.);
+        let peaks = fp.find_peaks();
+        let peaks = peaks
+            .iter()
+            .map(|p| p.middle_position())
+            .collect::<HashSet<usize>>();
+
         // smooth by averaging over the history
         let mut x_cqt_smoothed = vec![0.0; num_buckets];
-        self.history.push(x_cqt.to_vec());
-        // for i in 0..self.history.len() {
-        //     self.x_cqt_smoothed[i] += x_cqt[i] / 15.0;
-        // }
+        // if a bin in the history was at peak magnitude at that time, it should be promoted
+        self.history.push(
+            x_cqt
+                .iter()
+                .enumerate()
+                .map(|(i, x)| if peaks.contains(&i) { *x } else { *x / 1.7 })
+                .collect::<Vec<f32>>(),
+        );
+        //self.history.push(x_cqt.iter().enumerate().map(|(i, x)| if peaks.contains(&i) {*x} else {0.0}).collect::<Vec<f32>>());
         if self.history.len() > 3 {
-            // for i in 0..self.history.len() {
-            //     self.x_cqt_smoothed[i] -= (self.history.last().unwrap())[i] / 15.0;
-            // }
             self.history.drain(0..1);
         }
         for i in 0..num_buckets {
@@ -161,6 +174,13 @@ impl Display {
                 &Point3::new(x_next, x_cqt_smoothed[i + 1] / 10.0 + 3.0, 0.0),
                 &Point3::new(0.7, 0.9, 0.0),
             );
+            if peaks.contains(&i) {
+                self.window.draw_line(
+                    &Point3::new(x, x_cqt_smoothed[i] / 10.0 + 3.0 - 0.1, 0.0),
+                    &Point3::new(x, x_cqt_smoothed[i] / 10.0 + 3.0, 0.0),
+                    &Point3::new(1.0, 0.0, 1.0),
+                );
+            }
         }
 
         // draw pitch spider net
@@ -181,21 +201,31 @@ impl Display {
                 (i + self.buckets_per_octave - 3 * (self.buckets_per_octave / 12))
                     % self.buckets_per_octave,
             );
-            let local_maximum = (i <= 1
-                || (x_cqt_smoothed[i] > x_cqt_smoothed[i - 1]
-                    && x_cqt_smoothed[i] > x_cqt_smoothed[i - 2]))
-                && (i >= num_buckets - 2
-                    || (x_cqt_smoothed[i] > x_cqt_smoothed[i + 1]
-                        && x_cqt_smoothed[i] > x_cqt_smoothed[i + 2]));
-            let color_coefficient =
-                (x_cqt_smoothed[i] / max).powf(if local_maximum { 0.5 } else { 1.5 });
+            // let local_maximum = (i <= 1
+            //     || (x_cqt_smoothed[i] > x_cqt_smoothed[i - 1]
+            //         && x_cqt_smoothed[i] > x_cqt_smoothed[i - 2]))
+            //     && (i >= num_buckets - 2
+            //         || (x_cqt_smoothed[i] > x_cqt_smoothed[i + 1]
+            //             && x_cqt_smoothed[i] > x_cqt_smoothed[i + 2]));
+
+            // let local_maximum = peaks.contains(&i);
+            // let color_coefficient =
+            //     (x_cqt_smoothed[i] / max).powf(if local_maximum { 0.5 } else { 1.5 });
+
+            let color_coefficient = x_cqt_smoothed[i] / max;
+
             c.set_color(
                 r * color_coefficient,
                 g * color_coefficient,
                 b * color_coefficient,
             );
+
             //c.set_local_scale((x_cqt[i] / 10.0).max(0.1), (x_cqt[i] / 10.0).max(0.1), (x_cqt[i] / 10.0).max(0.1));
-            let scale_factor = 1.0 / 30.0 * (0.7 + 0.3 * local_maximum as i32 as f32);
+
+            //let scale_factor = 1.0 / 30.0 * (0.7 + 0.3 * local_maximum as i32 as f32);
+
+            let scale_factor = 1.0 / 30.0;
+
             c.set_local_scale(
                 x_cqt_smoothed[i] * scale_factor,
                 x_cqt_smoothed[i] * scale_factor,
