@@ -117,7 +117,7 @@ impl Display {
         let k_max = arg_max(&x_cqt);
         let min = x_cqt[k_min];
         let max = x_cqt[k_max];
-        println!("x_cqt[{k_min}] = {min}, x_cqt[{k_max}] = {max}");
+        // println!("x_cqt[{k_min}] = {min}, x_cqt[{k_max}] = {max}");
 
         // find peaks
         let mut fp = PeakFinder::new(&x_cqt);
@@ -140,7 +140,9 @@ impl Display {
                 .collect::<Vec<f32>>(),
         );
         //self.history.push(x_cqt.iter().enumerate().map(|(i, x)| if peaks.contains(&i) {*x} else {0.0}).collect::<Vec<f32>>());
-        if self.history.len() > 3 {
+        if self.history.len() > 4 {
+            // TODO: once fps is implemented, make this dependent on time instead of frames
+            // make smoothing range modifiable in-game
             self.history.drain(0..1);
         }
         for i in 0..num_buckets {
