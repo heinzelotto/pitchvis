@@ -26,11 +26,31 @@ pub struct Cqt {
     octaves: usize,
     sparsity_quantile: f32,
     quality: f32,
-    cqt_kernel_highest_octave: sprs::CsMat<Complex32>,
+    gamma: f32,
+    cqt_kernel: Vec<sprs::CsMat<Complex32>>,
     fft: std::sync::Arc<dyn rustfft::Fft<f32>>,
+    t_diff: f32,
 }
 
 impl Cqt {
+    fn test_create_sines(&self, t_diff: f32) -> Vec<f32> {
+        let mut wave = vec![0.0; self.n_fft];
+
+        for f in ((12 * (self.octaves-2) + 0)..(12 * (self.octaves - 1) + 11))
+            .map(|p| self.min_freq * (2.0).powf(p as f32 / 12.0))
+        {
+            //let f = 880.0 * 2.0.powf(1.0/12.0);
+            for i in 0..wave.len() {
+                let amp = (((i as f32 + t_diff * self.sr as f32) * 2.0 * PI / self.sr as f32) * f)
+                    .sin()
+                    / 12.0;
+                wave[i] += amp;
+            }
+        }
+
+        wave
+    }
+
     pub fn new(
         sr: usize,
         n_fft: usize,
@@ -39,13 +59,14 @@ impl Cqt {
         octaves: usize,
         sparsity_quantile: f32,
         quality: f32,
+        gamma: f32,
     ) -> Self {
         let reduced_n_fft = n_fft >> (octaves - 1);
 
         let mut planner = FftPlanner::new();
         let fft = planner.plan_fft_forward(reduced_n_fft as usize);
 
-        let cqt_kernel_highest_octave = cqt_kernel_single_octave(
+        let cqt_kernel = cqt_kernel(
             sr,
             n_fft,
             min_freq,
@@ -53,6 +74,7 @@ impl Cqt {
             octaves,
             sparsity_quantile,
             quality,
+            gamma,
         );
 
         Self {
@@ -63,29 +85,42 @@ impl Cqt {
             octaves,
             sparsity_quantile,
             quality,
-            cqt_kernel_highest_octave,
+            gamma,
+            cqt_kernel,
             fft,
+            t_diff: 0.0,
         }
     }
 
-    pub fn calculate_cqt_instant_in_db(&self, x: &[f32]) -> Vec<f32> {
+    pub fn calculate_cqt_instant_in_db(&mut self, x: &[f32]) -> Vec<f32> {
         // TODO: we are doing a lot of unnecessary ffts here, just because the interface of the resampler
         // neither allows us to reuse the same frame for subsequent downsamplings, nor allows us to do the
         // fft ourselves.
 
-        let reduced_n_fft = self.n_fft >> (self.octaves - 1);
+        let x = self.test_create_sines(self.t_diff);
+        self.t_diff += 0.0002;
+
         //dbg!(reduced_n_fft);
 
         let mut x_cqt = vec![Complex32::zero(); self.buckets_per_octave * self.octaves];
-        for i in 0..self.octaves {
-            let x_selection = &x[(self.n_fft - (reduced_n_fft << i))..];
+        for cur_octave in (0..self.octaves).rev() {
+            let cur_resampling_factor = 1 << (self.octaves - 1 - cur_octave);
+            let cur_fft_length = self.n_fft >> cur_octave;
+
+            let x_selection = &x[(self.n_fft - cur_fft_length)..];
 
             // TODO: do this in the beginning and store them all
             // TODO: use .process_with_buffer()
             // downsample a few times to scale this octave to desired length, starting at 1x (no downsample),
             // then 1/2x, 1/4, ...
-            let mut resampler =
-                FftFixedInOut::<f32>::new(self.n_fft, self.n_fft >> i, 2048, 1).unwrap();
+            let mut resampler = FftFixedInOut::<f32>::new(
+                self.n_fft,
+                self.n_fft / cur_resampling_factor,
+                self.n_fft >> (self.octaves - 1),
+                1,
+            )
+            .unwrap();
+            dbg!(self.n_fft, cur_resampling_factor, cur_fft_length);
             let vv = vec![x_selection.clone()];
             //dbg!(vv.len(), vv[0].len());
             //dbg!(resampler.input_frames_next());
@@ -98,11 +133,12 @@ impl Cqt {
                 .collect::<Vec<rustfft::num_complex::Complex32>>();
             self.fft.process(&mut x_fft);
 
+            dbg!(self.cqt_kernel[cur_octave].shape(), x_fft.len());
             sprs::prod::mul_acc_mat_vec_csr(
-                self.cqt_kernel_highest_octave.view(),
+                self.cqt_kernel[cur_octave].view(),
                 x_fft,
-                &mut x_cqt[((self.octaves - 1 - i) * self.buckets_per_octave)
-                    ..((self.octaves - i) * self.buckets_per_octave)],
+                &mut x_cqt[(cur_octave * self.buckets_per_octave)
+                    ..((cur_octave + 1) * self.buckets_per_octave)],
             );
         }
 
@@ -119,29 +155,29 @@ impl Cqt {
             .iter()
             .map(|z| (z.abs() * z.abs()))
             .collect::<Vec<f32>>();
+        let mut abs: Vec<f32> = x_cqt.iter().map(|z| (z.abs())).collect::<Vec<f32>>();
 
         let mut log_spec = power
             .iter()
             .map(|x| 10.0 * x.max(a_min).log10() - 10.0 * ref_power.max(a_min).log10())
             .collect::<Vec<f32>>();
         let log_spec_max = max(&log_spec);
+        let log_spec_min = min(&log_spec);
         log_spec.iter_mut().for_each(|x| {
             if *x < log_spec_max - top_db {
                 *x = log_spec_max - top_db
             }
         });
 
-        // println!(
-        //     "log_spec min {}, max {}, shifting to 0...",
-        //     min(&log_spec),
-        //     max(&log_spec)
-        // );
+        println!(
+            "log_spec min {}, max {}, shifting to 0...",
+            log_spec_min, log_spec_max,
+        );
 
-        let mn = min(&log_spec);
         // cut off at 0.0, and don't let it pass top_db
         log_spec.iter_mut().for_each(|x| {
-            if mn > 0.0 {
-                *x -= mn
+            if log_spec_min > 0.0 {
+                *x -= log_spec_min
             } else if *x < 0.0 {
                 *x = 0.0
             }
@@ -155,10 +191,13 @@ impl Cqt {
         // TODO: median filter
 
         log_spec
+        //let spec_max = max(&abs);
+        //abs.iter_mut().for_each(|x| *x /= spec_max);
+        //abs
     }
 }
 
-fn cqt_kernel_single_octave(
+fn cqt_kernel(
     sr: usize,
     n_fft: usize,
     min_freq: f32,
@@ -166,57 +205,86 @@ fn cqt_kernel_single_octave(
     octaves: usize,
     sparsity_quantile: f32,
     quality: f32,
-) -> sprs::CsMat<Complex32> {
-    let lowest_freq_of_target_octave = min_freq * 2.0_f32.powf((octaves - 1) as f32);
-    let freqs = (0..buckets_per_octave)
-        .map(|k| lowest_freq_of_target_octave * 2.0_f32.powf(k as f32 / buckets_per_octave as f32))
-        .collect::<Vec<f32>>();
+    gamma: f32,
+) -> Vec<sprs::CsMat<Complex32>> {
+    //let lowest_freq_of_target_octave = min_freq * 2.0_f32.powf((octaves - 1) as f32);
+    //let freqs = (0..buckets_per_octave)
+    //    .map(|k| lowest_freq_of_target_octave * 2.0_f32.powf(k as f32 / buckets_per_octave as f32))
+    //    .collect::<Vec<f32>>();
     //dbg!(&freqs);
 
+    let freqs = (0..(buckets_per_octave * octaves))
+        .map(|k| min_freq * 2.0_f32.powf(k as f32 / buckets_per_octave as f32))
+        .collect::<Vec<f32>>();
+    dbg!(&freqs);
+
+    let highest_frequency = *freqs.last().unwrap();
+    let nyquist_frequency = sr / 2;
+    assert!(highest_frequency <= nyquist_frequency as f32);
+
     // calculate filter window sizes
-    let Q = quality / (2.0.powf(1.0 / buckets_per_octave as f32) - 1.0);
+    let r = 2.0.powf(1.0 / buckets_per_octave as f32);
+    // alpha is constant and such that (1+a)*f_{k-1} = (1-a)*f_{k+1}
+    let alpha = (r.powf(2.0) - 1.0) / (r.powf(2.0) + 1.0);
+    let Q = quality / alpha;
+    dbg!(Q);
     let window_lengths = freqs
         .iter()
         .map(|f_k| {
-            let window_k = Q * sr as f32 / (f_k);
+            let window_k = Q * sr as f32 / (f_k + gamma / alpha);
             window_k
         })
         .collect::<Vec<f32>>();
-    //dbg!(&window_lengths);
+    dbg!(&window_lengths);
+    let reduced_window_lengths = window_lengths
+        .iter()
+        .enumerate()
+        .map(|(i, l)| l / 2.0.powf((octaves - 1 - i / buckets_per_octave) as f32))
+        .collect::<Vec<f32>>();
+    dbg!(&reduced_window_lengths);
 
     let reduced_n_fft = n_fft >> (octaves - 1);
-    //dbg!(&reduced_n_fft);
-
     let mut planner = FftPlanner::new();
     let fft = planner.plan_fft_forward(reduced_n_fft);
-    let mut a = sprs::TriMat::new((buckets_per_octave as usize, reduced_n_fft as usize));
+    //let reduced_n_ffts = (0..octaves).map(|i| n_fft >> i).collect::<Vec<usize>>();
+    //let ffts = reduced_n_ffts
+    //    .iter()
+    //    .map(|i| planner.plan_fft_forward(*i))
+    //    .collect::<Vec<std::sync::Arc<dyn rustfft::Fft<f32>>>>();
+    let mut kernel_octaves = (0..octaves)
+        .map(|_| sprs::TriMat::new((buckets_per_octave as usize, reduced_n_fft)))
+        .collect::<Vec<sprs::TriMat<Complex32>>>();
+    for (k, (f_k, n_k)) in std::iter::zip(freqs.iter(), window_lengths.iter()).enumerate() {
+        let cur_octave = k / buckets_per_octave;
+        let scaling = (1 << (octaves - 1 - cur_octave)) as f32;
+        let scaled_f_k = f_k * scaling;
+        let scaled_n_k = n_k / scaling;
+        dbg!(&reduced_n_fft);
 
-    // fill a with the 'atoms', i. e. morlet wavelets
-    for k in 0..buckets_per_octave {
-        let window_k_rounded = window_lengths[k].round() as usize;
+        let scaled_n_k_rounded = scaled_n_k.round() as usize;
 
-        assert!(window_k_rounded < reduced_n_fft);
-
-        let window = apodize::hamming_iter(window_k_rounded).collect::<Vec<f64>>();
+        dbg!(scaled_n_k_rounded);
+        assert!(scaled_n_k_rounded < reduced_n_fft);
+        let window = apodize::hanning_iter(scaled_n_k_rounded).collect::<Vec<f64>>();
+        let window_sum = window.iter().sum::<f64>();
+        println!("window_sum: {window_sum}");
 
         let mut v = vec![Complex32::zero(); reduced_n_fft];
-        for i in 0..window_k_rounded {
-            v[reduced_n_fft - window_k_rounded + i] = 1.0 / window_lengths[k]
+        for i in 0..scaled_n_k_rounded {
+            v[reduced_n_fft /*/ 2*/ - scaled_n_k_rounded /*/ 2*/ + i] = 1.0 / scaled_n_k
                 * (window[i] as f32)
-                * (-num_complex::Complex32::i() * 2.0 * PI * (i as f32) * freqs[k] / (sr as f32))
+                * (num_complex::Complex32::i()
+                    * 2.0
+                    * PI
+                    * (i as f32/*- window_lengths[k] / 2.0*/)
+                    * scaled_f_k
+                    / (sr as f32))
                     .exp();
         }
 
-        // let mut v = vec![Complex32::zero(); n_fft_max];
-        // for i in 0..n_fft_k_rounded {
-        //     v[n_fft_max / 2 - n_fft_k_rounded / 2 + i] = 1.0 / n_fft_k
-        //         * (window[i] as f32)
-        //         * (-num_complex::Complex32::i() * 2.0 * PI * (i as f32) * f_k / (sr as f32)).exp();
-        // }
-
         // normalize windowed wavelet in time space
         let norm_1: f32 = v.iter().map(|z| z.abs()).sum();
-        //dbg!(norm_1);
+        dbg!(norm_1);
         v.iter_mut().for_each(|z| z.div_assign(norm_1));
 
         // transform wavelets into frequency space
@@ -236,7 +304,15 @@ fn cqt_kernel_single_octave(
                 std::cmp::Ordering::Greater
             }
         });
-        let cutoff_value = v_abs[(reduced_n_fft as f32 * sparsity_quantile) as usize];
+        let v_abs_sum = v_abs.iter().sum::<f32>();
+        let mut accum = 0.0;
+        let mut cutoff_idx = 0;
+        while accum < (1.0 - sparsity_quantile) * v_abs_sum {
+            accum += v_abs[cutoff_idx];
+            cutoff_idx += 1;
+        }
+        let cutoff_value = v_abs[cutoff_idx - 1];
+        //let cutoff_value = v_abs[(reduced_n_fft as f32 * sparsity_quantile) as usize];
         let mut cnt = 0;
         v.iter_mut().for_each(|z| {
             if z.abs() < cutoff_value {
@@ -244,22 +320,18 @@ fn cqt_kernel_single_octave(
                 cnt += 1;
             }
         });
-        println!("for k {k} erased {cnt} points below {cutoff_value}");
-        // let mut cnt_nonzero = 0;
-        // v.iter().for_each(|z| {
-        //     if z.abs() > 0.00001 {
-        //         cnt_nonzero += 1;
-        //     }
-        // });
-        // println!("cnt_nonzero {cnt_nonzero}");
+        println!("for k {k} erased {cnt} points below {cutoff_value} with sum {accum} out of total {v_abs_sum}");
 
         // fill the kernel matrix
         for (i, z) in v.iter().enumerate() {
             if !z.is_zero() {
-                a.add_triplet(k, i, *z);
+                kernel_octaves[cur_octave].add_triplet(k % buckets_per_octave, i, *z);
             }
         }
     }
 
-    a.to_csr()
+    kernel_octaves
+        .iter()
+        .map(|m| m.to_csr())
+        .collect::<Vec<sprs::CsMat<num_complex::Complex<f32>>>>()
 }

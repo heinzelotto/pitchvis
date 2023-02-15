@@ -5,6 +5,7 @@ pub struct AudioStream {
     pub sr: usize,
     pub ring_buffer: std::sync::Arc<std::sync::Mutex<Vec<f32>>>,
     pub stream: cpal::Stream,
+    //pub agc: dagc::MonoAgc,
 }
 
 impl AudioStream {
@@ -34,12 +35,17 @@ impl AudioStream {
 
         let ring_buffer_input_thread_clone = ring_buffer.clone();
 
+        let mut agc = dagc::MonoAgc::new(0.07, 0.0001).unwrap();
+
         let stream = device.build_input_stream(
             &stream_config,
             move |data: &[f32], info: &cpal::InputCallbackInfo| {
                 let mut rb = ring_buffer_input_thread_clone.lock().unwrap();
                 rb.drain(..data.len());
                 rb.extend_from_slice(&data);
+                let begin = rb.len() - data.len();
+                agc.process(&mut rb[begin..]);
+                println!("gain: {}", agc.gain());
             },
             move |err| panic!("{}", err),
         )?;
