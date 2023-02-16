@@ -203,7 +203,7 @@ impl Display {
         }
 
         // TEST unmodified
-        let x_cqt_smoothed = x_cqt;
+        //let x_cqt_smoothed = x_cqt;
 
         // draw spectrum
         for i in 0..(self.buckets_per_octave * self.octaves - 1) {

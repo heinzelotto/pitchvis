@@ -7,13 +7,13 @@ mod display;
 // TODO: make program arguments
 const SR: usize = 22050;
 const BUFSIZE: usize = 2 * SR;
-const N_FFT: usize = 1 * 16384;
+const N_FFT: usize = 2 * 16384;
 const FREQ_A1: f32 = 55.0;
-const BUCKETS_PER_OCTAVE: usize = 12;
+const BUCKETS_PER_OCTAVE: usize = 48;
 const OCTAVES: usize = 6; // TODO: extend to 6
 const SPARSITY_QUANTILE: f32 = 0.999;
-const Q: f32 = 2.2; 
-const GAMMA: f32 = 0.0;
+const Q: f32 = 1.4;
+const GAMMA: f32 = 5.0;
 
 const FPS: f32 = 50.0;
 

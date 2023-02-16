@@ -1,8 +1,9 @@
+use core::panic;
 use num_complex::{Complex32, ComplexFloat};
 use rubato::{
     FftFixedInOut, InterpolationParameters, InterpolationType, Resampler, WindowFunction,
 };
-use rustfft::num_traits::Zero;
+use rustfft::num_traits::{FromPrimitive, Zero};
 use rustfft::FftPlanner;
 use std::f32::consts::PI;
 use std::ops::DivAssign;
@@ -36,7 +37,7 @@ impl Cqt {
     fn test_create_sines(&self, t_diff: f32) -> Vec<f32> {
         let mut wave = vec![0.0; self.n_fft];
 
-        for f in ((12 * (self.octaves-2) + 0)..(12 * (self.octaves - 1) + 11))
+        for f in ((12 * (0) + 0)..(12 * (self.octaves - 1) + 12))
             .map(|p| self.min_freq * (2.0).powf(p as f32 / 12.0))
         {
             //let f = 880.0 * 2.0.powf(1.0/12.0);
@@ -92,48 +93,60 @@ impl Cqt {
         }
     }
 
+    fn resample(&self, v: &[f32], factor: usize) -> Vec<f32> {
+        let mut x_fft = v
+            .iter()
+            .map(|f| rustfft::num_complex::Complex32::new(*f, 0.0))
+            .collect::<Vec<rustfft::num_complex::Complex32>>();
+
+        let mut planner = FftPlanner::new();
+        let fft = planner.plan_fft_forward(v.len());
+        let inv_fft = planner.plan_fft_inverse(v.len());
+
+        fft.process(&mut x_fft);
+        //0..(1 + x_fft.len()) ()..()
+        for i in (1 + x_fft.len() / factor / 2)..(x_fft.len() - x_fft.len() / factor / 2) {
+            x_fft[i] = num_complex::Complex::zero();
+        }
+        inv_fft.process(&mut x_fft);
+
+        x_fft
+            .iter()
+            .step_by(factor)
+            .map(|z| z.re / v.len() as f32)
+            .collect::<Vec<f32>>()
+    }
+
     pub fn calculate_cqt_instant_in_db(&mut self, x: &[f32]) -> Vec<f32> {
         // TODO: we are doing a lot of unnecessary ffts here, just because the interface of the resampler
         // neither allows us to reuse the same frame for subsequent downsamplings, nor allows us to do the
         // fft ourselves.
 
-        let x = self.test_create_sines(self.t_diff);
-        self.t_diff += 0.0002;
+        // let x = self.test_create_sines(self.t_diff);
+        // self.t_diff += 0.0002;
 
         //dbg!(reduced_n_fft);
 
         let mut x_cqt = vec![Complex32::zero(); self.buckets_per_octave * self.octaves];
-        for cur_octave in (0..self.octaves).rev() {
+        for cur_octave in 0..self.octaves {
             let cur_resampling_factor = 1 << (self.octaves - 1 - cur_octave);
             let cur_fft_length = self.n_fft >> cur_octave;
 
             let x_selection = &x[(self.n_fft - cur_fft_length)..];
+            //dbg!(cur_resampling_factor);
+            //dbg!(x_selection.len());
 
-            // TODO: do this in the beginning and store them all
-            // TODO: use .process_with_buffer()
-            // downsample a few times to scale this octave to desired length, starting at 1x (no downsample),
-            // then 1/2x, 1/4, ...
-            let mut resampler = FftFixedInOut::<f32>::new(
-                self.n_fft,
-                self.n_fft / cur_resampling_factor,
-                self.n_fft >> (self.octaves - 1),
-                1,
-            )
-            .unwrap();
-            dbg!(self.n_fft, cur_resampling_factor, cur_fft_length);
-            let vv = vec![x_selection.clone()];
-            //dbg!(vv.len(), vv[0].len());
-            //dbg!(resampler.input_frames_next());
-            let waves_out = resampler.process(&vv, None).unwrap();
+            let vv = self.resample(&x_selection, cur_resampling_factor);
 
             // calculate the fft over the scaled current octave
-            let mut x_fft = waves_out[0]
+            let mut x_fft = vv
                 .iter()
                 .map(|f| rustfft::num_complex::Complex32::new(*f, 0.0))
                 .collect::<Vec<rustfft::num_complex::Complex32>>();
+            //dbg!(max(&std::iter::zip(x_selection.iter().copied(), vv.iter().copied()).map(|(a, b)| (a-b).abs()).collect::<Vec<f32>>()));
+            //dbg!(std::iter::zip(x_selection.iter().copied(), vv.iter().copied()).take(10).collect::<Vec<(f32,f32)>>());
             self.fft.process(&mut x_fft);
-
-            dbg!(self.cqt_kernel[cur_octave].shape(), x_fft.len());
+            //dbg!(self.cqt_kernel[cur_octave].shape(), x_fft.len());
             sprs::prod::mul_acc_mat_vec_csr(
                 self.cqt_kernel[cur_octave].view(),
                 x_fft,
@@ -329,6 +342,30 @@ fn cqt_kernel(
             }
         }
     }
+
+    // let v = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+    // let mut x_fft = v
+    //         .iter()
+    //         .map(|f| rustfft::num_complex::Complex32::new(*f, 0.0))
+    //         .collect::<Vec<rustfft::num_complex::Complex32>>();
+
+    //     let mut planner = FftPlanner::new();
+    //     let fft = planner.plan_fft_forward(v.len());
+    //     let inv_fft = planner.plan_fft_inverse(v.len());
+
+    //     fft.process(&mut x_fft);
+    //     x_fft.iter_mut().for_each(|z| *z /= (v.len() as f32).sqrt());
+    //     dbg!(&x_fft);
+    //     for i in (1 + x_fft.len() / 2 / 2)..(x_fft.len() - x_fft.len() / 2 / 2) {
+    //         x_fft[i] = num_complex::Complex::zero();
+    //     }
+    //     let idx = x_fft.len() / 2 / 2;
+    //     //x_fft[idx].im = 0.0;
+    //     dbg!(&x_fft);
+    //     inv_fft.process(&mut x_fft);
+    //     x_fft.iter_mut().for_each(|z| *z /= (v.len() as f32).sqrt());
+    //     dbg!(&x_fft);
+    // panic!();
 
     kernel_octaves
         .iter()
