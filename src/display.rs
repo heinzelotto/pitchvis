@@ -77,6 +77,13 @@ fn calculate_color(buckets_per_octave: usize, bucket: usize) -> (f32, f32, f32) 
     )
 }
 
+#[derive(PartialEq)]
+pub enum PauseState {
+    Running,
+    PauseRequested,
+    Paused(Vec<f32>), // TODO: define a full display state including peaks and scaling, and store that
+}
+
 pub struct Display {
     window: Window,
     cam: ArcBall,
@@ -84,6 +91,7 @@ pub struct Display {
     octaves: usize,
     buckets_per_octave: usize,
     history: Vec<Vec<f32>>,
+    pause_state: PauseState,
     //x_cqt_smoothed: Vec<f32>,
 }
 
@@ -123,11 +131,35 @@ impl Display {
             octaves,
             buckets_per_octave,
             history: vec![],
+            pause_state: PauseState::Running,
             //x_cqt_smoothed : vec![0.0; octaves * buckets_per_octave],
         }
     }
 
+    fn toggle_pause(&mut self) {
+        self.pause_state = match self.pause_state {
+            PauseState::Running => PauseState::PauseRequested,
+            _ => PauseState::Running,
+        };
+        println!("toggling pause");
+    }
+
+    fn handle_key_events(&mut self) {
+        for event in self.window.events().iter() {
+            if let kiss3d::event::WindowEvent::Char(c) = event.value {
+                match c {
+                    'p' => {
+                        self.toggle_pause();
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
     pub fn render(&mut self, x_cqt: &[f32]) -> bool {
+        self.handle_key_events();
+
         let num_buckets = self.octaves * self.buckets_per_octave;
 
         assert!(num_buckets == x_cqt.len());
@@ -200,6 +232,13 @@ impl Display {
 
             // arithmetic mean
             x_cqt_smoothed[i] = v.iter().sum::<f32>() / smooth_length as f32;
+        }
+
+        if self.pause_state == PauseState::PauseRequested {
+            self.pause_state = PauseState::Paused(x_cqt_smoothed.clone())
+        }
+        if let PauseState::Paused(v) = &self.pause_state {
+            x_cqt_smoothed = v.clone();
         }
 
         // TEST unmodified
