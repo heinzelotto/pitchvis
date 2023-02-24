@@ -2,6 +2,7 @@
 name = "pitchvis-rs"
 version = "0.1.0"
 edition = "2021"
+default-run = "pitchvis-rs"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -9,15 +10,39 @@ edition = "2021"
 strip = true
 lto = true
 
+[target.'cfg(target_arch = "wasm32")']
+[lib]
+name = "pitchvis"
+crate-type = ["cdylib"]
+
+[[bin]]
+name = "pitchvis-rs"
+path = "src/main.rs"
+
 [dependencies]
-cpal = "0.14.2"
 anyhow = "1.0"
 rustfft = "6.1.0"
 apodize = "1.0.0"
 num-complex = "0.4.2"
-kiss3d = "0.35.0"
+kiss3d = { version = "0.35.0", path = "../kiss3d" }
 sprs = "0.11.0"
 find_peaks = "0.1.5"
 rubato = "0.12.0"
 itertools = "0.9"
 dagc = "0.1.0"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+cpal = { version = "0.15.0", features = [], path = "../cpal"  }
+
+[target.wasm32-unknown-unknown.dependencies]
+cpal = { version = "0.15.0", features = ["wasm-bindgen"], path = "../cpal" }
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+web-sys = { version = "0.3.35", features = [ "AudioContext", 
+"AudioContextOptions", "AudioBuffer", "AudioBufferSourceNode", "AudioNode",  "AudioDestinationNode", 
+"Window", "AudioContextState", "MediaStreamConstraints", "Navigator", "MediaDevices", "MediaStream", 
+"MediaStreamAudioSourceNode", "AudioWorklet", "AudioWorkletNode", "AudioWorkletNodeOptions", "BaseAudioContext",
+"MessagePort", "console", "MessageEvent", "MediaStreamTrack", "MediaTrackSettings"] }
+console_error_panic_hook = "0.1.7"
+js-sys = "0.3.61"
+regex = "1"

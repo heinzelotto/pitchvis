@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8">
+		<title>pitchvis: music visualization</title>
+		<style>
+			html, body, canvas {
+				margin: 0px;
+				padding: 0px;
+				width: 100%;
+				height: 100%;
+				overflow: hidden;
+			}
+
+			.button {
+				padding: 15px;
+				margin:20px 0;
+				border: none;
+				cursor:pointer;
+				border-radius: 20px;
+				color:white;
+				background-color: #04AA6D;
+				box-shadow:0 0 15px 4px rgba(0,0,0,0.06);
+				font-family: inherit;
+				font-size: large;
+			}
+		</style>
+	</head>
+	<body>
+		<div id="instructions">
+			<h2>Browser policy only permits microphone capture after user trigger, e. g. button click:</h2><br>
+			<button class="button" onclick="youClicked()">😬 clickme 😁</button>
+		</div>
+		<canvas oncontextmenu="return false;" id="canvas"></canvas>
+		<canvas id="canvas"></canvas>
+	</body>
+	
+</html>

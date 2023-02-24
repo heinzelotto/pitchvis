@@ -1,9 +1,5 @@
-use core::panic;
 use num_complex::{Complex32, ComplexFloat};
-use rubato::{
-    FftFixedInOut, InterpolationParameters, InterpolationType, Resampler, WindowFunction,
-};
-use rustfft::num_traits::{FromPrimitive, Zero};
+use rustfft::num_traits::Zero;
 use rustfft::FftPlanner;
 use std::f32::consts::PI;
 use std::ops::DivAssign;
@@ -25,15 +21,16 @@ pub struct Cqt {
     min_freq: f32,
     buckets_per_octave: usize,
     octaves: usize,
-    sparsity_quantile: f32,
-    quality: f32,
-    gamma: f32,
+    _sparsity_quantile: f32,
+    _quality: f32,
+    _gamma: f32,
     cqt_kernel: Vec<sprs::CsMat<Complex32>>,
     fft: std::sync::Arc<dyn rustfft::Fft<f32>>,
-    t_diff: f32,
+    _t_diff: f32,
 }
 
 impl Cqt {
+    #[allow(dead_code)]
     fn test_create_sines(&self, t_diff: f32) -> Vec<f32> {
         let mut wave = vec![0.0; self.n_fft];
 
@@ -84,12 +81,12 @@ impl Cqt {
             min_freq,
             buckets_per_octave,
             octaves,
-            sparsity_quantile,
-            quality,
-            gamma,
+            _sparsity_quantile: sparsity_quantile,
+            _quality: quality,
+            _gamma: gamma,
             cqt_kernel,
             fft,
-            t_diff: 0.0,
+            _t_diff: 0.0,
         }
     }
 
@@ -168,7 +165,8 @@ impl Cqt {
             .iter()
             .map(|z| (z.abs() * z.abs()))
             .collect::<Vec<f32>>();
-        let mut abs: Vec<f32> = x_cqt.iter().map(|z| (z.abs())).collect::<Vec<f32>>();
+        #[allow(unused_variables)]
+        let abs: Vec<f32> = x_cqt.iter().map(|z| (z.abs())).collect::<Vec<f32>>();
 
         let mut log_spec = power
             .iter()
@@ -239,6 +237,7 @@ fn cqt_kernel(
     let r = 2.0.powf(1.0 / buckets_per_octave as f32);
     // alpha is constant and such that (1+a)*f_{k-1} = (1-a)*f_{k+1}
     let alpha = (r.powf(2.0) - 1.0) / (r.powf(2.0) + 1.0);
+    #[allow(non_snake_case)]
     let Q = quality / alpha;
     dbg!(Q);
     let window_lengths = freqs

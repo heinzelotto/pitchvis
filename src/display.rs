@@ -3,11 +3,10 @@ use itertools::Itertools;
 use kiss3d::camera::ArcBall;
 use kiss3d::light::Light;
 use kiss3d::nalgebra::Point3;
-use kiss3d::window::Window;
 use std::collections::HashSet;
 use std::f32::consts::PI;
 
-const COLORS_WONKY_SATURATION: [(f32, f32, f32); 12] = [
+const _COLORS_WONKY_SATURATION: [(f32, f32, f32); 12] = [
     (0.80, 0.40, 0.39), // C
     (0.24, 0.51, 0.66), // C#
     (0.96, 0.77, 0.25), // D
@@ -85,8 +84,7 @@ pub enum PauseState {
 }
 
 pub struct Display {
-    window: Window,
-    cam: ArcBall,
+    pub cam: ArcBall,
     cubes: Vec<kiss3d::scene::SceneNode>,
     octaves: usize,
     buckets_per_octave: usize,
@@ -96,8 +94,11 @@ pub struct Display {
 }
 
 impl Display {
-    pub fn new(octaves: usize, buckets_per_octave: usize) -> Self {
-        let mut window = Window::new("Kiss3d: cube");
+    pub fn new(
+        window: &mut kiss3d::window::Window,
+        octaves: usize,
+        buckets_per_octave: usize,
+    ) -> Self {
         let cam = kiss3d::camera::ArcBall::new(Point3::new(0.0, 0.0, 19.0), Point3::origin());
 
         let mut cubes = vec![];
@@ -125,7 +126,6 @@ impl Display {
         window.set_line_width(0.7);
 
         Self {
-            window,
             cam,
             cubes,
             octaves,
@@ -144,11 +144,11 @@ impl Display {
         println!("toggling pause");
     }
 
-    fn handle_key_events(&mut self) {
-        for event in self.window.events().iter() {
-            if let kiss3d::event::WindowEvent::Char(c) = event.value {
-                match c {
-                    'p' => {
+    fn handle_key_events(&mut self, window: &kiss3d::window::Window) {
+        for event in window.events().iter() {
+            if let kiss3d::event::WindowEvent::Key(c, a, _m) = event.value {
+                match (c, a) {
+                    (kiss3d::event::Key::P, kiss3d::event::Action::Release) => {
                         self.toggle_pause();
                     }
                     _ => {}
@@ -157,8 +157,8 @@ impl Display {
         }
     }
 
-    pub fn render(&mut self, x_cqt: &[f32]) -> bool {
-        self.handle_key_events();
+    pub fn render(&mut self, window: &mut kiss3d::window::Window, x_cqt: &[f32]) {
+        self.handle_key_events(window);
 
         let num_buckets = self.octaves * self.buckets_per_octave;
 
@@ -166,7 +166,7 @@ impl Display {
 
         let k_min = arg_min(&x_cqt);
         let k_max = arg_max(&x_cqt);
-        let min = x_cqt[k_min];
+        let _min = x_cqt[k_min];
         let max = x_cqt[k_max];
         // println!("x_cqt[{k_min}] = {min}, x_cqt[{k_max}] = {max}");
 
@@ -250,7 +250,7 @@ impl Display {
             let x_next =
                 (i + 1) as f32 / (self.buckets_per_octave * self.octaves) as f32 * 7.0 - 13.5;
             let y_scale = 7.0;
-            self.window.draw_line(
+            window.draw_line(
                 &Point3::new(x, x_cqt_smoothed[i] / y_scale + 3.0, 0.0),
                 &Point3::new(x_next, x_cqt_smoothed[i + 1] / y_scale + 3.0, 0.0),
                 //&Point3::new(x, x_cqt_smoothed[i] /* / y_scale */ + 3.0, 0.0),
@@ -258,7 +258,7 @@ impl Display {
                 &Point3::new(0.7, 0.9, 0.0),
             );
             if peaks.contains(&i) {
-                self.window.draw_line(
+                window.draw_line(
                     //&Point3::new(x, x_cqt_smoothed[i] /*/ y_scale*/ + 3.0 - 0.1, 0.0),
                     //&Point3::new(x, x_cqt_smoothed[i] /*/ y_scale*/ + 3.0, 0.0),
                     &Point3::new(x, x_cqt_smoothed[i] / y_scale + 3.0 + 0.2, 0.0),
@@ -268,7 +268,7 @@ impl Display {
             }
 
             if i % (self.buckets_per_octave / 12) == 0 {
-                self.window.draw_line(
+                window.draw_line(
                     &Point3::new(x, x_cqt_smoothed[i] / y_scale + 3.0 - 0.1, 0.0),
                     &Point3::new(x, x_cqt_smoothed[i] / y_scale + 3.0, 0.0),
                     // &Point3::new(x, x_cqt_smoothed[i] /*/ y_scale*/ + 3.0 - 0.1, 0.0),
@@ -282,10 +282,10 @@ impl Display {
         for i in 0..12 {
             let radius = self.octaves as f32 * 2.2;
             let (p_y, p_x) = (i as f32 / 12.0 * 2.0 * PI).sin_cos();
-            self.window.draw_line(
+            window.draw_line(
                 &Point3::new(0.0, 0.0, 0.0),
                 &Point3::new(radius * p_x, radius * p_y, 0.0),
-                &Point3::new(0.08, 0.08, 0.08),
+                &Point3::new(0.20, 0.25, 0.20),
             );
         }
         // TODO: make these constant things constant
@@ -302,10 +302,10 @@ impl Display {
             })
             .collect();
         for (prev, cur) in spiral_points.iter().tuple_windows() {
-            self.window.draw_line(
+            window.draw_line(
                 &Point3::new(prev.0, prev.1, 0.0),
                 &Point3::new(cur.0, cur.1, 0.0),
-                &Point3::new(0.10, 0.10, 0.10),
+                &Point3::new(0.25, 0.20, 0.20),
             );
         }
 
@@ -349,7 +349,5 @@ impl Display {
             );
             //c.set_local_scale(1.0, 1.0, 1.0);
         }
-
-        return self.window.render_with_camera(&mut self.cam);
     }
 }
