@@ -283,7 +283,10 @@ impl AudioStream {
             rb.drain(..data.len());
             rb.extend_from_slice(&data);
             let begin = rb.len() - data.len();
-            agc.process(&mut rb[begin..]);
+            let sample_abs_sum = rb[begin..].iter().map(|x| x.abs()).sum::<f32>();
+            if sample_abs_sum > std::f32::EPSILON {
+                agc.process(&mut rb[begin..]);
+            }
             println!("gain: {}", agc.gain());
         };
 
@@ -354,7 +357,10 @@ impl AudioStream {
                 rb.drain(..data.len());
                 rb.extend_from_slice(&data);
                 let begin = rb.len() - data.len();
-                agc.process(&mut rb[begin..]);
+                let sample_abs_sum = rb[begin..].iter().map(|x| x.abs()).sum::<f32>();
+                if sample_abs_sum > std::f32::EPSILON {
+                    agc.process(&mut rb[begin..]);
+                }
                 println!("gain: {}", agc.gain());
             },
             move |err| panic!("{}", err),
