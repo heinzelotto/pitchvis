@@ -30,9 +30,11 @@ find_peaks = "0.1.5"
 rubato = "0.12.0"
 itertools = "0.9"
 dagc = "0.1.0"
+log = "0.4.17"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 cpal = { version = "0.15.0", features = [], path = "../cpal"  }
+env_logger = "0.10.0"
 
 [target.wasm32-unknown-unknown.dependencies]
 cpal = { version = "0.15.0", features = ["wasm-bindgen"], path = "../cpal" }
@@ -46,3 +48,4 @@ web-sys = { version = "0.3.35", features = [ "AudioContext",
 console_error_panic_hook = "0.1.7"
 js-sys = "0.3.61"
 regex = "1"
+console_log = "0.2.1"

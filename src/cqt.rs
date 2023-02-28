@@ -1,3 +1,4 @@
+use log::{debug, trace};
 use num_complex::{Complex32, ComplexFloat};
 use rustfft::num_traits::Zero;
 use rustfft::FftPlanner;
@@ -180,9 +181,10 @@ impl Cqt {
             }
         });
 
-        println!(
+        trace!(
             "log_spec min {}, max {}, shifting to 0...",
-            log_spec_min, log_spec_max,
+            log_spec_min,
+            log_spec_max,
         );
 
         // cut off at 0.0, and don't let it pass top_db
@@ -227,7 +229,6 @@ fn cqt_kernel(
     let freqs = (0..(buckets_per_octave * octaves))
         .map(|k| min_freq * 2.0_f32.powf(k as f32 / buckets_per_octave as f32))
         .collect::<Vec<f32>>();
-    dbg!(&freqs);
 
     let highest_frequency = *freqs.last().unwrap();
     let nyquist_frequency = sr / 2;
@@ -239,7 +240,6 @@ fn cqt_kernel(
     let alpha = (r.powf(2.0) - 1.0) / (r.powf(2.0) + 1.0);
     #[allow(non_snake_case)]
     let Q = quality / alpha;
-    dbg!(Q);
     let window_lengths = freqs
         .iter()
         .map(|f_k| {
@@ -247,13 +247,6 @@ fn cqt_kernel(
             window_k
         })
         .collect::<Vec<f32>>();
-    dbg!(&window_lengths);
-    let reduced_window_lengths = window_lengths
-        .iter()
-        .enumerate()
-        .map(|(i, l)| l / 2.0.powf((octaves - 1 - i / buckets_per_octave) as f32))
-        .collect::<Vec<f32>>();
-    dbg!(&reduced_window_lengths);
 
     let reduced_n_fft = n_fft >> (octaves - 1);
     let mut planner = FftPlanner::new();
@@ -271,15 +264,12 @@ fn cqt_kernel(
         let scaling = (1 << (octaves - 1 - cur_octave)) as f32;
         let scaled_f_k = f_k * scaling;
         let scaled_n_k = n_k / scaling;
-        dbg!(&reduced_n_fft);
 
         let scaled_n_k_rounded = scaled_n_k.round() as usize;
 
-        dbg!(scaled_n_k_rounded);
         assert!(scaled_n_k_rounded < reduced_n_fft);
         let window = apodize::hanning_iter(scaled_n_k_rounded).collect::<Vec<f64>>();
-        let window_sum = window.iter().sum::<f64>();
-        println!("window_sum: {window_sum}");
+        let _window_sum = window.iter().sum::<f64>();
 
         let mut v = vec![Complex32::zero(); reduced_n_fft];
         for i in 0..scaled_n_k_rounded {
@@ -332,7 +322,7 @@ fn cqt_kernel(
                 cnt += 1;
             }
         });
-        println!("for k {k} erased {cnt} points below {cutoff_value} with sum {accum} out of total {v_abs_sum}");
+        debug!("for k {k} erased {cnt} points below {cutoff_value} with sum {accum} out of total {v_abs_sum}");
 
         // fill the kernel matrix
         for (i, z) in v.iter().enumerate() {

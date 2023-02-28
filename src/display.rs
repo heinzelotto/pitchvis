@@ -3,6 +3,8 @@ use itertools::Itertools;
 use kiss3d::camera::ArcBall;
 use kiss3d::light::Light;
 use kiss3d::nalgebra::Point3;
+use kiss3d::window::Window;
+use log::debug;
 use std::collections::HashSet;
 use std::f32::consts::PI;
 
@@ -35,9 +37,6 @@ const COLORS: [(f32, f32, f32); 12] = [
     (0.57, 0.30, 0.55), // Bb
     (0.12, 0.71, 0.34), // H
 ];
-
-// TODO: ?why are there incontinuities in the spectrogram at each A. ?scaling issue.
-// TODO: ? check the result if we only paint peaks
 
 fn arg_min(sl: &[f32]) -> usize {
     // we have no NaNs
@@ -76,6 +75,13 @@ fn calculate_color(buckets_per_octave: usize, bucket: usize) -> (f32, f32, f32) 
     )
 }
 
+#[derive(Default)]
+struct AnalysisState {
+    history: Vec<Vec<f32>>,
+    x_cqt_smoothed: Vec<f32>,
+    peaks: HashSet<usize>,
+}
+
 #[derive(PartialEq)]
 pub enum PauseState {
     Running,
@@ -88,23 +94,19 @@ pub struct Display {
     cubes: Vec<kiss3d::scene::SceneNode>,
     octaves: usize,
     buckets_per_octave: usize,
-    history: Vec<Vec<f32>>,
+    analysis_state: AnalysisState,
     pause_state: PauseState,
     //x_cqt_smoothed: Vec<f32>,
 }
 
 impl Display {
-    pub fn new(
-        window: &mut kiss3d::window::Window,
-        octaves: usize,
-        buckets_per_octave: usize,
-    ) -> Self {
+    pub fn new(window: &mut Window, octaves: usize, buckets_per_octave: usize) -> Self {
         let cam = kiss3d::camera::ArcBall::new(Point3::new(0.0, 0.0, 19.0), Point3::origin());
 
         let mut cubes = vec![];
         for i in 0..(buckets_per_octave * octaves) {
             let mut c = window.add_sphere(1.0);
-            let radius = 1.3 * (0.5 + i as f32 / buckets_per_octave as f32);
+            let radius = 1.8 * (0.5 + i as f32 / buckets_per_octave as f32);
             let (transl_y, transl_x) = (((i + buckets_per_octave - 3 * (buckets_per_octave / 12))
                 as f32)
                 / (buckets_per_octave as f32)
@@ -114,7 +116,9 @@ impl Display {
             let transl_y = transl_y * radius;
             let transl_x = transl_x * radius;
             c.prepend_to_local_translation(&kiss3d::nalgebra::Translation::from([
-                transl_x, transl_y, 0.0,
+                transl_x,
+                transl_y,
+                17.0 - radius,
             ]));
             cubes.push(c);
         }
@@ -130,7 +134,7 @@ impl Display {
             cubes,
             octaves,
             buckets_per_octave,
-            history: vec![],
+            analysis_state: AnalysisState::default(),
             pause_state: PauseState::Running,
             //x_cqt_smoothed : vec![0.0; octaves * buckets_per_octave],
         }
@@ -141,10 +145,10 @@ impl Display {
             PauseState::Running => PauseState::PauseRequested,
             _ => PauseState::Running,
         };
-        println!("toggling pause");
+        debug!("toggling pause");
     }
 
-    fn handle_key_events(&mut self, window: &kiss3d::window::Window) {
+    fn handle_key_events(&mut self, window: &Window) {
         for event in window.events().iter() {
             if let kiss3d::event::WindowEvent::Key(c, a, _m) = event.value {
                 match (c, a) {
@@ -157,9 +161,16 @@ impl Display {
         }
     }
 
-    pub fn render(&mut self, window: &mut kiss3d::window::Window, x_cqt: &[f32]) {
+    pub fn render(&mut self, window: &mut Window, x_cqt: &[f32]) {
         self.handle_key_events(window);
 
+        self.preprocess(x_cqt);
+        self.draw_spectrum(window);
+        self.draw_spider_net(window);
+        self.update_balls();
+    }
+
+    fn preprocess(&mut self, x_cqt: &[f32]) {
         let num_buckets = self.octaves * self.buckets_per_octave;
 
         assert!(num_buckets == x_cqt.len());
@@ -167,7 +178,7 @@ impl Display {
         let k_min = arg_min(&x_cqt);
         let k_max = arg_max(&x_cqt);
         let _min = x_cqt[k_min];
-        let max = x_cqt[k_max];
+        let _max = x_cqt[k_max];
         // println!("x_cqt[{k_min}] = {min}, x_cqt[{k_max}] = {max}");
 
         // find peaks
@@ -199,7 +210,7 @@ impl Display {
         // smooth by averaging over the history
         let mut x_cqt_smoothed = vec![0.0; num_buckets];
         // if a bin in the history was at peak magnitude at that time, it should be promoted
-        self.history.push(
+        self.analysis_state.history.push(
             x_cqt
                 .iter()
                 .enumerate()
@@ -208,15 +219,15 @@ impl Display {
         );
         //self.history.push(x_cqt.iter().enumerate().map(|(i, x)| if peaks.contains(&i) {*x} else {0.0}).collect::<Vec<f32>>());
         let smooth_length = 5;
-        if self.history.len() > smooth_length {
+        if self.analysis_state.history.len() > smooth_length {
             // TODO: once fps is implemented, make this dependent on time instead of frames
             // make smoothing range modifiable in-game
-            self.history.drain(0..1);
+            self.analysis_state.history.drain(0..1);
         }
         for i in 0..num_buckets {
             let mut v = vec![];
-            for t in 0..self.history.len() {
-                v.push(self.history[t][i]);
+            for t in 0..self.analysis_state.history.len() {
+                v.push(self.analysis_state.history[t][i]);
             }
             // Median
             // v.sort_by(|a, b| {
@@ -244,41 +255,71 @@ impl Display {
         // TEST unmodified
         //let x_cqt_smoothed = x_cqt;
 
-        // draw spectrum
+        self.analysis_state.peaks = peaks;
+        self.analysis_state.x_cqt_smoothed = x_cqt_smoothed;
+    }
+
+    fn draw_spectrum(&mut self, window: &mut Window) {
         for i in 0..(self.buckets_per_octave * self.octaves - 1) {
             let x = i as f32 / (self.buckets_per_octave * self.octaves) as f32 * 7.0 - 13.5;
             let x_next =
                 (i + 1) as f32 / (self.buckets_per_octave * self.octaves) as f32 * 7.0 - 13.5;
             let y_scale = 7.0;
             window.draw_line(
-                &Point3::new(x, x_cqt_smoothed[i] / y_scale + 3.0, 0.0),
-                &Point3::new(x_next, x_cqt_smoothed[i + 1] / y_scale + 3.0, 0.0),
+                &Point3::new(
+                    x,
+                    self.analysis_state.x_cqt_smoothed[i] / y_scale + 3.0,
+                    0.0,
+                ),
+                &Point3::new(
+                    x_next,
+                    self.analysis_state.x_cqt_smoothed[i + 1] / y_scale + 3.0,
+                    0.0,
+                ),
                 //&Point3::new(x, x_cqt_smoothed[i] /* / y_scale */ + 3.0, 0.0),
                 //&Point3::new(x_next, x_cqt_smoothed[i + 1] /* / y_scale */ + 3.0, 0.0),
                 &Point3::new(0.7, 0.9, 0.0),
             );
-            if peaks.contains(&i) {
+            if self.analysis_state.peaks.contains(&i) {
                 window.draw_line(
                     //&Point3::new(x, x_cqt_smoothed[i] /*/ y_scale*/ + 3.0 - 0.1, 0.0),
                     //&Point3::new(x, x_cqt_smoothed[i] /*/ y_scale*/ + 3.0, 0.0),
-                    &Point3::new(x, x_cqt_smoothed[i] / y_scale + 3.0 + 0.2, 0.0),
-                    &Point3::new(x, x_cqt_smoothed[i] / y_scale + 3.0, 0.0),
+                    &Point3::new(
+                        x,
+                        self.analysis_state.x_cqt_smoothed[i] / y_scale + 3.0 + 0.2,
+                        0.0,
+                    ),
+                    &Point3::new(
+                        x,
+                        self.analysis_state.x_cqt_smoothed[i] / y_scale + 3.0,
+                        0.0,
+                    ),
                     &Point3::new(1.0, 0.2, 0.0),
                 );
             }
 
             if i % (self.buckets_per_octave / 12) == 0 {
                 window.draw_line(
-                    &Point3::new(x, x_cqt_smoothed[i] / y_scale + 3.0 - 0.1, 0.0),
-                    &Point3::new(x, x_cqt_smoothed[i] / y_scale + 3.0, 0.0),
+                    &Point3::new(
+                        x,
+                        self.analysis_state.x_cqt_smoothed[i] / y_scale + 3.0 - 0.1,
+                        0.0,
+                    ),
+                    &Point3::new(
+                        x,
+                        self.analysis_state.x_cqt_smoothed[i] / y_scale + 3.0,
+                        0.0,
+                    ),
                     // &Point3::new(x, x_cqt_smoothed[i] /*/ y_scale*/ + 3.0 - 0.1, 0.0),
                     // &Point3::new(x, x_cqt_smoothed[i] /*/ y_scale*/ + 3.0, 0.0),
                     &Point3::new(1.0, 0.0, 1.0),
                 );
             }
         }
+    }
 
-        // draw pitch spider net
+    fn draw_spider_net(&mut self, window: &mut Window) {
+        // draw rays
         for i in 0..12 {
             let radius = self.octaves as f32 * 2.2;
             let (p_y, p_x) = (i as f32 / 12.0 * 2.0 * PI).sin_cos();
@@ -288,27 +329,31 @@ impl Display {
                 &Point3::new(0.20, 0.25, 0.20),
             );
         }
+
+        // draw spiral
         // TODO: make these constant things constant
-        let spiral_points: Vec<(f32, f32)> = (0..(self.buckets_per_octave * self.octaves))
+        let spiral_points: Vec<(f32, f32, f32)> = (0..(self.buckets_per_octave * self.octaves))
             .map(|i| {
-                let radius = 1.3 * (0.5 + i as f32 / self.buckets_per_octave as f32);
+                let radius = 1.8 * (0.5 + i as f32 / self.buckets_per_octave as f32);
                 let (y, x) = (((i + self.buckets_per_octave - 3 * (self.buckets_per_octave / 12))
                     as f32)
                     / (self.buckets_per_octave as f32)
                     * 2.0
                     * PI)
                     .sin_cos();
-                (x * radius, y * radius)
+                (x * radius, y * radius, 17.0 - radius)
             })
             .collect();
         for (prev, cur) in spiral_points.iter().tuple_windows() {
             window.draw_line(
-                &Point3::new(prev.0, prev.1, 0.0),
-                &Point3::new(cur.0, cur.1, 0.0),
+                &Point3::new(prev.0, prev.1, prev.2),
+                &Point3::new(cur.0, cur.1, cur.2),
                 &Point3::new(0.25, 0.20, 0.20),
             );
         }
+    }
 
+    fn update_balls(&mut self) {
         for (i, c) in self.cubes.iter_mut().enumerate() {
             //c.prepend_to_local_rotation(&rot);
             let (r, g, b) = calculate_color(
@@ -316,18 +361,12 @@ impl Display {
                 (i + self.buckets_per_octave - 3 * (self.buckets_per_octave / 12))
                     % self.buckets_per_octave,
             );
-            // let local_maximum = (i <= 1
-            //     || (x_cqt_smoothed[i] > x_cqt_smoothed[i - 1]
-            //         && x_cqt_smoothed[i] > x_cqt_smoothed[i - 2]))
-            //     && (i >= num_buckets - 2
-            //         || (x_cqt_smoothed[i] > x_cqt_smoothed[i + 1]
-            //             && x_cqt_smoothed[i] > x_cqt_smoothed[i + 2]));
 
-            // let local_maximum = peaks.contains(&i);
-            // let color_coefficient =
-            //     (x_cqt_smoothed[i] / max).powf(if local_maximum { 0.5 } else { 1.5 });
+            let k_max = arg_max(&self.analysis_state.x_cqt_smoothed);
+            let max = self.analysis_state.x_cqt_smoothed[k_max];
 
-            let color_coefficient = 1.0 - (1.0 - x_cqt_smoothed[i] / max).powf(2.0);
+            let color_coefficient =
+                1.0 - (1.0 - self.analysis_state.x_cqt_smoothed[i] / max).powf(2.0);
 
             c.set_color(
                 r * color_coefficient,
@@ -343,9 +382,9 @@ impl Display {
             let scale_factor = 1.0 / 15.0;
 
             c.set_local_scale(
-                x_cqt_smoothed[i] * scale_factor,
-                x_cqt_smoothed[i] * scale_factor,
-                x_cqt_smoothed[i] * scale_factor,
+                self.analysis_state.x_cqt_smoothed[i] * scale_factor,
+                self.analysis_state.x_cqt_smoothed[i] * scale_factor,
+                self.analysis_state.x_cqt_smoothed[i] * scale_factor,
             );
             //c.set_local_scale(1.0, 1.0, 1.0);
         }

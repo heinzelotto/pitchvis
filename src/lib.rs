@@ -68,6 +68,8 @@ impl State for AppState {
 
 #[wasm_bindgen]
 pub async fn main_fun() -> Result<(), JsValue> {
+    console_log::init_with_level(log::Level::Debug).expect("logger init");
+
     console_error_panic_hook::set_once();
 
     let audio_stream = audio::AudioStream::async_new(SR, BUFSIZE).await.unwrap();

@@ -2,9 +2,14 @@ use anyhow::Result;
 use cpal::traits::*;
 use cpal::*;
 use itertools::Itertools;
+use log::trace;
+#[cfg(target_arch = "wasm32")]
 use rubato::{FftFixedIn, Resampler};
+#[cfg(target_arch = "wasm32")]
 use std::f32::EPSILON;
+#[cfg(target_arch = "wasm32")]
 use std::sync::Arc;
+#[cfg(target_arch = "wasm32")]
 use std::time::Duration;
 
 #[cfg(target_arch = "wasm32")]
@@ -14,14 +19,20 @@ use wasm_bindgen_futures::JsFuture;
 #[cfg(target_arch = "wasm32")]
 use web_sys::*;
 
+#[cfg(target_arch = "wasm32")]
 const MIN_CHANNELS: u16 = 1;
+#[cfg(target_arch = "wasm32")]
 const MAX_CHANNELS: u16 = 32;
+#[cfg(target_arch = "wasm32")]
 const MIN_SAMPLE_RATE: SampleRate = SampleRate(8_000);
+#[cfg(target_arch = "wasm32")]
 const MAX_SAMPLE_RATE: SampleRate = SampleRate(96_000);
 const _DEFAULT_SAMPLE_RATE: SampleRate = SampleRate(44_100);
+#[cfg(target_arch = "wasm32")]
 const _MIN_BUFFER_SIZE: u32 = 1;
 const _MAX_BUFFER_SIZE: u32 = u32::MAX;
 const _DEFAULT_BUFFER_SIZE: usize = 2048;
+#[cfg(target_arch = "wasm32")]
 const SUPPORTED_SAMPLE_FORMAT: SampleFormat = SampleFormat::F32;
 
 #[cfg(target_arch = "wasm32")]
@@ -287,7 +298,7 @@ impl AudioStream {
             if sample_abs_sum > std::f32::EPSILON {
                 agc.process(&mut rb[begin..]);
             }
-            println!("gain: {}", agc.gain());
+            trace!("gain: {}", agc.gain());
         };
 
         let stream = build_input_stream_raw(
@@ -350,7 +361,7 @@ impl AudioStream {
 
         let stream = device.build_input_stream(
             &stream_config,
-            move |data: &[f32], info: &cpal::InputCallbackInfo| {
+            move |data: &[f32], _info: &cpal::InputCallbackInfo| {
                 let mut rb = ring_buffer_input_thread_clone
                     .lock()
                     .expect("locking failed");
@@ -361,7 +372,7 @@ impl AudioStream {
                 if sample_abs_sum > std::f32::EPSILON {
                     agc.process(&mut rb[begin..]);
                 }
-                println!("gain: {}", agc.gain());
+                trace!("gain: {}", agc.gain());
             },
             move |err| panic!("{}", err),
             None,
