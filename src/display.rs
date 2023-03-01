@@ -209,30 +209,22 @@ impl Display {
         // println!("x_cqt[{k_min}] = {min}, x_cqt[{k_max}] = {max}");
 
         // find peaks
-        let mut fp = PeakFinder::new(&x_cqt);
+        let padding_length = 1;
+        let mut x_cqt_padded_left = vec![0.0; padding_length];
+        x_cqt_padded_left.extend(x_cqt.iter());
+        let mut fp = PeakFinder::new(&x_cqt_padded_left);
         fp.with_min_prominence(PEAK_MIN_PROMINENCE);
         fp.with_min_height(PEAK_MIN_HEIGHT);
+        //fp.with_min_difference(0.2);
         //fp.with_min_prominence(0.1);
         //fp.with_min_height(1.);
         let peaks = fp.find_peaks();
         let peaks = peaks
             .iter()
-            .map(|p| {
-                // // find actual centers of mass around octave cutoffs (pitch A)
-                // let midpoint = p.middle_position();
-                // if (midpoint % self.buckets_per_octave) == self.buckets_per_octave - 1 {
-                //     let mut accum = 0.0;
-                //     let mut tot = 0.0;
-                //     for i in (midpoint - 3)..(midpoint + 4) {
-                //         accum += i as f32 * x_cqt[i];
-                //         tot += x_cqt[i];
-                //     }
-                //     (accum / tot).round() as usize
-                // } else {
-                //     midpoint
-                // }
-                p.middle_position()
-            })
+            .filter(|p| {
+                p.middle_position() >= padding_length + (self.buckets_per_octave / 12 + 1) / 2
+            }) // we disregard lowest A and surroundings as peaks
+            .map(|p| p.middle_position() - padding_length)
             .collect::<HashSet<usize>>();
 
         // smooth by averaging over the history
@@ -242,7 +234,7 @@ impl Display {
             x_cqt
                 .iter()
                 .enumerate()
-                .map(|(i, x)| if peaks.contains(&i) { *x } else { *x / 10.0 })
+                .map(|(i, x)| if peaks.contains(&i) { *x } else { *x / 8.0 })
                 .collect::<Vec<f32>>(),
         );
         //self.history.push(x_cqt.iter().enumerate().map(|(i, x)| if peaks.contains(&i) {*x} else {0.0}).collect::<Vec<f32>>());
@@ -285,7 +277,7 @@ impl Display {
             .iter_mut()
             .enumerate()
             .for_each(|(i, x)| {
-                *x *= 0.85;
+                *x *= 0.90 - 0.15 * (i as f32 / (self.octaves * self.buckets_per_octave) as f32);
                 if *x < x_cqt_smoothed[i] {
                     *x = x_cqt_smoothed[i];
                 }

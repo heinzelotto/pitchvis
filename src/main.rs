@@ -19,8 +19,8 @@ const FREQ_A1: f32 = 55.0;
 const BUCKETS_PER_OCTAVE: usize = 48;
 const OCTAVES: usize = 6; // TODO: extend to 6
 const SPARSITY_QUANTILE: f32 = 0.999;
-const Q: f32 = 1.3;
-const GAMMA: f32 = 4.0;
+const Q: f32 = 1.4;
+const GAMMA: f32 = 5.0;
 
 const FPS: u64 = 30;
 
