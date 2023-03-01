@@ -65,7 +65,7 @@ impl Cqt {
         let mut planner = FftPlanner::new();
         let fft = planner.plan_fft_forward(reduced_n_fft as usize);
 
-        let cqt_kernel = cqt_kernel(
+        let cqt_kernel = Self::cqt_kernel(
             sr,
             n_fft,
             min_freq,
@@ -89,6 +89,158 @@ impl Cqt {
             fft,
             _t_diff: 0.0,
         }
+    }
+
+    fn cqt_kernel(
+        sr: usize,
+        n_fft: usize,
+        min_freq: f32,
+        buckets_per_octave: usize,
+        octaves: usize,
+        sparsity_quantile: f32,
+        quality: f32,
+        gamma: f32,
+    ) -> Vec<sprs::CsMat<Complex32>> {
+        //let lowest_freq_of_target_octave = min_freq * 2.0_f32.powf((octaves - 1) as f32);
+        //let freqs = (0..buckets_per_octave)
+        //    .map(|k| lowest_freq_of_target_octave * 2.0_f32.powf(k as f32 / buckets_per_octave as f32))
+        //    .collect::<Vec<f32>>();
+        //dbg!(&freqs);
+
+        let freqs = (0..(buckets_per_octave * octaves))
+            .map(|k| min_freq * 2.0_f32.powf(k as f32 / buckets_per_octave as f32))
+            .collect::<Vec<f32>>();
+
+        let highest_frequency = *freqs.last().unwrap();
+        let nyquist_frequency = sr / 2;
+        assert!(highest_frequency <= nyquist_frequency as f32);
+
+        // calculate filter window sizes
+        let r = 2.0.powf(1.0 / buckets_per_octave as f32);
+        // alpha is constant and such that (1+a)*f_{k-1} = (1-a)*f_{k+1}
+        let alpha = (r.powf(2.0) - 1.0) / (r.powf(2.0) + 1.0);
+        #[allow(non_snake_case)]
+        let Q = quality / alpha;
+        let window_lengths = freqs
+            .iter()
+            .map(|f_k| {
+                let window_k = Q * sr as f32 / (f_k + gamma / alpha);
+                window_k
+            })
+            .collect::<Vec<f32>>();
+
+        let reduced_n_fft = n_fft >> (octaves - 1);
+        let mut planner = FftPlanner::new();
+        let fft = planner.plan_fft_forward(reduced_n_fft);
+        //let reduced_n_ffts = (0..octaves).map(|i| n_fft >> i).collect::<Vec<usize>>();
+        //let ffts = reduced_n_ffts
+        //    .iter()
+        //    .map(|i| planner.plan_fft_forward(*i))
+        //    .collect::<Vec<std::sync::Arc<dyn rustfft::Fft<f32>>>>();
+        let mut kernel_octaves = (0..octaves)
+            .map(|_| sprs::TriMat::new((buckets_per_octave as usize, reduced_n_fft)))
+            .collect::<Vec<sprs::TriMat<Complex32>>>();
+        for (k, (f_k, n_k)) in std::iter::zip(freqs.iter(), window_lengths.iter()).enumerate() {
+            let cur_octave = k / buckets_per_octave;
+            let scaling = (1 << (octaves - 1 - cur_octave)) as f32;
+            let scaled_f_k = f_k * scaling;
+            let scaled_n_k = n_k / scaling;
+
+            let scaled_n_k_rounded = scaled_n_k.round() as usize;
+
+            assert!(scaled_n_k_rounded < reduced_n_fft);
+            let window = apodize::hanning_iter(scaled_n_k_rounded).collect::<Vec<f64>>();
+            let _window_sum = window.iter().sum::<f64>();
+
+            let mut v = vec![Complex32::zero(); reduced_n_fft];
+            for i in 0..scaled_n_k_rounded {
+                v[reduced_n_fft /*/ 2*/ - scaled_n_k_rounded /*/ 2*/ + i] = 1.0 / scaled_n_k
+                    * (window[i] as f32)
+                    * (num_complex::Complex32::i()
+                        * 2.0
+                        * PI
+                        * (i as f32/*- window_lengths[k] / 2.0*/)
+                        * scaled_f_k
+                        / (sr as f32))
+                        .exp();
+            }
+
+            // normalize windowed wavelet in time space
+            let norm_1: f32 = v.iter().map(|z| z.abs()).sum();
+            dbg!(norm_1);
+            v.iter_mut().for_each(|z| z.div_assign(norm_1));
+
+            // transform wavelets into frequency space
+            fft.process(&mut v);
+
+            // the complex conjugate is what we later need
+            v = v.iter_mut().map(|z| z.conj()).collect();
+
+            // filter all values smaller than some value and use sparse arrays
+            let mut v_abs = v.iter().map(|z| z.abs()).collect::<Vec<f32>>();
+            v_abs.sort_by(|a, b| {
+                if a == b {
+                    std::cmp::Ordering::Equal
+                } else if a < b {
+                    std::cmp::Ordering::Less
+                } else {
+                    std::cmp::Ordering::Greater
+                }
+            });
+            let v_abs_sum = v_abs.iter().sum::<f32>();
+            let mut accum = 0.0;
+            let mut cutoff_idx = 0;
+            while accum < (1.0 - sparsity_quantile) * v_abs_sum {
+                accum += v_abs[cutoff_idx];
+                cutoff_idx += 1;
+            }
+            let cutoff_value = v_abs[cutoff_idx - 1];
+            //let cutoff_value = v_abs[(reduced_n_fft as f32 * sparsity_quantile) as usize];
+            let mut cnt = 0;
+            v.iter_mut().for_each(|z| {
+                if z.abs() < cutoff_value {
+                    *z = Complex32::zero();
+                    cnt += 1;
+                }
+            });
+            debug!("for k {k} erased {cnt} points below {cutoff_value} with sum {accum} out of total {v_abs_sum}");
+
+            // fill the kernel matrix
+            for (i, z) in v.iter().enumerate() {
+                if !z.is_zero() {
+                    kernel_octaves[cur_octave].add_triplet(k % buckets_per_octave, i, *z);
+                }
+            }
+        }
+
+        // let v = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+        // let mut x_fft = v
+        //         .iter()
+        //         .map(|f| rustfft::num_complex::Complex32::new(*f, 0.0))
+        //         .collect::<Vec<rustfft::num_complex::Complex32>>();
+
+        //     let mut planner = FftPlanner::new();
+        //     let fft = planner.plan_fft_forward(v.len());
+        //     let inv_fft = planner.plan_fft_inverse(v.len());
+
+        //     fft.process(&mut x_fft);
+        //     x_fft.iter_mut().for_each(|z| *z /= (v.len() as f32).sqrt());
+        //     dbg!(&x_fft);
+        //     for i in (1 + x_fft.len() / 2 / 2)..(x_fft.len() - x_fft.len() / 2 / 2) {
+        //         x_fft[i] = num_complex::Complex::zero();
+        //     }
+        //     let idx = x_fft.len() / 2 / 2;
+        //     //x_fft[idx].im = 0.0;
+        //     dbg!(&x_fft);
+        //     inv_fft.process(&mut x_fft);
+        //     x_fft.iter_mut().for_each(|z| *z /= (v.len() as f32).sqrt());
+        //     dbg!(&x_fft);
+        // panic!();
+
+        kernel_octaves
+            .iter()
+            .map(|m| m.to_csr())
+            .collect::<Vec<sprs::CsMat<num_complex::Complex<f32>>>>()
     }
 
     fn resample(&self, v: &[f32], factor: usize) -> Vec<f32> {
@@ -159,8 +311,8 @@ impl Cqt {
 
         // amp -> db conversion
         let ref_power: f32 = 1.0.powf(2.0);
-        let a_min: f32 = 1e-5.powf(2.0);
-        let top_db: f32 = 50.0;
+        let a_min: f32 = 1e-6.powf(2.0);
+        let top_db: f32 = 60.0;
 
         let power: Vec<f32> = x_cqt
             .iter()
@@ -208,156 +360,4 @@ impl Cqt {
         //abs.iter_mut().for_each(|x| *x /= spec_max);
         //abs
     }
-}
-
-fn cqt_kernel(
-    sr: usize,
-    n_fft: usize,
-    min_freq: f32,
-    buckets_per_octave: usize,
-    octaves: usize,
-    sparsity_quantile: f32,
-    quality: f32,
-    gamma: f32,
-) -> Vec<sprs::CsMat<Complex32>> {
-    //let lowest_freq_of_target_octave = min_freq * 2.0_f32.powf((octaves - 1) as f32);
-    //let freqs = (0..buckets_per_octave)
-    //    .map(|k| lowest_freq_of_target_octave * 2.0_f32.powf(k as f32 / buckets_per_octave as f32))
-    //    .collect::<Vec<f32>>();
-    //dbg!(&freqs);
-
-    let freqs = (0..(buckets_per_octave * octaves))
-        .map(|k| min_freq * 2.0_f32.powf(k as f32 / buckets_per_octave as f32))
-        .collect::<Vec<f32>>();
-
-    let highest_frequency = *freqs.last().unwrap();
-    let nyquist_frequency = sr / 2;
-    assert!(highest_frequency <= nyquist_frequency as f32);
-
-    // calculate filter window sizes
-    let r = 2.0.powf(1.0 / buckets_per_octave as f32);
-    // alpha is constant and such that (1+a)*f_{k-1} = (1-a)*f_{k+1}
-    let alpha = (r.powf(2.0) - 1.0) / (r.powf(2.0) + 1.0);
-    #[allow(non_snake_case)]
-    let Q = quality / alpha;
-    let window_lengths = freqs
-        .iter()
-        .map(|f_k| {
-            let window_k = Q * sr as f32 / (f_k + gamma / alpha);
-            window_k
-        })
-        .collect::<Vec<f32>>();
-
-    let reduced_n_fft = n_fft >> (octaves - 1);
-    let mut planner = FftPlanner::new();
-    let fft = planner.plan_fft_forward(reduced_n_fft);
-    //let reduced_n_ffts = (0..octaves).map(|i| n_fft >> i).collect::<Vec<usize>>();
-    //let ffts = reduced_n_ffts
-    //    .iter()
-    //    .map(|i| planner.plan_fft_forward(*i))
-    //    .collect::<Vec<std::sync::Arc<dyn rustfft::Fft<f32>>>>();
-    let mut kernel_octaves = (0..octaves)
-        .map(|_| sprs::TriMat::new((buckets_per_octave as usize, reduced_n_fft)))
-        .collect::<Vec<sprs::TriMat<Complex32>>>();
-    for (k, (f_k, n_k)) in std::iter::zip(freqs.iter(), window_lengths.iter()).enumerate() {
-        let cur_octave = k / buckets_per_octave;
-        let scaling = (1 << (octaves - 1 - cur_octave)) as f32;
-        let scaled_f_k = f_k * scaling;
-        let scaled_n_k = n_k / scaling;
-
-        let scaled_n_k_rounded = scaled_n_k.round() as usize;
-
-        assert!(scaled_n_k_rounded < reduced_n_fft);
-        let window = apodize::hanning_iter(scaled_n_k_rounded).collect::<Vec<f64>>();
-        let _window_sum = window.iter().sum::<f64>();
-
-        let mut v = vec![Complex32::zero(); reduced_n_fft];
-        for i in 0..scaled_n_k_rounded {
-            v[reduced_n_fft /*/ 2*/ - scaled_n_k_rounded /*/ 2*/ + i] = 1.0 / scaled_n_k
-                * (window[i] as f32)
-                * (num_complex::Complex32::i()
-                    * 2.0
-                    * PI
-                    * (i as f32/*- window_lengths[k] / 2.0*/)
-                    * scaled_f_k
-                    / (sr as f32))
-                    .exp();
-        }
-
-        // normalize windowed wavelet in time space
-        let norm_1: f32 = v.iter().map(|z| z.abs()).sum();
-        dbg!(norm_1);
-        v.iter_mut().for_each(|z| z.div_assign(norm_1));
-
-        // transform wavelets into frequency space
-        fft.process(&mut v);
-
-        // the complex conjugate is what we later need
-        v = v.iter_mut().map(|z| z.conj()).collect();
-
-        // filter all values smaller than some value and use sparse arrays
-        let mut v_abs = v.iter().map(|z| z.abs()).collect::<Vec<f32>>();
-        v_abs.sort_by(|a, b| {
-            if a == b {
-                std::cmp::Ordering::Equal
-            } else if a < b {
-                std::cmp::Ordering::Less
-            } else {
-                std::cmp::Ordering::Greater
-            }
-        });
-        let v_abs_sum = v_abs.iter().sum::<f32>();
-        let mut accum = 0.0;
-        let mut cutoff_idx = 0;
-        while accum < (1.0 - sparsity_quantile) * v_abs_sum {
-            accum += v_abs[cutoff_idx];
-            cutoff_idx += 1;
-        }
-        let cutoff_value = v_abs[cutoff_idx - 1];
-        //let cutoff_value = v_abs[(reduced_n_fft as f32 * sparsity_quantile) as usize];
-        let mut cnt = 0;
-        v.iter_mut().for_each(|z| {
-            if z.abs() < cutoff_value {
-                *z = Complex32::zero();
-                cnt += 1;
-            }
-        });
-        debug!("for k {k} erased {cnt} points below {cutoff_value} with sum {accum} out of total {v_abs_sum}");
-
-        // fill the kernel matrix
-        for (i, z) in v.iter().enumerate() {
-            if !z.is_zero() {
-                kernel_octaves[cur_octave].add_triplet(k % buckets_per_octave, i, *z);
-            }
-        }
-    }
-
-    // let v = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
-    // let mut x_fft = v
-    //         .iter()
-    //         .map(|f| rustfft::num_complex::Complex32::new(*f, 0.0))
-    //         .collect::<Vec<rustfft::num_complex::Complex32>>();
-
-    //     let mut planner = FftPlanner::new();
-    //     let fft = planner.plan_fft_forward(v.len());
-    //     let inv_fft = planner.plan_fft_inverse(v.len());
-
-    //     fft.process(&mut x_fft);
-    //     x_fft.iter_mut().for_each(|z| *z /= (v.len() as f32).sqrt());
-    //     dbg!(&x_fft);
-    //     for i in (1 + x_fft.len() / 2 / 2)..(x_fft.len() - x_fft.len() / 2 / 2) {
-    //         x_fft[i] = num_complex::Complex::zero();
-    //     }
-    //     let idx = x_fft.len() / 2 / 2;
-    //     //x_fft[idx].im = 0.0;
-    //     dbg!(&x_fft);
-    //     inv_fft.process(&mut x_fft);
-    //     x_fft.iter_mut().for_each(|z| *z /= (v.len() as f32).sqrt());
-    //     dbg!(&x_fft);
-    // panic!();
-
-    kernel_octaves
-        .iter()
-        .map(|m| m.to_csr())
-        .collect::<Vec<sprs::CsMat<num_complex::Complex<f32>>>>()
 }

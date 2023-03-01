@@ -2,11 +2,18 @@ use find_peaks::PeakFinder;
 use itertools::Itertools;
 use kiss3d::camera::ArcBall;
 use kiss3d::light::Light;
-use kiss3d::nalgebra::Point3;
+use kiss3d::nalgebra;
+use kiss3d::scene::SceneNode;
 use kiss3d::window::Window;
 use log::debug;
+use nalgebra::{Point3, Rotation3, Vector3};
 use std::collections::HashSet;
 use std::f32::consts::PI;
+
+const PEAK_MIN_PROMINENCE: f32 = 15.0;
+const PEAK_MIN_HEIGHT: f32 = 6.0;
+const BASSLINE_PEAK_MIN_PROMINENCE: f32 = 8.0;
+const BASSLINE_PEAK_MIN_HEIGHT: f32 = 4.0;
 
 const _COLORS_WONKY_SATURATION: [(f32, f32, f32); 12] = [
     (0.80, 0.40, 0.39), // C
@@ -79,6 +86,7 @@ fn calculate_color(buckets_per_octave: usize, bucket: usize) -> (f32, f32, f32) 
 struct AnalysisState {
     history: Vec<Vec<f32>>,
     x_cqt_smoothed: Vec<f32>,
+    x_cqt_afterglow: Vec<f32>,
     peaks: HashSet<usize>,
 }
 
@@ -91,7 +99,9 @@ pub enum PauseState {
 
 pub struct Display {
     pub cam: ArcBall,
-    cubes: Vec<kiss3d::scene::SceneNode>,
+    cubes: Vec<SceneNode>,
+    /// Tuples of cylinder and fixed height because we reset scaling every frame
+    cylinders: Vec<(SceneNode, f32)>,
     octaves: usize,
     buckets_per_octave: usize,
     analysis_state: AnalysisState,
@@ -104,23 +114,33 @@ impl Display {
         let cam = kiss3d::camera::ArcBall::new(Point3::new(0.0, 0.0, 19.0), Point3::origin());
 
         let mut cubes = vec![];
-        for i in 0..(buckets_per_octave * octaves) {
-            let mut c = window.add_sphere(1.0);
-            let radius = 1.8 * (0.5 + i as f32 / buckets_per_octave as f32);
-            let (transl_y, transl_x) = (((i + buckets_per_octave - 3 * (buckets_per_octave / 12))
-                as f32)
-                / (buckets_per_octave as f32)
-                * 2.0
-                * PI)
-                .sin_cos();
-            let transl_y = transl_y * radius;
-            let transl_x = transl_x * radius;
-            c.prepend_to_local_translation(&kiss3d::nalgebra::Translation::from([
-                transl_x,
-                transl_y,
-                17.0 - radius,
-            ]));
-            cubes.push(c);
+        let mut cylinders: Vec<(SceneNode, f32)> = vec![];
+
+        let spiral_points = Self::spiral_points(octaves, buckets_per_octave);
+
+        for (x, y, z) in spiral_points.iter() {
+            let mut s = window.add_sphere(1.0);
+            s.prepend_to_local_translation(&kiss3d::nalgebra::Translation::from([*x, *y, *z]));
+            cubes.push(s);
+        }
+
+        for (prev, cur) in spiral_points.iter().tuple_windows() {
+            use std::ops::Sub;
+
+            let p = nalgebra::point![prev.0, prev.1, prev.2];
+            let q = nalgebra::point![cur.0, cur.1, cur.2];
+
+            let mid = nalgebra::center(&p, &q);
+            let h = nalgebra::distance(&p, &q);
+            let y_unit: Vector3<f32> = nalgebra::vector![0.0, 1.0, 0.0];
+            let v_diff = p.sub(q);
+
+            let mut c = window.add_cylinder(0.05, h + 0.01);
+            c.prepend_to_local_translation(&kiss3d::nalgebra::Translation::from(mid));
+            if let Some(rotation) = Rotation3::rotation_between(&y_unit, &v_diff) {
+                c.prepend_to_local_rotation(&rotation.into());
+            }
+            cylinders.push((c, h + 0.01));
         }
 
         window.set_light(Light::StickToCamera);
@@ -129,12 +149,18 @@ impl Display {
 
         window.set_line_width(0.7);
 
+        let mut analysis_state = AnalysisState::default();
+        analysis_state
+            .x_cqt_afterglow
+            .resize_with(octaves * buckets_per_octave, || 0.0);
+
         Self {
             cam,
             cubes,
+            cylinders,
             octaves,
             buckets_per_octave,
-            analysis_state: AnalysisState::default(),
+            analysis_state,
             pause_state: PauseState::Running,
             //x_cqt_smoothed : vec![0.0; octaves * buckets_per_octave],
         }
@@ -168,6 +194,7 @@ impl Display {
         self.draw_spectrum(window);
         self.draw_spider_net(window);
         self.update_balls();
+        self.update_cylinders();
     }
 
     fn preprocess(&mut self, x_cqt: &[f32]) {
@@ -183,27 +210,28 @@ impl Display {
 
         // find peaks
         let mut fp = PeakFinder::new(&x_cqt);
-        fp.with_min_prominence(15.0);
-        fp.with_min_height(6.0);
+        fp.with_min_prominence(PEAK_MIN_PROMINENCE);
+        fp.with_min_height(PEAK_MIN_HEIGHT);
         //fp.with_min_prominence(0.1);
         //fp.with_min_height(1.);
         let peaks = fp.find_peaks();
         let peaks = peaks
             .iter()
             .map(|p| {
-                // find actual centers of mass around octave cutoffs (pitch A)
-                let midpoint = p.middle_position();
-                if (midpoint % self.buckets_per_octave) == self.buckets_per_octave - 1 {
-                    let mut accum = 0.0;
-                    let mut tot = 0.0;
-                    for i in (midpoint - 3)..(midpoint + 4) {
-                        accum += i as f32 * x_cqt[i];
-                        tot += x_cqt[i];
-                    }
-                    (accum / tot).round() as usize
-                } else {
-                    midpoint
-                }
+                // // find actual centers of mass around octave cutoffs (pitch A)
+                // let midpoint = p.middle_position();
+                // if (midpoint % self.buckets_per_octave) == self.buckets_per_octave - 1 {
+                //     let mut accum = 0.0;
+                //     let mut tot = 0.0;
+                //     for i in (midpoint - 3)..(midpoint + 4) {
+                //         accum += i as f32 * x_cqt[i];
+                //         tot += x_cqt[i];
+                //     }
+                //     (accum / tot).round() as usize
+                // } else {
+                //     midpoint
+                // }
+                p.middle_position()
             })
             .collect::<HashSet<usize>>();
 
@@ -214,7 +242,7 @@ impl Display {
             x_cqt
                 .iter()
                 .enumerate()
-                .map(|(i, x)| if peaks.contains(&i) { *x } else { *x / 6.0 })
+                .map(|(i, x)| if peaks.contains(&i) { *x } else { *x / 10.0 })
                 .collect::<Vec<f32>>(),
         );
         //self.history.push(x_cqt.iter().enumerate().map(|(i, x)| if peaks.contains(&i) {*x} else {0.0}).collect::<Vec<f32>>());
@@ -252,30 +280,36 @@ impl Display {
             x_cqt_smoothed = v.clone();
         }
 
+        self.analysis_state
+            .x_cqt_afterglow
+            .iter_mut()
+            .enumerate()
+            .for_each(|(i, x)| {
+                *x *= 0.85;
+                if *x < x_cqt_smoothed[i] {
+                    *x = x_cqt_smoothed[i];
+                }
+            });
+
         // TEST unmodified
         //let x_cqt_smoothed = x_cqt;
+        //let x_cqt_afterglow = x_cqt;
 
         self.analysis_state.peaks = peaks;
         self.analysis_state.x_cqt_smoothed = x_cqt_smoothed;
     }
 
     fn draw_spectrum(&mut self, window: &mut Window) {
+        let x_cqt = &self.analysis_state.x_cqt_afterglow;
+
         for i in 0..(self.buckets_per_octave * self.octaves - 1) {
             let x = i as f32 / (self.buckets_per_octave * self.octaves) as f32 * 7.0 - 13.5;
             let x_next =
                 (i + 1) as f32 / (self.buckets_per_octave * self.octaves) as f32 * 7.0 - 13.5;
             let y_scale = 7.0;
             window.draw_line(
-                &Point3::new(
-                    x,
-                    self.analysis_state.x_cqt_smoothed[i] / y_scale + 3.0,
-                    0.0,
-                ),
-                &Point3::new(
-                    x_next,
-                    self.analysis_state.x_cqt_smoothed[i + 1] / y_scale + 3.0,
-                    0.0,
-                ),
+                &Point3::new(x, x_cqt[i] / y_scale + 3.0, 0.0),
+                &Point3::new(x_next, x_cqt[i + 1] / y_scale + 3.0, 0.0),
                 //&Point3::new(x, x_cqt_smoothed[i] /* / y_scale */ + 3.0, 0.0),
                 //&Point3::new(x_next, x_cqt_smoothed[i + 1] /* / y_scale */ + 3.0, 0.0),
                 &Point3::new(0.7, 0.9, 0.0),
@@ -284,32 +318,16 @@ impl Display {
                 window.draw_line(
                     //&Point3::new(x, x_cqt_smoothed[i] /*/ y_scale*/ + 3.0 - 0.1, 0.0),
                     //&Point3::new(x, x_cqt_smoothed[i] /*/ y_scale*/ + 3.0, 0.0),
-                    &Point3::new(
-                        x,
-                        self.analysis_state.x_cqt_smoothed[i] / y_scale + 3.0 + 0.2,
-                        0.0,
-                    ),
-                    &Point3::new(
-                        x,
-                        self.analysis_state.x_cqt_smoothed[i] / y_scale + 3.0,
-                        0.0,
-                    ),
+                    &Point3::new(x, x_cqt[i] / y_scale + 3.0 + 0.2, 0.0),
+                    &Point3::new(x, x_cqt[i] / y_scale + 3.0, 0.0),
                     &Point3::new(1.0, 0.2, 0.0),
                 );
             }
 
             if i % (self.buckets_per_octave / 12) == 0 {
                 window.draw_line(
-                    &Point3::new(
-                        x,
-                        self.analysis_state.x_cqt_smoothed[i] / y_scale + 3.0 - 0.1,
-                        0.0,
-                    ),
-                    &Point3::new(
-                        x,
-                        self.analysis_state.x_cqt_smoothed[i] / y_scale + 3.0,
-                        0.0,
-                    ),
+                    &Point3::new(x, x_cqt[i] / y_scale + 3.0 - 0.1, 0.0),
+                    &Point3::new(x, x_cqt[i] / y_scale + 3.0, 0.0),
                     // &Point3::new(x, x_cqt_smoothed[i] /*/ y_scale*/ + 3.0 - 0.1, 0.0),
                     // &Point3::new(x, x_cqt_smoothed[i] /*/ y_scale*/ + 3.0, 0.0),
                     &Point3::new(1.0, 0.0, 1.0),
@@ -332,18 +350,7 @@ impl Display {
 
         // draw spiral
         // TODO: make these constant things constant
-        let spiral_points: Vec<(f32, f32, f32)> = (0..(self.buckets_per_octave * self.octaves))
-            .map(|i| {
-                let radius = 1.8 * (0.5 + i as f32 / self.buckets_per_octave as f32);
-                let (y, x) = (((i + self.buckets_per_octave - 3 * (self.buckets_per_octave / 12))
-                    as f32)
-                    / (self.buckets_per_octave as f32)
-                    * 2.0
-                    * PI)
-                    .sin_cos();
-                (x * radius, y * radius, 17.0 - radius)
-            })
-            .collect();
+        let spiral_points = Self::spiral_points(self.octaves, self.buckets_per_octave);
         for (prev, cur) in spiral_points.iter().tuple_windows() {
             window.draw_line(
                 &Point3::new(prev.0, prev.1, prev.2),
@@ -355,6 +362,8 @@ impl Display {
 
     fn update_balls(&mut self) {
         for (i, c) in self.cubes.iter_mut().enumerate() {
+            let x_cqt = &self.analysis_state.x_cqt_afterglow;
+
             //c.prepend_to_local_rotation(&rot);
             let (r, g, b) = calculate_color(
                 self.buckets_per_octave,
@@ -362,11 +371,10 @@ impl Display {
                     % self.buckets_per_octave,
             );
 
-            let k_max = arg_max(&self.analysis_state.x_cqt_smoothed);
-            let max = self.analysis_state.x_cqt_smoothed[k_max];
+            let k_max = arg_max(x_cqt);
+            let max = x_cqt[k_max];
 
-            let color_coefficient =
-                1.0 - (1.0 - self.analysis_state.x_cqt_smoothed[i] / max).powf(2.0);
+            let color_coefficient = 1.0 - (1.0 - x_cqt[i] / max).powf(2.0);
 
             c.set_color(
                 r * color_coefficient,
@@ -382,11 +390,88 @@ impl Display {
             let scale_factor = 1.0 / 15.0;
 
             c.set_local_scale(
-                self.analysis_state.x_cqt_smoothed[i] * scale_factor,
-                self.analysis_state.x_cqt_smoothed[i] * scale_factor,
-                self.analysis_state.x_cqt_smoothed[i] * scale_factor,
+                x_cqt[i] * scale_factor,
+                x_cqt[i] * scale_factor,
+                x_cqt[i] * scale_factor,
             );
             //c.set_local_scale(1.0, 1.0, 1.0);
         }
+    }
+
+    fn update_cylinders(&mut self) {
+        let x_cqt = &self.analysis_state.x_cqt_afterglow;
+
+        // find peaks
+        let mut fp = PeakFinder::new(x_cqt);
+        fp.with_min_prominence(BASSLINE_PEAK_MIN_PROMINENCE);
+        fp.with_min_height(BASSLINE_PEAK_MIN_HEIGHT);
+        let peaks = fp.find_peaks();
+        let mut peaks = peaks
+            .iter()
+            .map(|p| p.middle_position())
+            .collect::<Vec<usize>>();
+
+        peaks.sort_by(|a, b| {
+            if a == b {
+                std::cmp::Ordering::Equal
+            } else if a < b {
+                std::cmp::Ordering::Less
+            } else {
+                std::cmp::Ordering::Greater
+            }
+        });
+
+        //let mut color_map: Vec<i32> = vec![-1; self.buckets_per_octave * self.octaves];
+        // for (prev, cur) in peaks.iter().tuple_windows() {
+        //     color_map[*prev..*cur].fill(*prev as i32);
+        // }
+        self.cylinders
+            .iter_mut()
+            .for_each(|c| c.0.set_visible(false));
+        if let Some(first_peak) = peaks.first() {
+            // color up to lowest note
+            for idx in 0..*first_peak {
+                let (ref mut c, ref height) = self.cylinders[idx];
+                c.set_visible(true);
+
+                let color_map_ref = *first_peak;
+                let (r, g, b) = calculate_color(
+                    self.buckets_per_octave,
+                    (color_map_ref as usize + self.buckets_per_octave
+                        - 3 * (self.buckets_per_octave / 12))
+                        % self.buckets_per_octave,
+                );
+
+                let k_max = arg_max(x_cqt);
+                let max = x_cqt[k_max];
+
+                let color_coefficient = 1.0 - (1.0 - x_cqt[color_map_ref as usize] / max).powf(2.0);
+
+                c.set_color(
+                    r * color_coefficient,
+                    g * color_coefficient,
+                    b * color_coefficient,
+                );
+
+                let radius = 0.08;
+                c.set_local_scale(radius, *height, radius);
+            }
+        }
+    }
+
+    fn spiral_points(octaves: usize, buckets_per_octave: usize) -> Vec<(f32, f32, f32)> {
+        (0..(buckets_per_octave * octaves))
+            .map(|i| {
+                //let radius = 1.8 * (0.5 + i as f32 / buckets_per_octave as f32);
+                let radius = 1.5 * (0.5 + (i as f32 / buckets_per_octave as f32).powf(0.8));
+                let (transl_y, transl_x) =
+                    (((i + buckets_per_octave - 3 * (buckets_per_octave / 12)) as f32)
+                        / (buckets_per_octave as f32)
+                        * 2.0
+                        * PI)
+                        .sin_cos();
+                (transl_x * radius, transl_y * radius, 0.0) //17.0 - radius)
+            })
+            .collect()
     }
 }
