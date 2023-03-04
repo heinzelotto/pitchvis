@@ -3,3 +3,4 @@ window.youClicked = async function loadWasm() {
     let say = await import('./pkg')
     say.main_fun();
   }
+

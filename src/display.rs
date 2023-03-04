@@ -12,8 +12,9 @@ use std::f32::consts::PI;
 
 const PEAK_MIN_PROMINENCE: f32 = 15.0;
 const PEAK_MIN_HEIGHT: f32 = 6.0;
-const BASSLINE_PEAK_MIN_PROMINENCE: f32 = 8.0;
+const BASSLINE_PEAK_MIN_PROMINENCE: f32 = 12.0;
 const BASSLINE_PEAK_MIN_HEIGHT: f32 = 4.0;
+const HIGHEST_BASSNOTE: usize = 12 * 2 + 4;
 
 const _COLORS_WONKY_SATURATION: [(f32, f32, f32); 12] = [
     (0.80, 0.40, 0.39), // C
@@ -72,7 +73,7 @@ fn calculate_color(buckets_per_octave: usize, bucket: usize) -> (f32, f32, f32) 
     let base_color = COLORS[(pitch_continuous.round() as usize) % 12];
     let inaccuracy_cents = (pitch_continuous - pitch_continuous.round()).abs();
 
-    let saturation = 1.0 - (2.0 * inaccuracy_cents) * (2.0 * inaccuracy_cents);
+    let saturation = 1.0 - (2.0 * inaccuracy_cents).powf(1.5);
     const GRAY_LEVEL: f32 = 0.5;
 
     (
@@ -102,6 +103,7 @@ pub struct Display {
     cubes: Vec<SceneNode>,
     /// Tuples of cylinder and fixed height because we reset scaling every frame
     cylinders: Vec<(SceneNode, f32)>,
+    bg_quad: SceneNode,
     octaves: usize,
     buckets_per_octave: usize,
     analysis_state: AnalysisState,
@@ -124,7 +126,11 @@ impl Display {
             cubes.push(s);
         }
 
-        for (prev, cur) in spiral_points.iter().tuple_windows() {
+        for (prev, cur) in spiral_points
+            .iter()
+            .take(HIGHEST_BASSNOTE * buckets_per_octave / 12)
+            .tuple_windows()
+        {
             use std::ops::Sub;
 
             let p = nalgebra::point![prev.0, prev.1, prev.2];
@@ -154,10 +160,18 @@ impl Display {
             .x_cqt_afterglow
             .resize_with(octaves * buckets_per_octave, || 0.0);
 
+        let mut bg_quad = window.add_quad(24.0, 12.0, 1, 1);
+        let bg_small_jpg = include_bytes!("bg_europe.jpg");
+        bg_quad.set_texture_from_memory(bg_small_jpg, "bg_small");
+        bg_quad.prepend_to_local_translation(&kiss3d::nalgebra::Translation::from(
+            nalgebra::vector![0.0, 0.0, -0.1],
+        ));
+
         Self {
             cam,
             cubes,
             cylinders,
+            bg_quad,
             octaves,
             buckets_per_octave,
             analysis_state,
@@ -173,13 +187,24 @@ impl Display {
         };
         debug!("toggling pause");
     }
+    fn toggle_bg_display(&mut self) {
+        if self.bg_quad.is_visible() {
+            self.bg_quad.set_visible(false);
+        } else {
+            self.bg_quad.set_visible(true);
+        }
+        debug!("toggling bg image display");
+    }
 
     fn handle_key_events(&mut self, window: &Window) {
         for event in window.events().iter() {
             if let kiss3d::event::WindowEvent::Key(c, a, _m) = event.value {
                 match (c, a) {
-                    (kiss3d::event::Key::P, kiss3d::event::Action::Release) => {
+                    (kiss3d::event::Key::P, kiss3d::event::Action::Press) => {
                         self.toggle_pause();
+                    }
+                    (kiss3d::event::Key::I, kiss3d::event::Action::Press) => {
+                        self.toggle_bg_display();
                     }
                     _ => {}
                 }
@@ -187,14 +212,14 @@ impl Display {
         }
     }
 
-    pub fn render(&mut self, window: &mut Window, x_cqt: &[f32]) {
+    pub fn render(&mut self, window: &mut Window, x_cqt: &[f32], gain: f32) {
         self.handle_key_events(window);
 
         self.preprocess(x_cqt);
         self.draw_spectrum(window);
         self.draw_spider_net(window);
         self.update_balls();
-        self.update_cylinders();
+        self.update_cylinders(gain);
     }
 
     fn preprocess(&mut self, x_cqt: &[f32]) {
@@ -234,7 +259,7 @@ impl Display {
             x_cqt
                 .iter()
                 .enumerate()
-                .map(|(i, x)| if peaks.contains(&i) { *x } else { *x / 8.0 })
+                .map(|(i, x)| if peaks.contains(&i) { *x } else { *x / 10.0 })
                 .collect::<Vec<f32>>(),
         );
         //self.history.push(x_cqt.iter().enumerate().map(|(i, x)| if peaks.contains(&i) {*x} else {0.0}).collect::<Vec<f32>>());
@@ -249,21 +274,44 @@ impl Display {
             for t in 0..self.analysis_state.history.len() {
                 v.push(self.analysis_state.history[t][i]);
             }
-            // Median
-            // v.sort_by(|a, b| {
-            //     if a == b {
-            //         std::cmp::Ordering::Equal
-            //     } else if a < b {
-            //         std::cmp::Ordering::Less
-            //     } else {
-            //         std::cmp::Ordering::Greater
-            //     }
-            // });
-            // x_cqt_smoothed[i] = v[self.history.len() / 2];
-
             // arithmetic mean
             x_cqt_smoothed[i] = v.iter().sum::<f32>() / smooth_length as f32;
         }
+
+        let conv_radius = (self.buckets_per_octave / 12) / 2;
+        let x_cqt_smoothed_convoluted = (0..(self.octaves * self.buckets_per_octave))
+            .map(|idx| {
+                if idx < conv_radius || idx >= self.octaves * self.buckets_per_octave - conv_radius
+                {
+                    0.0
+                } else {
+                    x_cqt_smoothed[(idx - conv_radius)..(idx + conv_radius + 1)]
+                        .iter()
+                        .sum::<f32>()
+                }
+            })
+            .collect::<Vec<f32>>();
+
+        let mut pf2 = PeakFinder::new(&x_cqt_smoothed_convoluted);
+        pf2.with_min_prominence(PEAK_MIN_PROMINENCE + 5.0);
+        pf2.with_min_height(PEAK_MIN_HEIGHT + 5.0);
+        let peaks2 = pf2.find_peaks();
+        let peaks2 = peaks2
+            .iter()
+            .map(|p| p.middle_position())
+            .collect::<HashSet<usize>>();
+
+        let mut x_cqt_smoothed = x_cqt_smoothed_convoluted
+            .iter()
+            .enumerate()
+            .map(|(i, x)| {
+                if peaks2.contains(&i) {
+                    *x / conv_radius as f32
+                } else {
+                    x_cqt_smoothed[i] / 10.0
+                }
+            })
+            .collect::<Vec<f32>>();
 
         if self.pause_state == PauseState::PauseRequested {
             self.pause_state = PauseState::Paused(x_cqt_smoothed.clone())
@@ -277,14 +325,14 @@ impl Display {
             .iter_mut()
             .enumerate()
             .for_each(|(i, x)| {
-                *x *= 0.90 - 0.15 * (i as f32 / (self.octaves * self.buckets_per_octave) as f32);
+                *x *= 0.85 - 0.15 * (i as f32 / (self.octaves * self.buckets_per_octave) as f32);
                 if *x < x_cqt_smoothed[i] {
                     *x = x_cqt_smoothed[i];
                 }
             });
 
         // TEST unmodified
-        //let x_cqt_smoothed = x_cqt;
+        //let x_cqt_smoothed = x_cqt.to_vec();
         //let x_cqt_afterglow = x_cqt;
 
         self.analysis_state.peaks = peaks;
@@ -390,7 +438,7 @@ impl Display {
         }
     }
 
-    fn update_cylinders(&mut self) {
+    fn update_cylinders(&mut self, gain: f32) {
         let x_cqt = &self.analysis_state.x_cqt_afterglow;
 
         // find peaks
@@ -401,6 +449,7 @@ impl Display {
         let mut peaks = peaks
             .iter()
             .map(|p| p.middle_position())
+            .filter(|i| i < &(HIGHEST_BASSNOTE * self.buckets_per_octave / 12))
             .collect::<Vec<usize>>();
 
         peaks.sort_by(|a, b| {
@@ -420,6 +469,9 @@ impl Display {
         self.cylinders
             .iter_mut()
             .for_each(|c| c.0.set_visible(false));
+        if gain > 1000.0 {
+            return;
+        }
         if let Some(first_peak) = peaks.first() {
             // color up to lowest note
             for idx in 0..*first_peak {

@@ -37,14 +37,17 @@ impl State for AppState {
         let t_loop = performance.now();
 
         //let t_cqt = std::time::Instant::now();
-        let mut x = vec![0.0_f32; N_FFT];
-        x.copy_from_slice(&self.audio_stream.ring_buffer.lock().unwrap()[(BUFSIZE - N_FFT)..]);
-
+        let (x, gain) = {
+            let mut x = vec![0.0_f32; N_FFT];
+            let rb = &self.audio_stream.ring_buffer.lock().unwrap();
+            x.copy_from_slice(&rb.buf[(BUFSIZE - N_FFT)..]);
+            (x, rb.gain)
+        };
         let x_cqt = self.cqt.calculate_cqt_instant_in_db(&x);
         // println!("CQT calculated in {}ms", t_cqt.elapsed().as_millis());
 
         //let t_render = std::time::Instant::now();
-        self.display.render(window, &x_cqt);
+        self.display.render(window, &x_cqt, gain);
         // println!("rendered in {}ms", t_render.elapsed().as_millis());
 
         let time_passed = performance.now() - t_loop;

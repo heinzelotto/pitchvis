@@ -54,9 +54,14 @@ impl WasmUint8Array {
     }
 }
 
+pub struct RingBuffer {
+    pub buf: Vec<f32>,
+    pub gain: f32,
+}
+
 pub struct AudioStream {
     pub sr: usize,
-    pub ring_buffer: std::sync::Arc<std::sync::Mutex<Vec<f32>>>,
+    pub ring_buffer: std::sync::Arc<std::sync::Mutex<RingBuffer>>,
     pub stream: Stream,
     //pub agc: dagc::MonoAgc,
 }
@@ -278,8 +283,11 @@ impl AudioStream {
             buffer_size: cpal::BufferSize::Default,
         };
 
-        let mut ring_buffer = Vec::new();
-        ring_buffer.resize(buf_size, 0f32);
+        let mut ring_buffer = RingBuffer {
+            buf: Vec::new(),
+            gain: 0.0,
+        };
+        ring_buffer.buf.resize(buf_size, 0f32);
         let ring_buffer = std::sync::Mutex::from(ring_buffer);
         let ring_buffer = std::sync::Arc::new(ring_buffer);
 
@@ -291,12 +299,13 @@ impl AudioStream {
             let mut rb = ring_buffer_input_thread_clone
                 .lock()
                 .expect("locking failed");
-            rb.drain(..data.len());
-            rb.extend_from_slice(&data);
-            let begin = rb.len() - data.len();
-            let sample_abs_sum = rb[begin..].iter().map(|x| x.abs()).sum::<f32>();
+            rb.buf.drain(..data.len());
+            rb.buf.extend_from_slice(&data);
+            let begin = rb.buf.len() - data.len();
+            let sample_abs_sum = rb.buf[begin..].iter().map(|x| x.abs()).sum::<f32>();
             if sample_abs_sum > std::f32::EPSILON {
-                agc.process(&mut rb[begin..]);
+                agc.process(&mut rb.buf[begin..]);
+                rb.gain = agc.gain();
             }
             trace!("gain: {}", agc.gain());
         };
@@ -350,8 +359,11 @@ impl AudioStream {
             buffer_size: cpal::BufferSize::Default,
         };
 
-        let mut ring_buffer = Vec::new();
-        ring_buffer.resize(buf_size, 0f32);
+        let mut ring_buffer = RingBuffer {
+            buf: Vec::new(),
+            gain: 0.0,
+        };
+        ring_buffer.buf.resize(buf_size, 0f32);
         let ring_buffer = std::sync::Mutex::from(ring_buffer);
         let ring_buffer = std::sync::Arc::new(ring_buffer);
 
@@ -365,12 +377,13 @@ impl AudioStream {
                 let mut rb = ring_buffer_input_thread_clone
                     .lock()
                     .expect("locking failed");
-                rb.drain(..data.len());
-                rb.extend_from_slice(&data);
-                let begin = rb.len() - data.len();
-                let sample_abs_sum = rb[begin..].iter().map(|x| x.abs()).sum::<f32>();
+                rb.buf.drain(..data.len());
+                rb.buf.extend_from_slice(&data);
+                let begin = rb.buf.len() - data.len();
+                let sample_abs_sum = rb.buf[begin..].iter().map(|x| x.abs()).sum::<f32>();
                 if sample_abs_sum > std::f32::EPSILON {
-                    agc.process(&mut rb[begin..]);
+                    agc.process(&mut rb.buf[begin..]);
+                    rb.gain = agc.gain();
                 }
                 trace!("gain: {}", agc.gain());
             },
