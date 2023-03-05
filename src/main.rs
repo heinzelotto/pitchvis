@@ -16,10 +16,10 @@ const SR: usize = 22050;
 const BUFSIZE: usize = 2 * SR;
 const N_FFT: usize = 2 * 16384;
 const FREQ_A1: f32 = 55.0;
-const BUCKETS_PER_OCTAVE: usize = 12 * 4;
+const BUCKETS_PER_OCTAVE: usize = 12 * 5;
 const OCTAVES: usize = 6; // TODO: extend to 6
 const SPARSITY_QUANTILE: f32 = 0.999;
-const Q: f32 = 1.4;
+const Q: f32 = 1.0;
 const GAMMA: f32 = 5.0;
 
 const FPS: u64 = 30;
