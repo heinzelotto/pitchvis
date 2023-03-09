@@ -35,6 +35,7 @@ log = "0.4.17"
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 cpal = { version = "0.15.0", features = [], path = "../cpal"  }
 env_logger = "0.10.0"
+image = "0.24.5"
 
 [target.wasm32-unknown-unknown.dependencies]
 cpal = { version = "0.15.0", features = ["wasm-bindgen"], path = "../cpal" }
@@ -49,3 +50,8 @@ console_error_panic_hook = "0.1.7"
 js-sys = "0.3.61"
 regex = "1"
 console_log = "0.2.1"
+
+[dependencies.image]
+version = "0.23"
+default-features = false
+features = ["gif", "jpeg", "ico", "png", "pnm", "tga", "tiff", "webp", "bmp", "hdr", "dxt", "dds", "farbfeld"]

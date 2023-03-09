@@ -9,12 +9,16 @@ use log::debug;
 use nalgebra::{Point3, Rotation3, Vector3};
 use std::collections::HashSet;
 use std::f32::consts::PI;
+use std::f32::EPSILON;
+use std::rc::Rc;
 
-const PEAK_MIN_PROMINENCE: f32 = 15.0;
+const PEAK_MIN_PROMINENCE: f32 = 13.0;
 const PEAK_MIN_HEIGHT: f32 = 6.0;
 const _BASSLINE_PEAK_MIN_PROMINENCE: f32 = 12.0;
 const _BASSLINE_PEAK_MIN_HEIGHT: f32 = 4.0;
 const HIGHEST_BASSNOTE: usize = 12 * 2 + 4;
+const SPECTROGRAM_LENGTH: usize = 400;
+const SMOOTH_LENGTH: usize = 3;
 
 const _COLORS_WONKY_SATURATION: [(f32, f32, f32); 12] = [
     (0.80, 0.40, 0.39), // C
@@ -37,7 +41,7 @@ const COLORS: [(f32, f32, f32); 12] = [
     (0.97, 0.76, 0.05), // D
     (0.37, 0.28, 0.50), // Eb
     (0.47, 0.77, 0.22), // E
-    (0.78, 0.32, 0.52), // F
+    (0.78, 0.32, 0.52), // Fh
     (0.00, 0.64, 0.56), // F#
     (0.95, 0.54, 0.23), // G
     (0.26, 0.31, 0.53), // Ab
@@ -83,13 +87,31 @@ fn calculate_color(buckets_per_octave: usize, bucket: f32) -> (f32, f32, f32) {
     )
 }
 
-#[derive(Default)]
 struct AnalysisState {
     history: Vec<Vec<f32>>,
     x_cqt_smoothed: Vec<f32>,
     x_cqt_afterglow: Vec<f32>,
     peaks: HashSet<usize>,
     peaks_continuous: Vec<(f32, f32)>,
+
+    spectrogram_buffer: Vec<u8>,
+    spectrogram_front_idx: usize,
+}
+
+impl AnalysisState {
+    fn new(w: usize, h: usize) -> Self {
+        let spectrogram_buffer = vec![0; w * h * 4];
+
+        Self {
+            history: Vec::new(),
+            x_cqt_smoothed: Vec::new(),
+            x_cqt_afterglow: Vec::new(),
+            peaks: HashSet::new(),
+            peaks_continuous: Vec::new(),
+            spectrogram_buffer,
+            spectrogram_front_idx: 0,
+        }
+    }
 }
 
 #[derive(PartialEq)]
@@ -105,6 +127,8 @@ pub struct Display {
     /// Tuples of cylinder and fixed height because we reset scaling every frame
     cylinders: Vec<(SceneNode, f32)>,
     bg_quad: SceneNode,
+    spectrogram_quad: SceneNode,
+    spectrogram_tex: Rc<kiss3d::resource::Texture>,
     octaves: usize,
     buckets_per_octave: usize,
     analysis_state: AnalysisState,
@@ -156,7 +180,8 @@ impl Display {
 
         window.set_line_width(0.7);
 
-        let mut analysis_state = AnalysisState::default();
+        let mut analysis_state =
+            AnalysisState::new(octaves * buckets_per_octave, SPECTROGRAM_LENGTH);
         analysis_state
             .x_cqt_afterglow
             .resize_with(octaves * buckets_per_octave, || 0.0);
@@ -165,7 +190,21 @@ impl Display {
         let bg_small_jpg = include_bytes!("bg_europe.jpg");
         bg_quad.set_texture_from_memory(bg_small_jpg, "bg_small");
         bg_quad.prepend_to_local_translation(&kiss3d::nalgebra::Translation::from(
-            nalgebra::vector![0.0, 0.0, -0.1],
+            nalgebra::vector![0.0, 0.0, -0.5],
+        ));
+
+        let spectrogram_tex = kiss3d::resource::TextureManager::get_global_manager(move |tm| {
+            let img = image::DynamicImage::new_rgba8(
+                (octaves * buckets_per_octave) as u32,
+                SPECTROGRAM_LENGTH as u32,
+            );
+            tm.add_image(img, "spectrogram")
+        });
+
+        let mut spectrogram_quad = window.add_quad(7.0, 10.0, 1, 1);
+        spectrogram_quad.set_texture(spectrogram_tex.clone());
+        spectrogram_quad.prepend_to_local_translation(&kiss3d::nalgebra::Translation::from(
+            nalgebra::vector![-10.0, -2.1, -0.01],
         ));
 
         Self {
@@ -173,6 +212,8 @@ impl Display {
             cubes,
             cylinders,
             bg_quad,
+            spectrogram_quad,
+            spectrogram_tex,
             octaves,
             buckets_per_octave,
             analysis_state,
@@ -217,6 +258,7 @@ impl Display {
         self.handle_key_events(window);
 
         self.preprocess(x_cqt);
+        self.update_spectrogram();
         self.draw_spectrum(window);
         self.draw_spider_net(window);
         self.update_balls();
@@ -239,8 +281,7 @@ impl Display {
         // if a bin in the history was at peak magnitude at that time, it should be promoted
         self.analysis_state.history.push(x_cqt.to_owned());
         //self.history.push(x_cqt.iter().enumerate().map(|(i, x)| if peaks.contains(&i) {*x} else {0.0}).collect::<Vec<f32>>());
-        let smooth_length = 5;
-        if self.analysis_state.history.len() > smooth_length {
+        if self.analysis_state.history.len() > SMOOTH_LENGTH {
             // TODO: once fps is implemented, make this dependent on time instead of frames
             // make smoothing range modifiable in-game
             self.analysis_state.history.drain(0..1);
@@ -251,7 +292,7 @@ impl Display {
                 v.push(self.analysis_state.history[t][i]);
             }
             // arithmetic mean
-            x_cqt_smoothed[i] = v.iter().sum::<f32>() / smooth_length as f32;
+            x_cqt_smoothed[i] = v.iter().sum::<f32>() / SMOOTH_LENGTH as f32;
         }
 
         // let conv_radius = (self.buckets_per_octave / 12) / 2;
@@ -360,6 +401,93 @@ impl Display {
         self.analysis_state.peaks_continuous = peaks_continuous;
     }
 
+    fn update_spectrogram(&mut self) {
+        let k_max = arg_max(&self.analysis_state.x_cqt_smoothed);
+        let max_size = self.analysis_state.x_cqt_smoothed[k_max];
+
+        let width = self.octaves * self.buckets_per_octave;
+        self.analysis_state.spectrogram_buffer[(self.analysis_state.spectrogram_front_idx
+            * width
+            * 4)
+            ..((self.analysis_state.spectrogram_front_idx + 1) * width * 4)]
+            .fill(0);
+        //for (i, x) in self.analysis_state.x_cqt_smoothed.iter().enumerate() {
+        for i in self.analysis_state.peaks.iter() {
+            let x = self.analysis_state.x_cqt_smoothed[*i];
+            let (r, g, b) = calculate_color(
+                self.buckets_per_octave,
+                (*i as f32 + (self.buckets_per_octave - 3 * (self.buckets_per_octave / 12)) as f32)
+                    % self.buckets_per_octave as f32,
+            );
+            let brightness = 1.0_f32; //x / (max_size + EPSILON);
+            let brightness = ((1.0 - (1.0 - brightness).powf(4.0)) * 3.0 * 255.0).clamp(0.0, 255.0);
+
+            // right to left
+            self.analysis_state.spectrogram_buffer
+                [((self.analysis_state.spectrogram_front_idx + 1) * width - i - 1) * 4 + 0] =
+                (r * brightness * 1.2).clamp(0.0, 255.0) as u8;
+            self.analysis_state.spectrogram_buffer
+                [((self.analysis_state.spectrogram_front_idx + 1) * width - i - 1) * 4 + 1] =
+                (g * brightness * 1.2).clamp(0.0, 255.0) as u8;
+            self.analysis_state.spectrogram_buffer
+                [((self.analysis_state.spectrogram_front_idx + 1) * width - i - 1) * 4 + 2] =
+                (b * brightness * 1.2).clamp(0.0, 255.0) as u8;
+            self.analysis_state.spectrogram_buffer
+                [((self.analysis_state.spectrogram_front_idx + 1) * width - i - 1) * 4 + 3] = 1;
+
+            if *i < width - 1 {
+                self.analysis_state.spectrogram_buffer
+                    [((self.analysis_state.spectrogram_front_idx + 1) * width - i - 2) * 4 + 0] =
+                    (r * brightness * 1.2).clamp(0.0, 255.0) as u8;
+                self.analysis_state.spectrogram_buffer
+                    [((self.analysis_state.spectrogram_front_idx + 1) * width - i - 2) * 4 + 1] =
+                    (g * brightness * 1.2).clamp(0.0, 255.0) as u8;
+                self.analysis_state.spectrogram_buffer
+                    [((self.analysis_state.spectrogram_front_idx + 1) * width - i - 2) * 4 + 2] =
+                    (b * brightness * 1.2).clamp(0.0, 255.0) as u8;
+                self.analysis_state.spectrogram_buffer
+                    [((self.analysis_state.spectrogram_front_idx + 1) * width - i - 2) * 4 + 3] = 1;
+            }
+            if *i > 0 {
+                self.analysis_state.spectrogram_buffer
+                    [((self.analysis_state.spectrogram_front_idx + 1) * width - i) * 4 + 0] =
+                    (r * brightness * 1.2).clamp(0.0, 255.0) as u8;
+                self.analysis_state.spectrogram_buffer
+                    [((self.analysis_state.spectrogram_front_idx + 1) * width - i) * 4 + 1] =
+                    (g * brightness * 1.2).clamp(0.0, 255.0) as u8;
+                self.analysis_state.spectrogram_buffer
+                    [((self.analysis_state.spectrogram_front_idx + 1) * width - i) * 4 + 2] =
+                    (b * brightness * 1.2).clamp(0.0, 255.0) as u8;
+                self.analysis_state.spectrogram_buffer
+                    [((self.analysis_state.spectrogram_front_idx + 1) * width - i) * 4 + 3] = 1;
+            }
+        }
+
+        self.analysis_state.spectrogram_front_idx =
+            (self.analysis_state.spectrogram_front_idx + 1) % SPECTROGRAM_LENGTH;
+        self.analysis_state.spectrogram_buffer[(self.analysis_state.spectrogram_front_idx
+            * width
+            * 4)
+            ..((self.analysis_state.spectrogram_front_idx + 1) * width * 4)]
+            .fill(255);
+
+        let context = kiss3d::context::Context::get();
+        context.bind_texture(
+            kiss3d::context::Context::TEXTURE_2D,
+            Some(&self.spectrogram_tex),
+        );
+        context.tex_sub_image2d(
+            kiss3d::context::Context::TEXTURE_2D,
+            0,
+            0,
+            0,
+            (self.octaves * self.buckets_per_octave) as i32,
+            SPECTROGRAM_LENGTH as i32,
+            kiss3d::context::Context::RGBA,
+            Some(&self.analysis_state.spectrogram_buffer),
+        );
+    }
+
     fn draw_spectrum(&mut self, window: &mut Window) {
         let x_cqt = &self.analysis_state.x_cqt_smoothed;
 
@@ -433,7 +561,7 @@ impl Display {
                     size * scale_factor,
                     size * scale_factor,
                 );
-                if size * scale_factor < 0.2 {
+                if size * scale_factor < 0.4 {
                     c.set_visible(false);
                 }
             }
@@ -485,16 +613,7 @@ impl Display {
                 size * scale_factor,
             );
 
-            // set surrounding balls invisible so they don't leave spotty traces.
-            let surrounding_radius = self.buckets_per_octave / 12 / 2;
-            for i in core::cmp::max(0, center.trunc() as usize - surrounding_radius)
-                ..core::cmp::min(
-                    self.octaves * self.buckets_per_octave - 1,
-                    center.trunc() as usize + surrounding_radius + 1,
-                )
-            {
-                self.cubes[i].set_visible(i == center.trunc() as usize);
-            }
+            c.set_visible(true);
         }
     }
 
