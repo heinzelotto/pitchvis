@@ -296,6 +296,13 @@ impl AudioStream {
         let mut agc = dagc::MonoAgc::new(0.07, 0.0001).expect("mono-agc creation failed");
 
         let data_callback = move |data: &[f32]| {
+            if let Some(x) = data.iter().find(|x| !x.is_finite()) {
+                log::warn!("bad audio sample encountered: {x}");
+                return;
+            }
+            let sample_abs_sum = data.iter().map(|x| x.abs()).sum::<f32>();
+            agc.freeze_gain(sample_abs_sum < 1e-4);
+
             let mut rb = ring_buffer_input_thread_clone
                 .lock()
                 .expect("locking failed");
@@ -374,18 +381,22 @@ impl AudioStream {
         let stream = device.build_input_stream(
             &stream_config,
             move |data: &[f32], _info: &cpal::InputCallbackInfo| {
+                if let Some(x) = data.iter().find(|x| !x.is_finite()) {
+                    log::warn!("bad audio sample encountered: {x}");
+                    return;
+                }
+                let sample_abs_sum = data.iter().map(|x| x.abs()).sum::<f32>();
+                agc.freeze_gain(sample_abs_sum < 1e-4);
+
                 let mut rb = ring_buffer_input_thread_clone
                     .lock()
                     .expect("locking failed");
                 rb.buf.drain(..data.len());
                 rb.buf.extend_from_slice(&data);
                 let begin = rb.buf.len() - data.len();
-                let sample_abs_sum = rb.buf[begin..].iter().map(|x| x.abs()).sum::<f32>();
-                if sample_abs_sum > std::f32::EPSILON {
-                    agc.process(&mut rb.buf[begin..]);
-                    rb.gain = agc.gain();
-                }
-                trace!("gain: {}", agc.gain());
+                agc.process(&mut rb.buf[begin..]);
+                rb.gain = agc.gain();
+                trace!("gain: {}, sum: {}", agc.gain(), sample_abs_sum);
             },
             move |err| panic!("{}", err),
             None,

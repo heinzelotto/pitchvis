@@ -419,8 +419,8 @@ impl Display {
                 (*i as f32 + (self.buckets_per_octave - 3 * (self.buckets_per_octave / 12)) as f32)
                     % self.buckets_per_octave as f32,
             );
-            let brightness = 1.0_f32; //x / (max_size + EPSILON);
-            let brightness = ((1.0 - (1.0 - brightness).powf(4.0)) * 3.0 * 255.0).clamp(0.0, 255.0);
+            let brightness = x / (max_size + EPSILON);
+            let brightness = ((1.0 - (1.0 - brightness).powf(2.0)) * 1.5 * 255.0).clamp(0.0, 255.0);
 
             // right to left
             self.analysis_state.spectrogram_buffer
@@ -470,6 +470,13 @@ impl Display {
             * 4)
             ..((self.analysis_state.spectrogram_front_idx + 1) * width * 4)]
             .fill(255);
+
+        // clear also further ahead
+        let further_idx = (self.analysis_state.spectrogram_front_idx + SPECTROGRAM_LENGTH / 10)
+            % SPECTROGRAM_LENGTH;
+        self.analysis_state.spectrogram_buffer
+            [(further_idx * width * 4)..((further_idx + 1) * width * 4)]
+            .fill(0);
 
         let context = kiss3d::context::Context::get();
         context.bind_texture(
