@@ -1,22 +1,32 @@
 [package]
-name = "pitchvis-rs"
+name = "pitchvis"
 version = "0.1.0"
 edition = "2021"
-default-run = "pitchvis-rs"
+# default-run = "pitchvis"
 
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = ['-Oz']
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
-[profile.release]
-strip = true
-lto = true
+# Enable a small amount of optimization in debug mode
+[profile.dev]
+opt-level = 1
 
-[target.'cfg(target_arch = "wasm32")']
+# Enable high optimizations for dependencies (incl. Bevy), but not for our code:
+[profile.dev.package."*"]
+opt-level = 3
+
+[target.'cfg(target_arch = "wasm32")'.profile.release]
+strip = true
+lto = "thin"
+opt-level = 'z'
+
 [lib]
 name = "pitchvis"
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
 
 [[bin]]
-name = "pitchvis-rs"
+name = "pitchvis"
 path = "src/main.rs"
 
 [dependencies]
@@ -24,13 +34,14 @@ anyhow = "1.0"
 rustfft = "6.1.0"
 apodize = "1.0.0"
 num-complex = "0.4.2"
-kiss3d = { version = "0.35.0", path = "../kiss3d" }
 sprs = "0.11.0"
 find_peaks = "0.1.5"
 rubato = "0.12.0"
 itertools = "0.9"
-dagc = "0.1.0"
+dagc = {version = "0.1.0", path = "../dagc" }
 log = "0.4.17"
+bevy = "0.10"
+nalgebra = "0.32.2"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 cpal = { version = "0.15.0", features = [], path = "../cpal"  }

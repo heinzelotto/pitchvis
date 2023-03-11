@@ -18,7 +18,7 @@ fn min(sl: &[f32]) -> f32 {
 
 pub struct Cqt {
     sr: usize,
-    n_fft: usize,
+    pub n_fft: usize,
     min_freq: f32,
     buckets_per_octave: usize,
     octaves: usize,
@@ -333,11 +333,11 @@ impl Cqt {
             }
         });
 
-        trace!(
-            "log_spec min {}, max {}, shifting to 0...",
-            log_spec_min,
-            log_spec_max,
-        );
+        // trace!(
+        //     "log_spec min {}, max {}, shifting to 0...",
+        //     log_spec_min,
+        //     log_spec_max,
+        // );
 
         // cut off at 0.0, and don't let it pass top_db
         log_spec.iter_mut().for_each(|x| {

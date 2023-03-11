@@ -385,8 +385,8 @@ impl AudioStream {
                     log::warn!("bad audio sample encountered: {x}");
                     return;
                 }
-                let sample_abs_sum = data.iter().map(|x| x.abs()).sum::<f32>();
-                agc.freeze_gain(sample_abs_sum < 1e-4);
+                let sample_sq_sum = data.iter().map(|x| x.powi(2)).sum::<f32>();
+                agc.freeze_gain(sample_sq_sum < 1e-6);
 
                 let mut rb = ring_buffer_input_thread_clone
                     .lock()
@@ -396,7 +396,11 @@ impl AudioStream {
                 let begin = rb.buf.len() - data.len();
                 agc.process(&mut rb.buf[begin..]);
                 rb.gain = agc.gain();
-                trace!("gain: {}, sum: {}", agc.gain(), sample_abs_sum);
+                trace!(
+                    "gain: {}, avg_rms: {}",
+                    agc.gain(),
+                    sample_sq_sum / data.len() as f32
+                );
             },
             move |err| panic!("{}", err),
             None,

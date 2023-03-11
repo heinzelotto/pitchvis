@@ -32,7 +32,7 @@
 				overflow: hidden;
 			}
 
-			.button {
+			.startbutton {
 				padding: 15px;
 				margin:20px 0;
 				border: none;
@@ -44,19 +44,32 @@
 				font-family: inherit;
 				font-size: large;
 			}
+
+			.fullscreenbutton {
+				padding: 5px;
+				margin:5px 0;
+				border: none;
+				cursor:pointer;
+				border-radius: 5px;
+				color:white;
+				background-color: #103010;
+				font-family: inherit;
+				font-size: medium;
+			}
+
+			a {
+				font-size: large;
+			}
 		</style>
 	</head>
 	<body>
 		<div id="instructions">
 			<h2>Browser policy only permits microphone capture after user trigger, e. g. button click:</h2><br>
-			<button class="button" onclick="youClicked()">😬 clickme 😁</button><br />
-			P: toggle pause (currently broken)<br/>
-			I: toggle background image<br/>
+			<button class="startbutton" onclick="youClicked()">😬 clickme 😁</button><br />
+			<a href="/pitchvis-old">Old Version (other 3d engine, but more features)</a><br />
 			Image © NASA
-			<a href="/pitchvis-old">Click here for old version (non-continuous peaks)</a>
 		</div>
-		<button onclick="goFullscreen('canvas')">Enter Fullscreen</button>
-		<canvas oncontextmenu="return false;" id="canvas"></canvas>
+		<button class="fullscreenbutton" onclick="goFullscreen('canvas')">Enter Fullscreen</button>
 	</body>
-	
+
 </html>
