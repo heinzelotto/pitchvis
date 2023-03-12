@@ -5,10 +5,19 @@ use bevy::prelude::*;
 #[derive(Resource)]
 pub struct CqtResource(pub cqt::Cqt);
 
-#[derive(Resource, Default)]
+#[derive(Resource)]
 pub struct CqtResultResource {
     pub x_cqt: Vec<f32>,
     pub gain: f32,
+}
+
+impl CqtResultResource {
+    pub fn new() -> Self {
+        Self {
+            x_cqt: vec![0.0; crate::OCTAVES * crate::BUCKETS_PER_OCTAVE],
+            gain: 1.0,
+        }
+    }
 }
 
 pub fn update_cqt(

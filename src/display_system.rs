@@ -1,14 +1,23 @@
 use crate::util::*;
-use bevy::prelude::*;
-use find_peaks::PeakFinder;
+use bevy::{
+    pbr::{MaterialPipeline, MaterialPipelineKey},
+    prelude::*,
+    reflect::TypeUuid,
+    render::{
+        mesh::{MeshVertexBufferLayout, PrimitiveTopology},
+        render_resource::{
+            AsBindGroup, PolygonMode, RenderPipelineDescriptor, ShaderRef,
+            SpecializedMeshPipelineError,
+        },
+    }, core_pipeline::clear_color::ClearColorConfig,
+};
+
 use itertools::Itertools;
 use log::debug;
-use nalgebra::{Point3, Rotation3, Vector3};
-use sprs::PermutationCheck;
-use std::collections::{HashMap, HashSet};
+use nalgebra::{Rotation3, Vector3};
+
+use std::collections::HashMap;
 use std::f32::consts::PI;
-use std::f32::EPSILON;
-use std::rc::Rc;
 
 const HIGHEST_BASSNOTE: usize = 12 * 2 + 4;
 
@@ -31,29 +40,44 @@ const COLORS: [(f32, f32, f32); 12] = [
     (0.85, 0.36, 0.36), // C
     (0.01, 0.52, 0.71), // C#
     (0.97, 0.76, 0.05), // D
-    (0.37, 0.28, 0.50), // Eb
+    //(0.37, 0.28, 0.50), // Eb
+    (0.45, 0.34, 0.63), // Eb
     (0.47, 0.77, 0.22), // E
     (0.78, 0.32, 0.52), // Fh
     (0.00, 0.64, 0.56), // F#
     (0.95, 0.54, 0.23), // G
-    (0.26, 0.31, 0.53), // Ab
+    //(0.26, 0.31, 0.53), // Ab
+    (0.30, 0.37, 0.64), // Ab
     (1.00, 0.96, 0.03), // A
     (0.57, 0.30, 0.55), // Bb
     (0.12, 0.71, 0.34), // H
 ];
 
 fn calculate_color(buckets_per_octave: usize, bucket: f32) -> (f32, f32, f32) {
+    const GRAY_LEVEL: f32 = 0.6; // could be the mean lightness of the two neighbors. for now this is good enough.
+    const EASING_POW: f32 = 1.3;
+
     let pitch_continuous = 12.0 * bucket / (buckets_per_octave as f32);
     let base_color = COLORS[(pitch_continuous.round() as usize) % 12];
     let inaccuracy_cents = (pitch_continuous - pitch_continuous.round()).abs();
 
-    let saturation = 1.0 - (2.0 * inaccuracy_cents).powf(1.5);
-    const GRAY_LEVEL: f32 = 0.5;
+    let mut base_lcha = Color::rgb(base_color.0, base_color.1, base_color.2).as_lcha();
+    if let Color::Lcha {
+        ref mut lightness,
+        ref mut chroma,
+        hue: _,
+        alpha: _,
+    } = base_lcha
+    {
+        let saturation = 1.0 - (2.0 * inaccuracy_cents).powf(EASING_POW);
+        *chroma *= saturation;
+        *lightness = saturation * *lightness + (1.0 - saturation) * GRAY_LEVEL;
+    }
 
     (
-        saturation * base_color.0 + (1.0 - saturation) * GRAY_LEVEL,
-        saturation * base_color.1 + (1.0 - saturation) * GRAY_LEVEL,
-        saturation * base_color.2 + (1.0 - saturation) * GRAY_LEVEL,
+        base_lcha.as_rgba().r(),
+        base_lcha.as_rgba().g(),
+        base_lcha.as_rgba().b(),
     )
 }
 
@@ -67,7 +91,7 @@ pub fn update_display(
     mut materials: ResMut<Assets<StandardMaterial>>,
     analysis_state: Res<crate::analysis_system::AnalysisStateResource>,
 ) {
-    let scale_factor = 1.0 / 18.0;
+    let scale_factor = 1.0 / 35.0;
 
     for (pitch_ball, mut visibility, mut transform, _) in &mut balls {
         if *visibility == Visibility::Visible {
@@ -77,7 +101,7 @@ pub fn update_display(
                 0.90 - 0.15 * (idx as f32 / (crate::OCTAVES * crate::BUCKETS_PER_OCTAVE) as f32);
             transform.scale = size * scale_factor;
 
-            if size.x * scale_factor < 0.4 {
+            if size.x * scale_factor < 0.2 {
                 *visibility = Visibility::Hidden;
             }
         }
@@ -104,7 +128,7 @@ pub fn update_display(
         .map(|p| (p.0.trunc() as usize, *p))
         .collect::<HashMap<usize, (f32, f32)>>();
 
-    for (pitch_ball, mut visibility, mut transform, mut color) in &mut balls {
+    for (pitch_ball, mut visibility, mut transform, color) in &mut balls {
         let idx = pitch_ball.0;
         if peaks_rounded.contains_key(&idx) {
             let (center, size) = peaks_rounded[&idx];
@@ -128,11 +152,7 @@ pub fn update_display(
                 b * color_coefficient,
             );
 
-            transform.scale = Vec3::new(
-                size * scale_factor,
-                size * scale_factor,
-                size * scale_factor,
-            );
+            transform.scale = Vec3::splat(size * scale_factor);
 
             *visibility = Visibility::Visible;
         }
@@ -152,13 +172,78 @@ pub struct PitchBall(usize);
 #[derive(Component)]
 pub struct BassCylinder;
 
+/// A list of points that will have a line drawn between each consecutive points
+#[derive(Debug, Clone)]
+pub struct LineStrip {
+    pub points: Vec<Vec3>,
+}
+
+impl From<LineStrip> for Mesh {
+    fn from(line: LineStrip) -> Self {
+        // This tells wgpu that the positions are a list of points
+        // where a line will be drawn between each consecutive point
+        let mut mesh = Mesh::new(PrimitiveTopology::LineStrip);
+
+        mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, line.points);
+        mesh
+    }
+}
+
+/// A list of lines with a start and end position
+#[derive(Debug, Clone)]
+pub struct LineList {
+    pub lines: Vec<(Vec3, Vec3)>,
+}
+
+impl From<LineList> for Mesh {
+    fn from(line: LineList) -> Self {
+        // This tells wgpu that the positions are list of lines
+        // where every pair is a start and end point
+        let mut mesh = Mesh::new(PrimitiveTopology::LineList);
+
+        let vertices: Vec<_> = line.lines.into_iter().flat_map(|(a, b)| [a, b]).collect();
+        mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vertices);
+        mesh
+    }
+}
+
+#[derive(Default, AsBindGroup, TypeUuid, Debug, Clone)]
+#[uuid = "050ce6ac-080a-4d8c-b6b5-b5bab7560d8f"]
+pub struct LineMaterial {
+    #[uniform(0)]
+    color: Color,
+}
+
+impl Material for LineMaterial {
+    fn fragment_shader() -> ShaderRef {
+        "shaders/line_material.wgsl".into()
+    }
+
+    fn specialize(
+        _pipeline: &MaterialPipeline<Self>,
+        descriptor: &mut RenderPipelineDescriptor,
+        _layout: &MeshVertexBufferLayout,
+        _key: MaterialPipelineKey<Self>,
+    ) -> Result<(), SpecializedMeshPipelineError> {
+        // This is the important part to tell bevy to render this material as a line between vertices
+        descriptor.primitive.polygon_mode = PolygonMode::Line;
+        Ok(())
+    }
+}
+
 pub fn setup_display_to_system(
     octaves: usize,
     buckets_per_octave: usize,
-) -> impl FnMut(Commands, ResMut<Assets<Mesh>>, ResMut<Assets<StandardMaterial>>) {
+) -> impl FnMut(
+    Commands,
+    ResMut<Assets<Mesh>>,
+    ResMut<Assets<StandardMaterial>>,
+    ResMut<Assets<LineMaterial>>,
+) {
     return move |mut commands: Commands,
                  mut meshes: ResMut<Assets<Mesh>>,
-                 mut materials: ResMut<Assets<StandardMaterial>>| {
+                 mut materials: ResMut<Assets<StandardMaterial>>,
+                 mut line_materials: ResMut<Assets<LineMaterial>>| {
         let spiral_points = spiral_points(octaves, buckets_per_octave);
 
         for (idx, (x, y, z)) in spiral_points.iter().enumerate() {
@@ -225,6 +310,40 @@ pub fn setup_display_to_system(
             ));
         }
 
+        // draw rays
+        let line_list: Vec<(Vec3, Vec3)> = (0..12)
+            .map(|i| {
+                let radius = crate::OCTAVES as f32 * 2.2;
+                let (p_y, p_x) = (i as f32 / 12.0 * 2.0 * PI).sin_cos();
+
+                (
+                    Vec3::new(0.0, 0.0, 0.0),
+                    Vec3::new(radius * p_x, radius * p_y, 0.0),
+                )
+            })
+            .collect();
+
+        commands.spawn(MaterialMeshBundle {
+            mesh: meshes.add(Mesh::from(LineList { lines: line_list })),
+            material: line_materials.add(LineMaterial {
+                color: Color::rgb(0.25, 0.20, 0.20),
+            }),
+            ..default()
+        });
+
+        commands.spawn(MaterialMeshBundle {
+            mesh: meshes.add(Mesh::from(LineStrip {
+                points: spiral_points
+                    .iter()
+                    .map(|(x, y, z)| Vec3::new(*x, *y, *z))
+                    .collect::<Vec<Vec3>>(),
+            })),
+            material: line_materials.add(LineMaterial {
+                color: Color::rgb(0.25, 0.20, 0.20),
+            }),
+            ..default()
+        });
+
         // light
         commands.spawn(PointLightBundle {
             point_light: PointLight {
@@ -245,10 +364,15 @@ pub fn setup_display_to_system(
             ..default()
         });
 
-
         // camera
         commands.spawn(Camera3dBundle {
             transform: Transform::from_xyz(1.0, 0.0, 19.0).looking_at(Vec3::ZERO, Vec3::Y),
+            // clear the whole viewport with the given color
+            camera_3d: Camera3d {
+                // clear the whole viewport with the given color
+                //clear_color: ClearColorConfig::Custom(Color::rgb(0.23, 0.23, 0.25)),
+                ..Default::default()
+            },
             ..default()
         });
     };
@@ -645,8 +769,7 @@ fn spiral_points(octaves: usize, buckets_per_octave: usize) -> Vec<(f32, f32, f3
 }
 
 fn bin_to_spiral(buckets_per_octave: usize, x: f32) -> (f32, f32, f32) {
-    //let radius = 1.8 * (0.5 + i as f32 / buckets_per_octave as f32);
-    let radius = 1.5 * (0.5 + (x / buckets_per_octave as f32).powf(0.8));
+    let radius = 1.5 * (0.5 + (x / buckets_per_octave as f32).powf(0.75));
     let (transl_y, transl_x) = ((x + (buckets_per_octave - 3 * (buckets_per_octave / 12)) as f32)
         / (buckets_per_octave as f32)
         * 2.0

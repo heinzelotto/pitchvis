@@ -1,6 +1,6 @@
 use anyhow::Result;
-use bevy::prelude::*;
 use bevy::diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin};
+use bevy::prelude::*;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 mod analysis;
@@ -23,7 +23,7 @@ const SPARSITY_QUANTILE: f32 = 0.999;
 const Q: f32 = 1.0;
 const GAMMA: f32 = 5.0;
 
-const FPS: u64 = 30; 
+const FPS: u64 = 30;
 
 #[wasm_bindgen]
 #[cfg(target_arch = "wasm32")]
@@ -51,6 +51,7 @@ pub async fn main_fun() -> Result<(), JsValue> {
         .add_plugins(DefaultPlugins)
         .add_plugin(LogDiagnosticsPlugin::default())
         .add_plugin(FrameTimeDiagnosticsPlugin::default())
+        .add_plugin(MaterialPlugin::<display_system::LineMaterial>::default())
         .insert_resource(cqt_system::CqtResource(cqt))
         .insert_resource(cqt_system::CqtResultResource::default())
         .insert_resource(audio_system::AudioBufferResource(
@@ -100,8 +101,9 @@ pub fn main_fun() -> Result<()> {
         .add_plugins(DefaultPlugins)
         .add_plugin(LogDiagnosticsPlugin::default())
         .add_plugin(FrameTimeDiagnosticsPlugin::default())
+        .add_plugin(MaterialPlugin::<display_system::LineMaterial>::default())
         .insert_resource(cqt_system::CqtResource(cqt))
-        .insert_resource(cqt_system::CqtResultResource::default())
+        .insert_resource(cqt_system::CqtResultResource::new())
         .insert_resource(audio_system::AudioBufferResource(
             audio_stream.ring_buffer.clone(),
         ))
@@ -111,6 +113,7 @@ pub fn main_fun() -> Result<()> {
                 analysis::SPECTROGRAM_LENGTH,
             ),
         ))
+        .add_system(bevy::window::close_on_esc)
         .add_startup_system(display_system::setup_display_to_system(
             OCTAVES,
             BUCKETS_PER_OCTAVE,
@@ -122,6 +125,5 @@ pub fn main_fun() -> Result<()> {
         ))
         .add_system(display_system::update_display)
         .run();
-
     Ok(())
 }

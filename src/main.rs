@@ -1,5 +1,5 @@
 use anyhow::Result;
 
 pub fn main() -> Result<()> {
-pitchvis::main_fun()
+    pitchvis::main_fun()
 }

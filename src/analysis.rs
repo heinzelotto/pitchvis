@@ -1,12 +1,7 @@
 use crate::util::*;
 use find_peaks::PeakFinder;
-use itertools::Itertools;
-use log::debug;
-use nalgebra::{Point3, Rotation3, Vector3};
+
 use std::collections::HashSet;
-use std::f32::consts::PI;
-use std::f32::EPSILON;
-use std::rc::Rc;
 
 pub const SPECTROGRAM_LENGTH: usize = 400;
 const PEAK_MIN_PROMINENCE: f32 = 13.0;
@@ -14,7 +9,7 @@ const PEAK_MIN_HEIGHT: f32 = 6.0;
 const _BASSLINE_PEAK_MIN_PROMINENCE: f32 = 12.0;
 const _BASSLINE_PEAK_MIN_HEIGHT: f32 = 4.0;
 const HIGHEST_BASSNOTE: usize = 12 * 2 + 4;
-const SMOOTH_LENGTH: usize = 3;
+const SMOOTH_LENGTH: usize = 6;
 
 pub struct AnalysisState {
     pub history: Vec<Vec<f32>>,

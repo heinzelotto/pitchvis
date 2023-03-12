@@ -1,4 +1,4 @@
-use log::{debug, trace};
+use log::debug;
 use num_complex::{Complex32, ComplexFloat};
 use rustfft::num_traits::Zero;
 use rustfft::FftPlanner;
