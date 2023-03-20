@@ -25,7 +25,7 @@ pub struct Cqt {
     _sparsity_quantile: f32,
     _quality: f32,
     _gamma: f32,
-    cqt_kernel: Vec<sprs::CsMat<Complex32>>,
+    cqt_kernel: (Vec<sprs::CsMat<Complex32>>, Vec<(usize, usize)>),
     fft: std::sync::Arc<dyn rustfft::Fft<f32>>,
     _t_diff: f32,
 }
@@ -100,7 +100,7 @@ impl Cqt {
         sparsity_quantile: f32,
         quality: f32,
         gamma: f32,
-    ) -> Vec<sprs::CsMat<Complex32>> {
+    ) -> (Vec<sprs::CsMat<Complex32>>, Vec<(usize, usize)>) {
         //let lowest_freq_of_target_octave = min_freq * 2.0_f32.powf((octaves - 1) as f32);
         //let freqs = (0..buckets_per_octave)
         //    .map(|k| lowest_freq_of_target_octave * 2.0_f32.powf(k as f32 / buckets_per_octave as f32))
@@ -129,14 +129,33 @@ impl Cqt {
             })
             .collect::<Vec<f32>>();
 
+        dbg!(&window_lengths);
+
+        let max_window_length = window_lengths.first().unwrap();
+        let window_center = n_fft as f32 - max_window_length / 2.0;
+        let windows = (0..octaves)
+            .map(|o| {
+                let width = n_fft >> o;
+                if (window_center + (width as f32) / 2.0) < (n_fft as f32) {
+                    (
+                        (window_center - (width as f32) / 2.0) as usize,
+                        (window_center + (width as f32) / 2.0) as usize,
+                    )
+                } else {
+                    (n_fft - width, n_fft)
+                }
+            })
+            .collect::<Vec<(usize, usize)>>();
+        windows
+            .iter()
+            .for_each(|w| debug!("window from {} to {} (len {})", w.0, w.1, w.1 - w.0));
+        let reduced_max_window_length =
+            (window_lengths.first().unwrap() / ((1 << (octaves - 1)) as f32)).ceil() as usize;
+
         let reduced_n_fft = n_fft >> (octaves - 1);
+
         let mut planner = FftPlanner::new();
         let fft = planner.plan_fft_forward(reduced_n_fft);
-        //let reduced_n_ffts = (0..octaves).map(|i| n_fft >> i).collect::<Vec<usize>>();
-        //let ffts = reduced_n_ffts
-        //    .iter()
-        //    .map(|i| planner.plan_fft_forward(*i))
-        //    .collect::<Vec<std::sync::Arc<dyn rustfft::Fft<f32>>>>();
         let mut kernel_octaves = (0..octaves)
             .map(|_| sprs::TriMat::new((buckets_per_octave as usize, reduced_n_fft)))
             .collect::<Vec<sprs::TriMat<Complex32>>>();
@@ -146,15 +165,19 @@ impl Cqt {
             let scaled_f_k = f_k * scaling;
             let scaled_n_k = n_k / scaling;
 
+            let window_center_scaled = (window_center - windows[cur_octave].0 as f32) / scaling;
+            let window_center_scaled = window_center_scaled as usize;
+
             let scaled_n_k_rounded = scaled_n_k.round() as usize;
 
             assert!(scaled_n_k_rounded < reduced_n_fft);
             let window = apodize::hanning_iter(scaled_n_k_rounded).collect::<Vec<f64>>();
             let _window_sum = window.iter().sum::<f64>();
+            //dbg!(reduced_n_fft, reduced_max_window_length, scaled_n_k_rounded);
 
             let mut v = vec![Complex32::zero(); reduced_n_fft];
             for i in 0..scaled_n_k_rounded {
-                v[reduced_n_fft /*/ 2*/ - scaled_n_k_rounded /*/ 2*/ + i] = 1.0 / scaled_n_k
+                v[window_center_scaled - scaled_n_k_rounded / 2 + i] = 1.0 / scaled_n_k
                     * (window[i] as f32)
                     * (num_complex::Complex32::i()
                         * 2.0
@@ -167,7 +190,7 @@ impl Cqt {
 
             // normalize windowed wavelet in time space
             let norm_1: f32 = v.iter().map(|z| z.abs()).sum();
-            dbg!(norm_1);
+            //dbg!(norm_1);
             v.iter_mut().for_each(|z| z.div_assign(norm_1));
 
             // transform wavelets into frequency space
@@ -237,10 +260,12 @@ impl Cqt {
         //     dbg!(&x_fft);
         // panic!();
 
-        kernel_octaves
+        let kernel = kernel_octaves
             .iter()
             .map(|m| m.to_csr())
-            .collect::<Vec<sprs::CsMat<num_complex::Complex<f32>>>>()
+            .collect::<Vec<sprs::CsMat<num_complex::Complex<f32>>>>();
+
+        (kernel, windows)
     }
 
     fn resample(&self, v: &[f32], factor: usize) -> Vec<f32> {
@@ -282,7 +307,11 @@ impl Cqt {
             let cur_resampling_factor = 1 << (self.octaves - 1 - cur_octave);
             let cur_fft_length = self.n_fft >> cur_octave;
 
-            let x_selection = &x[(self.n_fft - cur_fft_length)..];
+            let window_begin = self.cqt_kernel.1[cur_octave].0;
+            let window_end = self.cqt_kernel.1[cur_octave].1;
+            assert_eq!(window_end - window_begin, cur_fft_length);
+
+            let x_selection = &x[window_begin..window_end];
             //dbg!(cur_resampling_factor);
             //dbg!(x_selection.len());
 
@@ -298,7 +327,7 @@ impl Cqt {
             self.fft.process(&mut x_fft);
             //dbg!(self.cqt_kernel[cur_octave].shape(), x_fft.len());
             sprs::prod::mul_acc_mat_vec_csr(
-                self.cqt_kernel[cur_octave].view(),
+                self.cqt_kernel.0[cur_octave].view(),
                 x_fft,
                 &mut x_cqt[(cur_octave * self.buckets_per_octave)
                     ..((cur_octave + 1) * self.buckets_per_octave)],

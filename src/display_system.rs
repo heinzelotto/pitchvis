@@ -1,5 +1,6 @@
 use crate::util::*;
 use bevy::{
+    core_pipeline::clear_color::ClearColorConfig,
     pbr::{MaterialPipeline, MaterialPipelineKey},
     prelude::*,
     reflect::TypeUuid,
@@ -9,7 +10,7 @@ use bevy::{
             AsBindGroup, PolygonMode, RenderPipelineDescriptor, ShaderRef,
             SpecializedMeshPipelineError,
         },
-    }, core_pipeline::clear_color::ClearColorConfig,
+    },
 };
 
 use itertools::Itertools;
