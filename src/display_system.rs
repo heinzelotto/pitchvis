@@ -89,8 +89,11 @@ pub fn update_display(
         &mut Transform,
         &mut Handle<StandardMaterial>,
     )>,
+    mut spectrum_linestrip: Query<(&Spectrum, &mut Handle<Mesh>)>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut meshes: ResMut<Assets<Mesh>>,
     analysis_state: Res<crate::analysis_system::AnalysisStateResource>,
+    cqt_result: Res<crate::cqt_system::CqtResultResource>,
 ) {
     let scale_factor = 1.0 / 35.0;
 
@@ -159,6 +162,11 @@ pub fn update_display(
         }
     }
     // TODO: ?faster lookup through indexes
+
+    for (_, line_strip) in &mut spectrum_linestrip {
+        let mut mesh = meshes.get_mut(&line_strip).expect("spectrum line strip mesh");
+        mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, cqt_result.x_cqt.iter().enumerate().map(|(i, amp)| Vec3::new(i as f32 * 0.017, *amp as f32 / 10.0, 0.0)).collect::<Vec<Vec3>>());
+    }
 }
 
 #[derive(PartialEq)]
@@ -172,6 +180,9 @@ pub struct PitchBall(usize);
 
 #[derive(Component)]
 pub struct BassCylinder;
+
+#[derive(Component)]
+pub struct Spectrum;
 
 /// A list of points that will have a line drawn between each consecutive points
 #[derive(Debug, Clone)]
@@ -344,6 +355,22 @@ pub fn setup_display_to_system(
             }),
             ..default()
         });
+
+        // spectrum
+        commands.spawn((
+            Spectrum,
+            MaterialMeshBundle {
+            mesh: meshes.add(Mesh::from(LineStrip {
+                points: (0..(octaves*buckets_per_octave))
+                    .map(|i| Vec3::new(i as f32, 0.0, 0.0))
+                    .collect::<Vec<Vec3>>(),
+            })),
+            material: line_materials.add(LineMaterial {
+                color: Color::rgb(0.25, 0.85, 0.20),
+            }),
+            transform: Transform::from_xyz(-14.0, 3.0, 0.0),
+            ..default()
+        }));
 
         // light
         commands.spawn(PointLightBundle {
