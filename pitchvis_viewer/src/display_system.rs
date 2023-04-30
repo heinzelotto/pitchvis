@@ -1,5 +1,4 @@
 use bevy::{
-    core_pipeline::clear_color::ClearColorConfig,
     pbr::{MaterialPipeline, MaterialPipelineKey},
     prelude::*,
     reflect::TypeUuid,
@@ -164,7 +163,7 @@ pub fn update_display(
     // TODO: ?faster lookup through indexes
 
     for (_, line_strip) in &mut spectrum_linestrip {
-        let mut mesh = meshes
+        let mesh = meshes
             .get_mut(&line_strip)
             .expect("spectrum line strip mesh");
         mesh.insert_attribute(

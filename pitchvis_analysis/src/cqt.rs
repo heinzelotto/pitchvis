@@ -5,22 +5,30 @@ use rustfft::FftPlanner;
 use std::f32::consts::PI;
 use std::ops::DivAssign;
 
+/// A function to implement max() for floats, because floats don't implement Ord
+/// The assumption is that NaNs are not present in the slice.
 fn max(sl: &[f32]) -> f32 {
-    // we have no NaNs
     sl.iter()
         .fold(f32::MIN, |cur, x| if *x > cur { *x } else { cur })
 }
+
+/// A function to implement min() for floats, because floats don't implement Ord.
+/// The assumption is that NaNs are not present in the slice.
 fn min(sl: &[f32]) -> f32 {
-    // we have no NaNs
     sl.iter()
         .fold(f32::MAX, |cur, x| if *x < cur { *x } else { cur })
 }
 
 pub struct Cqt {
+    /// The sample rate of the input audio signal
     sr: usize,
+    /// The number of samples in the longest FFT (will be decimated for higher octaves)
     pub n_fft: usize,
+    /// The minimum frequency of the lowest note analyzed in the CQT
     min_freq: f32,
+    /// The resolution of the CQT in bins per octave (multiple of 12)
     buckets_per_octave: usize,
+    /// The total range in octaves of the CQT
     octaves: usize,
     _sparsity_quantile: f32,
     _quality: f32,
@@ -28,6 +36,7 @@ pub struct Cqt {
     cqt_kernel: (Vec<sprs::CsMat<Complex32>>, Vec<(usize, usize)>),
     fft: std::sync::Arc<dyn rustfft::Fft<f32>>,
     _t_diff: f32,
+    // TODO: add a field for the delay of the CQT
 }
 
 impl Cqt {
@@ -149,8 +158,8 @@ impl Cqt {
         windows
             .iter()
             .for_each(|w| debug!("window from {} to {} (len {})", w.0, w.1, w.1 - w.0));
-        let reduced_max_window_length =
-            (window_lengths.first().unwrap() / ((1 << (octaves - 1)) as f32)).ceil() as usize;
+        // let reduced_max_window_length =
+        //    (window_lengths.first().unwrap() / ((1 << (octaves - 1)) as f32)).ceil() as usize;
 
         let reduced_n_fft = n_fft >> (octaves - 1);
 
