@@ -1,9 +1,10 @@
-use log::debug;
+use log::{debug, info};
 use num_complex::{Complex32, ComplexFloat};
 use rustfft::num_traits::Zero;
 use rustfft::FftPlanner;
 use std::f32::consts::PI;
 use std::ops::DivAssign;
+use std::time::Duration;
 
 /// A function to implement max() for floats, because floats don't implement Ord
 /// The assumption is that NaNs are not present in the slice.
@@ -17,6 +18,11 @@ fn max(sl: &[f32]) -> f32 {
 fn min(sl: &[f32]) -> f32 {
     sl.iter()
         .fold(f32::MAX, |cur, x| if *x < cur { *x } else { cur })
+}
+
+pub struct CqtKernel {
+    pub filter_bank: Vec<sprs::CsMat<Complex32>>,
+    pub windows: Vec<(usize, usize)>,
 }
 
 pub struct Cqt {
@@ -33,10 +39,11 @@ pub struct Cqt {
     _sparsity_quantile: f32,
     _quality: f32,
     _gamma: f32,
-    cqt_kernel: (Vec<sprs::CsMat<Complex32>>, Vec<(usize, usize)>),
+    cqt_kernel: CqtKernel,
+    /// The analysis delay of the CQT
+    delay: Duration,
     fft: std::sync::Arc<dyn rustfft::Fft<f32>>,
     _t_diff: f32,
-    // TODO: add a field for the delay of the CQT
 }
 
 impl Cqt {
@@ -74,7 +81,7 @@ impl Cqt {
         let mut planner = FftPlanner::new();
         let fft = planner.plan_fft_forward(reduced_n_fft as usize);
 
-        let cqt_kernel = Self::cqt_kernel(
+        let (cqt_kernel, delay) = Self::cqt_kernel(
             sr,
             n_fft,
             min_freq,
@@ -84,6 +91,8 @@ impl Cqt {
             quality,
             gamma,
         );
+
+        println!("CQT Analysis delay: {} ms.", delay.as_millis());
 
         Self {
             sr,
@@ -95,6 +104,7 @@ impl Cqt {
             _quality: quality,
             _gamma: gamma,
             cqt_kernel,
+            delay,
             fft,
             _t_diff: 0.0,
         }
@@ -109,13 +119,7 @@ impl Cqt {
         sparsity_quantile: f32,
         quality: f32,
         gamma: f32,
-    ) -> (Vec<sprs::CsMat<Complex32>>, Vec<(usize, usize)>) {
-        //let lowest_freq_of_target_octave = min_freq * 2.0_f32.powf((octaves - 1) as f32);
-        //let freqs = (0..buckets_per_octave)
-        //    .map(|k| lowest_freq_of_target_octave * 2.0_f32.powf(k as f32 / buckets_per_octave as f32))
-        //    .collect::<Vec<f32>>();
-        //dbg!(&freqs);
-
+    ) -> (CqtKernel, Duration) {
         let freqs = (0..(buckets_per_octave * octaves))
             .map(|k| min_freq * 2.0_f32.powf(k as f32 / buckets_per_octave as f32))
             .collect::<Vec<f32>>();
@@ -274,7 +278,9 @@ impl Cqt {
             .map(|m| m.to_csr())
             .collect::<Vec<sprs::CsMat<num_complex::Complex<f32>>>>();
 
-        (kernel, windows)
+        let delay = Duration::from_secs_f32((n_fft as f32 - window_center as f32) / sr as f32);
+
+        (CqtKernel { filter_bank: kernel, windows}, delay)
     }
 
     fn resample(&self, v: &[f32], factor: usize) -> Vec<f32> {
@@ -316,8 +322,8 @@ impl Cqt {
             let cur_resampling_factor = 1 << (self.octaves - 1 - cur_octave);
             let cur_fft_length = self.n_fft >> cur_octave;
 
-            let window_begin = self.cqt_kernel.1[cur_octave].0;
-            let window_end = self.cqt_kernel.1[cur_octave].1;
+            let window_begin = self.cqt_kernel.windows[cur_octave].0;
+            let window_end = self.cqt_kernel.windows[cur_octave].1;
             assert_eq!(window_end - window_begin, cur_fft_length);
 
             let x_selection = &x[window_begin..window_end];
@@ -336,7 +342,7 @@ impl Cqt {
             self.fft.process(&mut x_fft);
             //dbg!(self.cqt_kernel[cur_octave].shape(), x_fft.len());
             sprs::prod::mul_acc_mat_vec_csr(
-                self.cqt_kernel.0[cur_octave].view(),
+                self.cqt_kernel.filter_bank[cur_octave].view(),
                 x_fft,
                 &mut x_cqt[(cur_octave * self.buckets_per_octave)
                     ..((cur_octave + 1) * self.buckets_per_octave)],
