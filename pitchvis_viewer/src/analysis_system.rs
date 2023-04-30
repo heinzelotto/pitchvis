@@ -1,6 +1,6 @@
-use crate::analysis::AnalysisState;
 use crate::cqt_system::CqtResultResource;
 use bevy::prelude::*;
+use pitchvis_analysis::analysis::AnalysisState;
 
 #[derive(Resource)]
 pub struct AnalysisStateResource(pub AnalysisState);

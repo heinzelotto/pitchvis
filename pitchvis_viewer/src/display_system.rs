@@ -1,4 +1,3 @@
-use crate::util::*;
 use bevy::{
     core_pipeline::clear_color::ClearColorConfig,
     pbr::{MaterialPipeline, MaterialPipelineKey},
@@ -12,6 +11,7 @@ use bevy::{
         },
     },
 };
+use pitchvis_analysis::util::*;
 
 use itertools::Itertools;
 use log::debug;
@@ -164,8 +164,18 @@ pub fn update_display(
     // TODO: ?faster lookup through indexes
 
     for (_, line_strip) in &mut spectrum_linestrip {
-        let mut mesh = meshes.get_mut(&line_strip).expect("spectrum line strip mesh");
-        mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, cqt_result.x_cqt.iter().enumerate().map(|(i, amp)| Vec3::new(i as f32 * 0.017, *amp as f32 / 10.0, 0.0)).collect::<Vec<Vec3>>());
+        let mut mesh = meshes
+            .get_mut(&line_strip)
+            .expect("spectrum line strip mesh");
+        mesh.insert_attribute(
+            Mesh::ATTRIBUTE_POSITION,
+            cqt_result
+                .x_cqt
+                .iter()
+                .enumerate()
+                .map(|(i, amp)| Vec3::new(i as f32 * 0.017, *amp as f32 / 10.0, 0.0))
+                .collect::<Vec<Vec3>>(),
+        );
     }
 }
 
@@ -360,17 +370,18 @@ pub fn setup_display_to_system(
         commands.spawn((
             Spectrum,
             MaterialMeshBundle {
-            mesh: meshes.add(Mesh::from(LineStrip {
-                points: (0..(octaves*buckets_per_octave))
-                    .map(|i| Vec3::new(i as f32, 0.0, 0.0))
-                    .collect::<Vec<Vec3>>(),
-            })),
-            material: line_materials.add(LineMaterial {
-                color: Color::rgb(0.25, 0.85, 0.20),
-            }),
-            transform: Transform::from_xyz(-14.0, 3.0, 0.0),
-            ..default()
-        }));
+                mesh: meshes.add(Mesh::from(LineStrip {
+                    points: (0..(octaves * buckets_per_octave))
+                        .map(|i| Vec3::new(i as f32, 0.0, 0.0))
+                        .collect::<Vec<Vec3>>(),
+                })),
+                material: line_materials.add(LineMaterial {
+                    color: Color::rgb(0.25, 0.85, 0.20),
+                }),
+                transform: Transform::from_xyz(-14.0, 3.0, 0.0),
+                ..default()
+            },
+        ));
 
         // light
         commands.spawn(PointLightBundle {

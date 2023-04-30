@@ -1,6 +1,6 @@
 use crate::audio_system::AudioBufferResource;
-use crate::cqt;
 use bevy::prelude::*;
+use pitchvis_analysis::cqt;
 
 #[derive(Resource)]
 pub struct CqtResource(pub cqt::Cqt);

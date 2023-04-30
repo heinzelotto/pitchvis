@@ -1,0 +1,280 @@
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>AGC Example</title>
+  </head>
+  <body>
+    <h1>AGC (Automatic Gain Control) Example</h1>
+
+    An AGC example that applies the audio processing to the mic input and outputs the result to the speaker. <br />
+    In this example, we update the gain value only when voice is detected in an input audio frame
+    to prevent amplifying background noises.
+    To detect voice, <a href="https://github.com/shiguredo/rnnoise-wasm">rnnoise-wasm</a> library is used.
+
+    <br /><br />
+    NOTE: This example only supports Chromium-based browsers such as Chrome and Edge.
+
+    <h3>References</h3>
+
+    Paper: <a href="https://hal.univ-lorraine.fr/hal-01397371/document">Design and implementation of a new digital automatic gain control</a><br />
+    Rust Implementation: <a href="https://github.com/sile/dagc">https://github.com/sile/dagc</a><br />
+
+    <h3>Output Audio AGC Type</h3>
+
+    <select id="agcType" size="3" onchange="changeOutputAudio()">
+      <option value="NONE">None (original audio)</option>
+      <option value="BROWSER_AGC">Browser's AGC</option>
+      <option value="THIS_AGC" selected>This AGC</option>
+    </select><br />
+
+    <h3>This AGC Settings</h3>
+    Desirable Output RMS (volume level):
+    <select id="desirableOutputRms" size="1" onchange="initAgc()">
+      <option value="0.1">0.1</option>
+      <option value="0.01">0.01</option>
+      <option value="0.001" selected>0.001</option>
+      <option value="0.0001">0.0001</option>
+      <option value="0.00001">0.00001</option>
+    </select><br />
+
+    Distortion Factor:
+    <select id="distortionFactor" size="1" onchange="initAgc()">
+      <option value="0.001">0.001</option>
+      <option value="0.0001" selected>0.0001</option>
+      <option value="0.00001">0.00001</option>
+    </select><br />
+
+    VAD Threshold: <input id="vadThreshold" type="range" min="0" max="1" value="0.95" step="0.01"
+                          oninput="document.getElementById('vadThresholdValue').innerText = document.getElementById('vadThreshold').value">
+                 <span id="vadThresholdValue">0.95</span><br />
+
+    <h3>Output Audio RMS (per 10ms frame)</h3>
+
+    <div>
+      <canvas id="rmsGraph"></canvas>
+    </div>
+
+    <audio id="audio" autoplay playsinline></audio>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.3.2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/luxon@1.27.0"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.0.0"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-streaming@2.0.0"></script>
+
+    <script>
+      const config = {
+          type: 'line',
+          data: {
+              datasets: [
+                  {
+                      label: 'Original',
+                      data: [],
+                      borderColor: 'red'
+                  },
+                  {
+                      label: 'Browser AGC',
+                      data: [],
+                      borderColor: 'blue'
+                  },
+                  {
+                      label: 'This AGC',
+                      data: [],
+                      borderColor: 'green'
+                  },
+                  {
+                      label: 'Desirable (plot dots only when voice is detected)',
+                      data: [],
+                      borderColor: 'orange'
+                  },
+              ]
+          },
+          options: {
+              plugins: {
+                  streaming: {
+                      frameRate: 1
+                  }
+              },
+              scales: {
+                  x: {type: 'realtime'},
+                  y: {type: 'logarithmic'},
+              }
+          }
+      };
+      const rmsGraph = new Chart(
+          document.getElementById('rmsGraph'),
+          config
+      );
+    </script>
+
+    <script type="module">
+      import {Rnnoise} from "https://cdn.jsdelivr.net/npm/@shiguredo/rnnoise-wasm@latest/dist/rnnoise.mjs";
+      import init, {MonoAgc} from "./dagc-wasm/pkg/dagc_wasm.js";
+
+      let agc;
+      function initAgc() {
+          agc = new MonoAgc(
+              document.getElementById('desirableOutputRms').value,
+              document.getElementById('distortionFactor').value
+          );
+      }
+      window.initAgc = initAgc;
+      (async () => { await init(); initAgc(); })();
+
+      function calcRMS(samples) {
+          let acc = 0;
+          for (const value of samples.values()) {
+              acc += value * value;
+          }
+          return acc / samples.length;
+      }
+
+      function playOriginalAudio() {
+          const constraints = {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: false,
+          };
+          return navigator.mediaDevices.getUserMedia({audio: constraints}).then((stream) => {
+              const track = stream.getAudioTracks()[0];
+              const generator = new MediaStreamTrackGenerator({ kind: "audio" });
+              const processor = new MediaStreamTrackProcessor({ track });
+              let buffer = new Float32Array(480);
+              processor.readable
+                  .pipeThrough(
+                      new TransformStream({
+                          transform: (data, controller) => {
+                              data.copyTo(buffer, { planeIndex: 0 });
+                              const rms = calcRMS(buffer);
+                              rmsGraph.data.datasets[0].data.push({x: Date.now(), y: rms});
+                              controller.enqueue(data);
+                          },
+                      }),
+                  )
+                  .pipeTo(generator.writable);
+              return new MediaStream([generator]);
+          });
+      }
+
+      function playBrowserAgcAudio() {
+          const constraints = {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true,
+          };
+          return navigator.mediaDevices.getUserMedia({audio: constraints}).then((stream) => {
+              const track = stream.getAudioTracks()[0];
+              const generator = new MediaStreamTrackGenerator({ kind: "audio" });
+              const processor = new MediaStreamTrackProcessor({ track });
+              let buffer = new Float32Array(480);
+              processor.readable
+                  .pipeThrough(
+                      new TransformStream({
+                          transform: (data, controller) => {
+                              data.copyTo(buffer, { planeIndex: 0 });
+                              const rms = calcRMS(buffer);
+                              rmsGraph.data.datasets[1].data.push({x: Date.now(), y: rms});
+                              controller.enqueue(data);
+                          },
+                      }),
+                  )
+                  .pipeTo(generator.writable);
+              return new MediaStream([generator]);
+          });
+      }
+
+      function playThisAgcAudio() {
+          const constraints = {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: false,
+          };
+          return navigator.mediaDevices.getUserMedia({audio: constraints}).then(async (stream) => {
+              const track = stream.getAudioTracks()[0];
+
+              let rnnoise = await Rnnoise.load();
+              const denoiseState = rnnoise.createDenoiseState();
+
+              let agcBuffer = new Float32Array(480);
+              let vadBuffer = new Float32Array(480);
+              const generator = new MediaStreamTrackGenerator({ kind: "audio" });
+              const processor = new MediaStreamTrackProcessor({ track });
+              processor.readable
+                  .pipeThrough(
+                      new TransformStream({
+                          transform: (data, controller) => {
+                              data.copyTo(agcBuffer, { planeIndex: 0 });
+                              data.copyTo(vadBuffer, { planeIndex: 0 });
+
+                              // Voice activity detection.
+                              for (const [i, value] of vadBuffer.entries()) {
+                                  vadBuffer[i] = value * 0x7fff;
+                              }
+                              const vad = denoiseState.processFrame(vadBuffer);
+                              for (const [i, value] of vadBuffer.entries()) {
+                                  vadBuffer[i] = value / 0x7fff;
+                              }
+
+                              // Automatic gain control.
+                              const vadThreshold = document.getElementById('vadThreshold').value;
+                              agc.freeze_gain(vad < vadThreshold);
+                              agc.process(agcBuffer);
+
+                              const rms = calcRMS(agcBuffer);
+                              const desirableRms = document.getElementById('desirableOutputRms').value;
+                              rmsGraph.data.datasets[2].data.push({x: Date.now(), y: rms});
+                              if (vad >= vadThreshold) {
+                                  rmsGraph.data.datasets[3].data.push({x: Date.now(), y: desirableRms});
+                              }
+
+                              controller.enqueue(
+                                  new AudioData({
+                                      format: data.format,
+                                      sampleRate: data.sampleRate,
+                                      numberOfFrames: data.numberOfFrames,
+                                      numberOfChannels: data.numberOfChannels,
+                                      timestamp: data.timestamp,
+                                      data: agcBuffer
+                                  })
+                              );
+                              agcBuffer = new Float32Array(480);
+                              data.close();
+                          },
+                      }),
+                  )
+                  .pipeTo(generator.writable);
+              return new MediaStream([generator]);
+          });
+      }
+
+
+      let originalStream;
+      let browserAgcStream;
+      let thisAgcStream;
+      (async () => {
+          originalStream = await playOriginalAudio();
+          browserAgcStream = await playBrowserAgcAudio();
+          thisAgcStream = await playThisAgcAudio();
+
+          const audioElement = document.getElementById('audio');
+          audioElement.srcObject = thisAgcStream;
+      })();
+
+      function changeOutputAudio() {
+          const audioElement = document.getElementById('audio');
+
+          switch (document.getElementById('agcType').value) {
+          case 'NONE':
+              audioElement.srcObject = originalStream;
+              break;
+          case 'BROWSER_AGC':
+              audioElement.srcObject = browserAgcStream;
+              break;
+          case 'THIS_AGC':
+              audioElement.srcObject = thisAgcStream;
+              break;
+          }
+      }
+      window.changeOutputAudio = changeOutputAudio;
+    </script>
+  </body>
+</html>
