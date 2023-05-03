@@ -12,15 +12,26 @@ pub struct CqtResultResource {
 }
 
 impl CqtResultResource {
-    pub fn new() -> Self {
+    pub fn new(octaves: usize, buckets_per_octave: usize) -> Self {
         Self {
-            x_cqt: vec![0.0; crate::OCTAVES * crate::BUCKETS_PER_OCTAVE],
+            x_cqt: vec![0.0; octaves * buckets_per_octave],
             gain: 1.0,
         }
     }
 }
 
+pub fn update_cqt_to_system(
+    bufsize: usize,
+) -> impl FnMut(ResMut<CqtResource>, Res<AudioBufferResource>, ResMut<CqtResultResource>) + Copy {
+    move |cqt: ResMut<CqtResource>,
+          rb: Res<AudioBufferResource>,
+          cqt_result: ResMut<CqtResultResource>| {
+        update_cqt(bufsize, cqt, rb, cqt_result);
+    }
+}
+
 pub fn update_cqt(
+    bufsize: usize,
     mut cqt: ResMut<CqtResource>,
     rb: Res<AudioBufferResource>,
     mut cqt_result: ResMut<CqtResultResource>,
@@ -28,7 +39,7 @@ pub fn update_cqt(
     let (x, gain) = {
         let mut x = vec![0.0_f32; cqt.0.n_fft];
         let rb = rb.0.lock().unwrap();
-        x.copy_from_slice(&rb.buf[(crate::BUFSIZE - cqt.0.n_fft)..]);
+        x.copy_from_slice(&rb.buf[(bufsize - cqt.0.n_fft)..]);
         (x, rb.gain)
     };
 

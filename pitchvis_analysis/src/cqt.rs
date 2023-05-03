@@ -1,4 +1,4 @@
-use log::{debug, info};
+use log::{debug};
 use num_complex::{Complex32, ComplexFloat};
 use rustfft::num_traits::Zero;
 use rustfft::FftPlanner;
@@ -41,7 +41,7 @@ pub struct Cqt {
     _gamma: f32,
     cqt_kernel: CqtKernel,
     /// The analysis delay of the CQT
-    delay: Duration,
+    _delay: Duration,
     fft: std::sync::Arc<dyn rustfft::Fft<f32>>,
     _t_diff: f32,
 }
@@ -104,7 +104,7 @@ impl Cqt {
             _quality: quality,
             _gamma: gamma,
             cqt_kernel,
-            delay,
+            _delay: delay,
             fft,
             _t_diff: 0.0,
         }
@@ -280,7 +280,13 @@ impl Cqt {
 
         let delay = Duration::from_secs_f32((n_fft as f32 - window_center as f32) / sr as f32);
 
-        (CqtKernel { filter_bank: kernel, windows}, delay)
+        (
+            CqtKernel {
+                filter_bank: kernel,
+                windows,
+            },
+            delay,
+        )
     }
 
     fn resample(&self, v: &[f32], factor: usize) -> Vec<f32> {

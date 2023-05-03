@@ -81,7 +81,252 @@ fn calculate_color(buckets_per_octave: usize, bucket: f32) -> (f32, f32, f32) {
     )
 }
 
+pub fn setup_display_to_system(
+    octaves: usize,
+    buckets_per_octave: usize,
+) -> impl FnMut(
+    Commands,
+    ResMut<Assets<Mesh>>,
+    ResMut<Assets<StandardMaterial>>,
+    ResMut<Assets<LineMaterial>>,
+) {
+    return move |commands: Commands,
+                 meshes: ResMut<Assets<Mesh>>,
+                 materials: ResMut<Assets<StandardMaterial>>,
+                 line_materials: ResMut<Assets<LineMaterial>>| {
+        setup_display(
+            octaves,
+            buckets_per_octave,
+            commands,
+            meshes,
+            materials,
+            line_materials,
+        )
+    };
+}
+
+pub fn setup_display(
+    octaves: usize,
+    buckets_per_octave: usize,
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut line_materials: ResMut<Assets<LineMaterial>>,
+) {
+    let spiral_points = spiral_points(octaves, buckets_per_octave);
+
+    for (idx, (x, y, z)) in spiral_points.iter().enumerate() {
+        // spheres
+        let mut standard_material: StandardMaterial = Color::rgb(1.0, 0.7, 0.6).into();
+        standard_material.perceptual_roughness = 0.3;
+        standard_material.metallic = 0.1;
+        commands.spawn((
+            PitchBall(idx),
+            PbrBundle {
+                mesh: meshes.add(
+                    Mesh::try_from(shape::Icosphere {
+                        radius: 1.0,
+                        subdivisions: 4,
+                    })
+                    .expect("spheres meshes"),
+                ),
+                material: materials.add(standard_material),
+                transform: Transform::from_xyz(*x, *y, *z),
+                visibility: Visibility::Hidden,
+                ..default()
+            },
+        ));
+    }
+
+    for (prev, cur) in spiral_points
+        .iter()
+        .take(HIGHEST_BASSNOTE * buckets_per_octave / 12)
+        .tuple_windows()
+    {
+        use std::ops::Sub;
+
+        let p = nalgebra::point![prev.0, prev.1, prev.2];
+        let q = nalgebra::point![cur.0, cur.1, cur.2];
+
+        let mid = nalgebra::center(&p, &q);
+        let h = nalgebra::distance(&p, &q);
+        let y_unit: Vector3<f32> = nalgebra::vector![0.0, 1.0, 0.0];
+        let v_diff = p.sub(q);
+
+        let mut transform = Transform::from_xyz(mid.x, mid.y, mid.z);
+        if let Some(rotation) = Rotation3::rotation_between(&y_unit, &v_diff) {
+            let (angx, angy, angz) = rotation.euler_angles();
+            transform.rotate(Quat::from_euler(EulerRot::XYZ, angx, angy, angz));
+        };
+
+        //cylinders.push((c, h + 0.01));
+
+        // cylinders
+        commands.spawn((
+            BassCylinder,
+            PbrBundle {
+                mesh: meshes.add(Mesh::from(shape::Cylinder {
+                    radius: 0.05,
+                    height: h + 0.01,
+                    resolution: 5,
+                    segments: 1,
+                })),
+                material: materials.add(Color::rgb(0.8, 0.7, 0.6).into()),
+                transform,
+                visibility: Visibility::Hidden,
+                ..default()
+            },
+        ));
+    }
+
+    // draw rays
+    let line_list: Vec<(Vec3, Vec3)> = (0..12)
+        .map(|i| {
+            let radius = octaves as f32 * 2.2;
+            let (p_y, p_x) = (i as f32 / 12.0 * 2.0 * PI).sin_cos();
+
+            (
+                Vec3::new(0.0, 0.0, 0.0),
+                Vec3::new(radius * p_x, radius * p_y, 0.0),
+            )
+        })
+        .collect();
+
+    commands.spawn(MaterialMeshBundle {
+        mesh: meshes.add(Mesh::from(LineList { lines: line_list })),
+        material: line_materials.add(LineMaterial {
+            color: Color::rgb(0.25, 0.20, 0.20),
+        }),
+        ..default()
+    });
+
+    commands.spawn(MaterialMeshBundle {
+        mesh: meshes.add(Mesh::from(LineStrip {
+            points: spiral_points
+                .iter()
+                .map(|(x, y, z)| Vec3::new(*x, *y, *z))
+                .collect::<Vec<Vec3>>(),
+        })),
+        material: line_materials.add(LineMaterial {
+            color: Color::rgb(0.25, 0.20, 0.20),
+        }),
+        ..default()
+    });
+
+    // spectrum
+    commands.spawn((
+        Spectrum,
+        MaterialMeshBundle {
+            mesh: meshes.add(Mesh::from(LineStrip {
+                points: (0..(octaves * buckets_per_octave))
+                    .map(|i| Vec3::new(i as f32, 0.0, 0.0))
+                    .collect::<Vec<Vec3>>(),
+            })),
+            material: line_materials.add(LineMaterial {
+                color: Color::rgb(0.25, 0.85, 0.20),
+            }),
+            transform: Transform::from_xyz(-14.0, 3.0, 0.0),
+            ..default()
+        },
+    ));
+
+    // light
+    commands.spawn(PointLightBundle {
+        point_light: PointLight {
+            intensity: 10500.0,
+            shadows_enabled: true,
+            ..default()
+        },
+        transform: Transform::from_xyz(0.0, 0.0, 9.0),
+        ..default()
+    });
+    commands.spawn(PointLightBundle {
+        point_light: PointLight {
+            intensity: 10500.0,
+            shadows_enabled: true,
+            ..default()
+        },
+        transform: Transform::from_xyz(0.0, 0.0, -29.0),
+        ..default()
+    });
+
+    // camera
+    commands.spawn(Camera3dBundle {
+        transform: Transform::from_xyz(1.0, 0.0, 19.0).looking_at(Vec3::ZERO, Vec3::Y),
+        // clear the whole viewport with the given color
+        camera_3d: Camera3d {
+            // clear the whole viewport with the given color
+            //clear_color: ClearColorConfig::Custom(Color::rgb(0.23, 0.23, 0.25)),
+            ..Default::default()
+        },
+        ..default()
+    });
+}
+
+pub fn update_display_to_system(
+    //sr: usize,
+    //bufsize: usize,
+    //n_fft: usize,
+    //freq_a1: f32,
+    buckets_per_octave: usize,
+    octaves: usize,
+    //sparsity_quantile: f32,
+    //q: f32,
+    //gamma: f32,
+) -> impl FnMut(
+    Query<(
+        &PitchBall,
+        &mut Visibility,
+        &mut Transform,
+        &mut Handle<StandardMaterial>,
+    )>,
+    Query<(&Spectrum, &mut Handle<Mesh>)>,
+    ResMut<Assets<StandardMaterial>>,
+    ResMut<Assets<Mesh>>,
+    Res<crate::analysis_system::AnalysisStateResource>,
+    Res<crate::cqt_system::CqtResultResource>,
+) + Copy {
+    move |balls: Query<(
+        &PitchBall,
+        &mut Visibility,
+        &mut Transform,
+        &mut Handle<StandardMaterial>,
+    )>,
+          spectrum_linestrip: Query<(&Spectrum, &mut Handle<Mesh>)>,
+          materials: ResMut<Assets<StandardMaterial>>,
+          meshes: ResMut<Assets<Mesh>>,
+          analysis_state: Res<crate::analysis_system::AnalysisStateResource>,
+          cqt_result: Res<crate::cqt_system::CqtResultResource>| {
+        update_display(
+            //sr,
+            //bufsize,
+            //n_fft,
+            //freq_a1,
+            buckets_per_octave,
+            octaves,
+            //sparsity_quantile,
+            //q,
+            //gamma,
+            balls,
+            spectrum_linestrip,
+            materials,
+            meshes,
+            analysis_state,
+            cqt_result,
+        );
+    }
+}
+
 pub fn update_display(
+    //sr: usize,
+    //bufsize: usize,
+    //n_fft: usize,
+    //freq_a1: f32,
+    buckets_per_octave: usize,
+    octaves: usize,
+    //sparsity_quantile: f32,
+    //q: f32,
+    //gamma: f32,
     mut balls: Query<(
         &PitchBall,
         &mut Visibility,
@@ -100,8 +345,7 @@ pub fn update_display(
         if *visibility == Visibility::Visible {
             let idx = pitch_ball.0;
             let mut size = transform.scale / scale_factor;
-            size *=
-                0.90 - 0.15 * (idx as f32 / (crate::OCTAVES * crate::BUCKETS_PER_OCTAVE) as f32);
+            size *= 0.90 - 0.15 * (idx as f32 / (octaves * buckets_per_octave) as f32);
             transform.scale = size * scale_factor;
 
             if size.x * scale_factor < 0.2 {
@@ -137,15 +381,14 @@ pub fn update_display(
             let (center, size) = peaks_rounded[&idx];
 
             let (r, g, b) = calculate_color(
-                crate::BUCKETS_PER_OCTAVE,
-                (center
-                    + (crate::BUCKETS_PER_OCTAVE - 3 * (crate::BUCKETS_PER_OCTAVE / 12)) as f32)
-                    % crate::BUCKETS_PER_OCTAVE as f32,
+                buckets_per_octave,
+                (center + (buckets_per_octave - 3 * (buckets_per_octave / 12)) as f32)
+                    % buckets_per_octave as f32,
             );
 
             let color_coefficient = 1.0 - (1.0 - size / max_size).powf(2.0);
 
-            let (x, y, z) = bin_to_spiral(crate::BUCKETS_PER_OCTAVE, center);
+            let (x, y, z) = bin_to_spiral(buckets_per_octave, center);
             transform.translation = Vec3::new(x, y, z);
 
             let mut color_mat = materials.get_mut(&color).expect("ball color material");
@@ -250,170 +493,6 @@ impl Material for LineMaterial {
         descriptor.primitive.polygon_mode = PolygonMode::Line;
         Ok(())
     }
-}
-
-pub fn setup_display_to_system(
-    octaves: usize,
-    buckets_per_octave: usize,
-) -> impl FnMut(
-    Commands,
-    ResMut<Assets<Mesh>>,
-    ResMut<Assets<StandardMaterial>>,
-    ResMut<Assets<LineMaterial>>,
-) {
-    return move |mut commands: Commands,
-                 mut meshes: ResMut<Assets<Mesh>>,
-                 mut materials: ResMut<Assets<StandardMaterial>>,
-                 mut line_materials: ResMut<Assets<LineMaterial>>| {
-        let spiral_points = spiral_points(octaves, buckets_per_octave);
-
-        for (idx, (x, y, z)) in spiral_points.iter().enumerate() {
-            // spheres
-            let mut standard_material: StandardMaterial = Color::rgb(1.0, 0.7, 0.6).into();
-            standard_material.perceptual_roughness = 0.3;
-            standard_material.metallic = 0.1;
-            commands.spawn((
-                PitchBall(idx),
-                PbrBundle {
-                    mesh: meshes.add(
-                        Mesh::try_from(shape::Icosphere {
-                            radius: 1.0,
-                            subdivisions: 4,
-                        })
-                        .expect("spheres meshes"),
-                    ),
-                    material: materials.add(standard_material),
-                    transform: Transform::from_xyz(*x, *y, *z),
-                    visibility: Visibility::Hidden,
-                    ..default()
-                },
-            ));
-        }
-
-        for (prev, cur) in spiral_points
-            .iter()
-            .take(HIGHEST_BASSNOTE * buckets_per_octave / 12)
-            .tuple_windows()
-        {
-            use std::ops::Sub;
-
-            let p = nalgebra::point![prev.0, prev.1, prev.2];
-            let q = nalgebra::point![cur.0, cur.1, cur.2];
-
-            let mid = nalgebra::center(&p, &q);
-            let h = nalgebra::distance(&p, &q);
-            let y_unit: Vector3<f32> = nalgebra::vector![0.0, 1.0, 0.0];
-            let v_diff = p.sub(q);
-
-            let mut transform = Transform::from_xyz(mid.x, mid.y, mid.z);
-            if let Some(rotation) = Rotation3::rotation_between(&y_unit, &v_diff) {
-                let (angx, angy, angz) = rotation.euler_angles();
-                transform.rotate(Quat::from_euler(EulerRot::XYZ, angx, angy, angz));
-            };
-
-            //cylinders.push((c, h + 0.01));
-
-            // cylinders
-            commands.spawn((
-                BassCylinder,
-                PbrBundle {
-                    mesh: meshes.add(Mesh::from(shape::Cylinder {
-                        radius: 0.05,
-                        height: h + 0.01,
-                        resolution: 5,
-                        segments: 1,
-                    })),
-                    material: materials.add(Color::rgb(0.8, 0.7, 0.6).into()),
-                    transform,
-                    visibility: Visibility::Hidden,
-                    ..default()
-                },
-            ));
-        }
-
-        // draw rays
-        let line_list: Vec<(Vec3, Vec3)> = (0..12)
-            .map(|i| {
-                let radius = crate::OCTAVES as f32 * 2.2;
-                let (p_y, p_x) = (i as f32 / 12.0 * 2.0 * PI).sin_cos();
-
-                (
-                    Vec3::new(0.0, 0.0, 0.0),
-                    Vec3::new(radius * p_x, radius * p_y, 0.0),
-                )
-            })
-            .collect();
-
-        commands.spawn(MaterialMeshBundle {
-            mesh: meshes.add(Mesh::from(LineList { lines: line_list })),
-            material: line_materials.add(LineMaterial {
-                color: Color::rgb(0.25, 0.20, 0.20),
-            }),
-            ..default()
-        });
-
-        commands.spawn(MaterialMeshBundle {
-            mesh: meshes.add(Mesh::from(LineStrip {
-                points: spiral_points
-                    .iter()
-                    .map(|(x, y, z)| Vec3::new(*x, *y, *z))
-                    .collect::<Vec<Vec3>>(),
-            })),
-            material: line_materials.add(LineMaterial {
-                color: Color::rgb(0.25, 0.20, 0.20),
-            }),
-            ..default()
-        });
-
-        // spectrum
-        commands.spawn((
-            Spectrum,
-            MaterialMeshBundle {
-                mesh: meshes.add(Mesh::from(LineStrip {
-                    points: (0..(octaves * buckets_per_octave))
-                        .map(|i| Vec3::new(i as f32, 0.0, 0.0))
-                        .collect::<Vec<Vec3>>(),
-                })),
-                material: line_materials.add(LineMaterial {
-                    color: Color::rgb(0.25, 0.85, 0.20),
-                }),
-                transform: Transform::from_xyz(-14.0, 3.0, 0.0),
-                ..default()
-            },
-        ));
-
-        // light
-        commands.spawn(PointLightBundle {
-            point_light: PointLight {
-                intensity: 10500.0,
-                shadows_enabled: true,
-                ..default()
-            },
-            transform: Transform::from_xyz(0.0, 0.0, 9.0),
-            ..default()
-        });
-        commands.spawn(PointLightBundle {
-            point_light: PointLight {
-                intensity: 10500.0,
-                shadows_enabled: true,
-                ..default()
-            },
-            transform: Transform::from_xyz(0.0, 0.0, -29.0),
-            ..default()
-        });
-
-        // camera
-        commands.spawn(Camera3dBundle {
-            transform: Transform::from_xyz(1.0, 0.0, 19.0).looking_at(Vec3::ZERO, Vec3::Y),
-            // clear the whole viewport with the given color
-            camera_3d: Camera3d {
-                // clear the whole viewport with the given color
-                //clear_color: ClearColorConfig::Custom(Color::rgb(0.23, 0.23, 0.25)),
-                ..Default::default()
-            },
-            ..default()
-        });
-    };
 }
 
 pub struct DisplayPlugin {

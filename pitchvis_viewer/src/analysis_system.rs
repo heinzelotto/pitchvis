@@ -8,7 +8,7 @@ pub struct AnalysisStateResource(pub AnalysisState);
 pub fn update_analysis_state_to_system(
     octaves: usize,
     buckets_per_octave: usize,
-) -> impl FnMut(ResMut<AnalysisStateResource>, Res<CqtResultResource>) {
+) -> impl FnMut(ResMut<AnalysisStateResource>, Res<CqtResultResource>) + Copy {
     move |mut analysis_state: ResMut<AnalysisStateResource>, cqt_result: Res<CqtResultResource>| {
         analysis_state
             .0

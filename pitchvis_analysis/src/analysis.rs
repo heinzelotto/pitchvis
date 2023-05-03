@@ -8,7 +8,7 @@ const PEAK_MIN_PROMINENCE: f32 = 13.0;
 const PEAK_MIN_HEIGHT: f32 = 6.0;
 const _BASSLINE_PEAK_MIN_PROMINENCE: f32 = 12.0;
 const _BASSLINE_PEAK_MIN_HEIGHT: f32 = 4.0;
-const HIGHEST_BASSNOTE: usize = 12 * 2 + 4;
+const _HIGHEST_BASSNOTE: usize = 12 * 2 + 4;
 const SMOOTH_LENGTH: usize = 6;
 
 pub struct AnalysisState {

@@ -1,3 +1,5 @@
+#[cfg(target_arch = "wasm32")]
+use crate::audio_system::AudioBufferResource;
 use anyhow::Result;
 use bevy::diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin};
 use bevy::prelude::*;
@@ -20,7 +22,7 @@ pub const SPARSITY_QUANTILE: f32 = 0.999;
 pub const Q: f32 = 1.0;
 pub const GAMMA: f32 = 5.0;
 
-const FPS: u64 = 30;
+const _FPS: u64 = 30;
 
 #[wasm_bindgen]
 #[cfg(target_arch = "wasm32")]
@@ -71,6 +73,11 @@ pub async fn main_fun() -> Result<(), JsValue> {
     Ok(())
 }
 
+fn frame_limiter_system() {
+    use std::{thread, time};
+    thread::sleep(time::Duration::from_millis(30));
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 pub fn main_fun() -> Result<()> {
     env_logger::init();
@@ -90,13 +97,22 @@ pub fn main_fun() -> Result<()> {
 
     audio_stream.play().unwrap();
 
+    let update_cqt_system = cqt_system::update_cqt_to_system(BUFSIZE);
+    let update_analysis_state_system =
+        analysis_system::update_analysis_state_to_system(OCTAVES, BUCKETS_PER_OCTAVE);
+    let update_display_system =
+        display_system::update_display_to_system(BUCKETS_PER_OCTAVE, OCTAVES);
+
     App::new()
         .add_plugins(DefaultPlugins)
         .add_plugin(LogDiagnosticsPlugin::default())
         .add_plugin(FrameTimeDiagnosticsPlugin::default())
         .add_plugin(MaterialPlugin::<display_system::LineMaterial>::default())
         .insert_resource(cqt_system::CqtResource(cqt))
-        .insert_resource(cqt_system::CqtResultResource::new())
+        .insert_resource(cqt_system::CqtResultResource::new(
+            OCTAVES,
+            BUCKETS_PER_OCTAVE,
+        ))
         .insert_resource(audio_system::AudioBufferResource(
             audio_stream.ring_buffer.clone(),
         ))
@@ -106,17 +122,15 @@ pub fn main_fun() -> Result<()> {
                 pitchvis_analysis::analysis::SPECTROGRAM_LENGTH,
             ),
         ))
-        .add_system(bevy::window::close_on_esc)
         .add_startup_system(display_system::setup_display_to_system(
             OCTAVES,
             BUCKETS_PER_OCTAVE,
         ))
-        .add_system(cqt_system::update_cqt)
-        .add_system(analysis_system::update_analysis_state_to_system(
-            OCTAVES,
-            BUCKETS_PER_OCTAVE,
-        ))
-        .add_system(display_system::update_display)
+        .add_system(bevy::window::close_on_esc)
+        .add_system(frame_limiter_system)
+        .add_system(update_cqt_system)
+        .add_system(update_analysis_state_system.after(update_cqt_system))
+        .add_system(update_display_system.after(update_analysis_state_system))
         .run();
     Ok(())
 }
