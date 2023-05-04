@@ -1,5 +1,5 @@
 # pitchvis
-live analysis of musical pitches in a audio signal and a nice visualization
+live analysis of musical pitches in an audio signal and a nice visualization
 
 # instructions
 
