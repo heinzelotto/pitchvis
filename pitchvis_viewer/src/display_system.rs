@@ -9,6 +9,7 @@ use bevy::{
             SpecializedMeshPipelineError,
         },
     },
+    sprite::MaterialMesh2dBundle,
 };
 use pitchvis_analysis::util::*;
 
@@ -81,18 +82,27 @@ fn calculate_color(buckets_per_octave: usize, bucket: f32) -> (f32, f32, f32) {
     )
 }
 
+#[derive(Component)]
+pub struct PitchBall(usize);
+
+#[derive(Component)]
+pub struct BassCylinder;
+
+#[derive(Component)]
+pub struct Spectrum;
+
 pub fn setup_display_to_system(
     octaves: usize,
     buckets_per_octave: usize,
 ) -> impl FnMut(
     Commands,
     ResMut<Assets<Mesh>>,
-    ResMut<Assets<StandardMaterial>>,
+    ResMut<Assets<ColorMaterial>>,
     ResMut<Assets<LineMaterial>>,
 ) {
     return move |commands: Commands,
                  meshes: ResMut<Assets<Mesh>>,
-                 materials: ResMut<Assets<StandardMaterial>>,
+                 materials: ResMut<Assets<ColorMaterial>>,
                  line_materials: ResMut<Assets<LineMaterial>>| {
         setup_display(
             octaves,
@@ -110,29 +120,21 @@ pub fn setup_display(
     buckets_per_octave: usize,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
     mut line_materials: ResMut<Assets<LineMaterial>>,
 ) {
     let spiral_points = spiral_points(octaves, buckets_per_octave);
 
     for (idx, (x, y, z)) in spiral_points.iter().enumerate() {
         // spheres
-        let mut standard_material: StandardMaterial = Color::rgb(1.0, 0.7, 0.6).into();
-        standard_material.perceptual_roughness = 0.3;
-        standard_material.metallic = 0.1;
+        let mut color_material: ColorMaterial = Color::rgb(1.0, 0.7, 0.6).into();
         commands.spawn((
             PitchBall(idx),
-            PbrBundle {
-                mesh: meshes.add(
-                    Mesh::try_from(shape::Icosphere {
-                        radius: 1.0,
-                        subdivisions: 4,
-                    })
-                    .expect("spheres meshes"),
-                ),
-                material: materials.add(standard_material),
-                transform: Transform::from_xyz(*x, *y, *z),
-                visibility: Visibility::Hidden,
+            MaterialMesh2dBundle {
+                mesh: meshes.add(shape::Circle::new(50.0).into()).into(),
+                material: materials.add(color_material),
+                transform: Transform::from_xyz(*x * 1.0, *y * 1.0, *z * 1.0),
+                visibility: Visibility::Visible,
                 ..default()
             },
         ));
@@ -162,27 +164,27 @@ pub fn setup_display(
         //cylinders.push((c, h + 0.01));
 
         // cylinders
-        commands.spawn((
-            BassCylinder,
-            PbrBundle {
-                mesh: meshes.add(Mesh::from(shape::Cylinder {
-                    radius: 0.05,
-                    height: h + 0.01,
-                    resolution: 5,
-                    segments: 1,
-                })),
-                material: materials.add(Color::rgb(0.8, 0.7, 0.6).into()),
-                transform,
-                visibility: Visibility::Hidden,
-                ..default()
-            },
-        ));
+        // commands.spawn((
+        //     BassCylinder,
+        //     MaterialMesh2dBundle {
+        //         mesh: meshes.add(Mesh::from(shape::Cylinder {
+        //             radius: 0.05,
+        //             height: h + 0.01,
+        //             resolution: 5,
+        //             segments: 1,
+        //         })),
+        //         material: materials.add(Color::rgb(0.8, 0.7, 0.6).into()),
+        //         transform,
+        //         visibility: Visibility::Hidden,
+        //         ..default()
+        //     },
+        // ));
     }
 
     // draw rays
     let line_list: Vec<(Vec3, Vec3)> = (0..12)
         .map(|i| {
-            let radius = octaves as f32 * 2.2;
+            let radius = octaves as f32 * 2.2; // 19.0 * 0.41421356237
             let (p_y, p_x) = (i as f32 / 12.0 * 2.0 * PI).sin_cos();
 
             (
@@ -252,12 +254,40 @@ pub fn setup_display(
 
     // camera
     commands.spawn(Camera3dBundle {
-        transform: Transform::from_xyz(1.0, 0.0, 19.0).looking_at(Vec3::ZERO, Vec3::Y),
+        transform: Transform::from_xyz(0.0, 0.0, 19.0).looking_at(Vec3::ZERO, Vec3::Y),
         // clear the whole viewport with the given color
         camera_3d: Camera3d {
             // clear the whole viewport with the given color
             //clear_color: ClearColorConfig::Custom(Color::rgb(0.23, 0.23, 0.25)),
             ..Default::default()
+        },
+        projection: Projection::Perspective(PerspectiveProjection {
+            fov: 0.78539816339, // 45 degrees
+            ..Default::default()
+        }),
+        ..default()
+    });
+
+    //Projection::Orthographic(OrthographicProjection { scale: 0.05, ..default() }),
+    //transform: Transform::from_xyz(0.0, 0.0, 999.0).
+    /*transform: Transform::from_xyz(0.0, 0.0, -30.0).looking_at(Vec3::ZERO, Vec3::Y),*/
+
+    // spawn a camera2dbundle with coordinates that match those of the 3d camera at the z=0 plane
+    commands.spawn(Camera2dBundle {
+        camera_2d: Camera2d {
+            // no "background color", we need to see the main camera's output
+            clear_color: bevy::core_pipeline::clear_color::ClearColorConfig::None,
+            ..default()
+        },
+        camera: Camera {
+            // renders after / on top of the main camera
+            order: 1,
+            ..default()
+        },
+        projection: OrthographicProjection {
+            scaling_mode: bevy::render::camera::ScalingMode::FixedVertical(38.0 * 0.41421356237),
+            scale: 1.00,
+            ..default()
         },
         ..default()
     });
@@ -278,10 +308,10 @@ pub fn update_display_to_system(
         &PitchBall,
         &mut Visibility,
         &mut Transform,
-        &mut Handle<StandardMaterial>,
+        &mut Handle<ColorMaterial>,
     )>,
     Query<(&Spectrum, &mut Handle<Mesh>)>,
-    ResMut<Assets<StandardMaterial>>,
+    ResMut<Assets<ColorMaterial>>,
     ResMut<Assets<Mesh>>,
     Res<crate::analysis_system::AnalysisStateResource>,
     Res<crate::cqt_system::CqtResultResource>,
@@ -290,10 +320,10 @@ pub fn update_display_to_system(
         &PitchBall,
         &mut Visibility,
         &mut Transform,
-        &mut Handle<StandardMaterial>,
+        &mut Handle<ColorMaterial>,
     )>,
           spectrum_linestrip: Query<(&Spectrum, &mut Handle<Mesh>)>,
-          materials: ResMut<Assets<StandardMaterial>>,
+          materials: ResMut<Assets<ColorMaterial>>,
           meshes: ResMut<Assets<Mesh>>,
           analysis_state: Res<crate::analysis_system::AnalysisStateResource>,
           cqt_result: Res<crate::cqt_system::CqtResultResource>| {
@@ -331,15 +361,15 @@ pub fn update_display(
         &PitchBall,
         &mut Visibility,
         &mut Transform,
-        &mut Handle<StandardMaterial>,
+        &mut Handle<ColorMaterial>,
     )>,
     mut spectrum_linestrip: Query<(&Spectrum, &mut Handle<Mesh>)>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
     mut meshes: ResMut<Assets<Mesh>>,
     analysis_state: Res<crate::analysis_system::AnalysisStateResource>,
     cqt_result: Res<crate::cqt_system::CqtResultResource>,
 ) {
-    let scale_factor = 1.0 / 35.0;
+    let scale_factor = 1.0 / 2405.0;
 
     for (pitch_ball, mut visibility, mut transform, _) in &mut balls {
         if *visibility == Visibility::Visible {
@@ -392,11 +422,12 @@ pub fn update_display(
             transform.translation = Vec3::new(x, y, z);
 
             let mut color_mat = materials.get_mut(&color).expect("ball color material");
-            color_mat.base_color = Color::rgb(
-                r * color_coefficient,
-                g * color_coefficient,
-                b * color_coefficient,
-            );
+            // color_mat.color = Color::rgb(
+            //     r * color_coefficient,
+            //     g * color_coefficient,
+            //     b * color_coefficient,
+            // );
+            color_mat.color = Color::rgba(r, g, b, color_coefficient);
 
             transform.scale = Vec3::splat(size * scale_factor);
 
@@ -426,15 +457,6 @@ pub enum PauseState {
     Running,
     Paused,
 }
-
-#[derive(Component)]
-pub struct PitchBall(usize);
-
-#[derive(Component)]
-pub struct BassCylinder;
-
-#[derive(Component)]
-pub struct Spectrum;
 
 /// A list of points that will have a line drawn between each consecutive points
 #[derive(Debug, Clone)]
