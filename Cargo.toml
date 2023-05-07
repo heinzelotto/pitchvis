@@ -2,6 +2,7 @@
 
 members = [
     "pitchvis_analysis",
+    "pitchvis_audio",
     "pitchvis_viewer",
     "dagc",
 ]

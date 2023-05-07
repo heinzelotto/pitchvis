@@ -6,7 +6,6 @@ edition = "2021"
 
 [lib]
 name = "pitchvis_analysis"
-#crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 anyhow = "1.0"
@@ -16,7 +15,6 @@ num-complex = "0.4.2"
 sprs = "0.11.0"
 find_peaks = "0.1.5"
 rubato = "0.12.0"
-itertools = "0.10.5"
-dagc = {version = "0.1.0", path = "../dagc" }
 log = "0.4.17"
 nalgebra = "0.32.2"
+lab = "0.11.0"

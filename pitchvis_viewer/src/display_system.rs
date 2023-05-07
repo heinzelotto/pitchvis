@@ -22,66 +22,6 @@ use std::f32::consts::PI;
 
 const HIGHEST_BASSNOTE: usize = 12 * 2 + 4;
 
-const _COLORS_WONKY_SATURATION: [(f32, f32, f32); 12] = [
-    (0.80, 0.40, 0.39), // C
-    (0.24, 0.51, 0.66), // C#
-    (0.96, 0.77, 0.25), // D
-    (0.36, 0.28, 0.49), // Eb
-    (0.51, 0.76, 0.30), // E
-    (0.74, 0.36, 0.51), // F
-    (0.27, 0.62, 0.56), // F#
-    (0.91, 0.56, 0.30), // G
-    (0.26, 0.31, 0.52), // Ab
-    (0.85, 0.87, 0.26), // A
-    (0.54, 0.31, 0.53), // Bb
-    (0.27, 0.69, 0.39), // H
-];
-
-const COLORS: [(f32, f32, f32); 12] = [
-    (0.85, 0.36, 0.36), // C
-    (0.01, 0.52, 0.71), // C#
-    (0.97, 0.76, 0.05), // D
-    //(0.37, 0.28, 0.50), // Eb
-    (0.45, 0.34, 0.63), // Eb
-    (0.47, 0.77, 0.22), // E
-    (0.78, 0.32, 0.52), // Fh
-    (0.00, 0.64, 0.56), // F#
-    (0.95, 0.54, 0.23), // G
-    //(0.26, 0.31, 0.53), // Ab
-    (0.30, 0.37, 0.64), // Ab
-    (1.00, 0.96, 0.03), // A
-    (0.57, 0.30, 0.55), // Bb
-    (0.12, 0.71, 0.34), // H
-];
-
-fn calculate_color(buckets_per_octave: usize, bucket: f32) -> (f32, f32, f32) {
-    const GRAY_LEVEL: f32 = 0.6; // could be the mean lightness of the two neighbors. for now this is good enough.
-    const EASING_POW: f32 = 1.3;
-
-    let pitch_continuous = 12.0 * bucket / (buckets_per_octave as f32);
-    let base_color = COLORS[(pitch_continuous.round() as usize) % 12];
-    let inaccuracy_cents = (pitch_continuous - pitch_continuous.round()).abs();
-
-    let mut base_lcha = Color::rgb(base_color.0, base_color.1, base_color.2).as_lcha();
-    if let Color::Lcha {
-        ref mut lightness,
-        ref mut chroma,
-        hue: _,
-        alpha: _,
-    } = base_lcha
-    {
-        let saturation = 1.0 - (2.0 * inaccuracy_cents).powf(EASING_POW);
-        *chroma *= saturation;
-        *lightness = saturation * *lightness + (1.0 - saturation) * GRAY_LEVEL;
-    }
-
-    (
-        base_lcha.as_rgba().r(),
-        base_lcha.as_rgba().g(),
-        base_lcha.as_rgba().b(),
-    )
-}
-
 #[derive(Component)]
 pub struct PitchBall(usize);
 
@@ -410,7 +350,7 @@ pub fn update_display(
         if peaks_rounded.contains_key(&idx) {
             let (center, size) = peaks_rounded[&idx];
 
-            let (r, g, b) = calculate_color(
+            let (r, g, b) = pitchvis_analysis::color_mapping::calculate_color(
                 buckets_per_octave,
                 (center + (buckets_per_octave - 3 * (buckets_per_octave / 12)) as f32)
                     % buckets_per_octave as f32,

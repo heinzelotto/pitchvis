@@ -1,7 +1,7 @@
-use log::{debug};
+use log::debug;
 use num_complex::{Complex32, ComplexFloat};
 use rustfft::num_traits::Zero;
-use rustfft::{FftPlanner, Fft};
+use rustfft::FftPlanner;
 use std::collections::HashMap;
 use std::f32::consts::PI;
 use std::ops::DivAssign;
@@ -45,7 +45,13 @@ pub struct Cqt {
     _delay: Duration,
     fft: std::sync::Arc<dyn rustfft::Fft<f32>>,
     /// A map from the FFT size to the precomputed Fft objects used to resample the input signal to that size
-    resample_ffts: HashMap<usize, (std::sync::Arc<dyn rustfft::Fft<f32>>, std::sync::Arc<dyn rustfft::Fft<f32>>)>,
+    resample_ffts: HashMap<
+        usize,
+        (
+            std::sync::Arc<dyn rustfft::Fft<f32>>,
+            std::sync::Arc<dyn rustfft::Fft<f32>>,
+        ),
+    >,
     _t_diff: f32,
 }
 
@@ -293,13 +299,19 @@ impl Cqt {
         )
     }
 
-    fn resample(&mut self, v: &[f32] ,factor: usize) -> Vec<f32> {
+    fn resample(&mut self, v: &[f32], factor: usize) -> Vec<f32> {
         let mut x_fft = v
             .iter()
             .map(|f| rustfft::num_complex::Complex32::new(*f, 0.0))
             .collect::<Vec<rustfft::num_complex::Complex32>>();
 
-        let (fft, inv_fft) = self.resample_ffts.entry(v.len()).or_insert_with(|| {let mut planner = FftPlanner::new(); (planner.plan_fft_forward(v.len()), planner.plan_fft_inverse(v.len()))});
+        let (fft, inv_fft) = self.resample_ffts.entry(v.len()).or_insert_with(|| {
+            let mut planner = FftPlanner::new();
+            (
+                planner.plan_fft_forward(v.len()),
+                planner.plan_fft_inverse(v.len()),
+            )
+        });
 
         fft.process(&mut x_fft);
         //0..(1 + x_fft.len()) ()..()

@@ -6,7 +6,6 @@ use bevy::prelude::*;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 mod analysis_system;
-mod audio;
 mod audio_system;
 mod cqt_system;
 mod display_system;
@@ -27,7 +26,9 @@ const FPS: u64 = 30;
 #[wasm_bindgen]
 #[cfg(target_arch = "wasm32")]
 pub async fn main_fun() -> Result<(), JsValue> {
-    let audio_stream = audio::AudioStream::async_new(SR, BUFSIZE).await.unwrap();
+    let audio_stream = pitchvis_audio::audio::AudioStream::async_new(SR, BUFSIZE)
+        .await
+        .unwrap();
 
     let cqt = pitchvis_analysis::cqt::Cqt::new(
         SR,
@@ -91,7 +92,7 @@ fn frame_limiter_system() {
 pub fn main_fun() -> Result<()> {
     env_logger::init();
 
-    let audio_stream = audio::AudioStream::new(SR, BUFSIZE).unwrap();
+    let audio_stream = pitchvis_audio::audio::AudioStream::new(SR, BUFSIZE).unwrap();
 
     let cqt = pitchvis_analysis::cqt::Cqt::new(
         SR,
