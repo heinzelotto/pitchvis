@@ -40,10 +40,10 @@ pub fn setup_display_to_system(
     ResMut<Assets<ColorMaterial>>,
     ResMut<Assets<LineMaterial>>,
 ) {
-    return move |commands: Commands,
-                 meshes: ResMut<Assets<Mesh>>,
-                 materials: ResMut<Assets<ColorMaterial>>,
-                 line_materials: ResMut<Assets<LineMaterial>>| {
+    move |commands: Commands,
+          meshes: ResMut<Assets<Mesh>>,
+          materials: ResMut<Assets<ColorMaterial>>,
+          line_materials: ResMut<Assets<LineMaterial>>| {
         setup_display(
             octaves,
             buckets_per_octave,
@@ -52,7 +52,7 @@ pub fn setup_display_to_system(
             materials,
             line_materials,
         )
-    };
+    }
 }
 
 pub fn setup_display(
@@ -67,7 +67,7 @@ pub fn setup_display(
 
     for (idx, (x, y, z)) in spiral_points.iter().enumerate() {
         // spheres
-        let mut color_material: ColorMaterial = Color::rgb(1.0, 0.7, 0.6).into();
+        let color_material: ColorMaterial = Color::rgb(1.0, 0.7, 0.6).into();
         commands.spawn((
             PitchBall(idx),
             MaterialMesh2dBundle {
@@ -91,7 +91,7 @@ pub fn setup_display(
         let q = nalgebra::point![cur.0, cur.1, cur.2];
 
         let mid = nalgebra::center(&p, &q);
-        let h = nalgebra::distance(&p, &q);
+        let _h = nalgebra::distance(&p, &q);
         let y_unit: Vector3<f32> = nalgebra::vector![0.0, 1.0, 0.0];
         let v_diff = p.sub(q);
 
@@ -202,7 +202,7 @@ pub fn setup_display(
             ..Default::default()
         },
         projection: Projection::Perspective(PerspectiveProjection {
-            fov: 0.78539816339, // 45 degrees
+            fov: std::f32::consts::FRAC_PI_4, // 45 degrees
             ..Default::default()
         }),
         ..default()
@@ -225,7 +225,7 @@ pub fn setup_display(
             ..default()
         },
         projection: OrthographicProjection {
-            scaling_mode: bevy::render::camera::ScalingMode::FixedVertical(38.0 * 0.41421356237),
+            scaling_mode: bevy::render::camera::ScalingMode::FixedVertical(38.0 * 0.414_213_57),
             scale: 1.00,
             ..default()
         },
@@ -386,7 +386,7 @@ pub fn update_display(
                 .x_cqt
                 .iter()
                 .enumerate()
-                .map(|(i, amp)| Vec3::new(i as f32 * 0.017, *amp as f32 / 10.0, 0.0))
+                .map(|(i, amp)| Vec3::new(i as f32 * 0.017, *amp / 10.0, 0.0))
                 .collect::<Vec<Vec3>>(),
         );
     }

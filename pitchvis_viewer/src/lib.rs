@@ -83,9 +83,7 @@ pub async fn main_fun() -> Result<(), JsValue> {
 
 fn frame_limiter_system() {
     use std::{thread, time};
-    thread::sleep(time::Duration::from_millis(
-        (1000 / FPS).saturating_sub(5) as u64
-    ));
+    thread::sleep(time::Duration::from_millis((1000 / FPS).saturating_sub(5)));
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -123,9 +121,7 @@ pub fn main_fun() -> Result<()> {
             OCTAVES,
             BUCKETS_PER_OCTAVE,
         ))
-        .insert_resource(audio_system::AudioBufferResource(
-            audio_stream.ring_buffer.clone(),
-        ))
+        .insert_resource(audio_system::AudioBufferResource(audio_stream.ring_buffer))
         .insert_resource(analysis_system::AnalysisStateResource(
             pitchvis_analysis::analysis::AnalysisState::new(
                 OCTAVES * BUCKETS_PER_OCTAVE,

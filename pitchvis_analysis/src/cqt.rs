@@ -56,24 +56,24 @@ pub struct Cqt {
 }
 
 impl Cqt {
-    #[allow(dead_code)]
-    fn test_create_sines(&self, t_diff: f32) -> Vec<f32> {
-        let mut wave = vec![0.0; self.n_fft];
+    // #[allow(dead_code)]
+    // fn test_create_sines(&self, t_diff: f32) -> Vec<f32> {
+    //     let mut wave = vec![0.0; self.n_fft];
 
-        for f in ((12 * (0) + 0)..(12 * (self.octaves - 1) + 12))
-            .map(|p| self.min_freq * (2.0).powf(p as f32 / 12.0))
-        {
-            //let f = 880.0 * 2.0.powf(1.0/12.0);
-            for i in 0..wave.len() {
-                let amp = (((i as f32 + t_diff * self.sr as f32) * 2.0 * PI / self.sr as f32) * f)
-                    .sin()
-                    / 12.0;
-                wave[i] += amp;
-            }
-        }
+    //     for f in ((12 * (0) + 0)..(12 * (self.octaves - 1) + 12))
+    //         .map(|p| self.min_freq * (2.0).powf(p as f32 / 12.0))
+    //     {
+    //         //let f = 880.0 * 2.0.powf(1.0/12.0);
+    //         for i in 0..wave.len() {
+    //             let amp = (((i as f32 + t_diff * self.sr as f32) * 2.0 * PI / self.sr as f32) * f)
+    //                 .sin()
+    //                 / 12.0;
+    //             wave[i] += amp;
+    //         }
+    //     }
 
-        wave
-    }
+    //     wave
+    // }
 
     pub fn new(
         sr: usize,
@@ -88,7 +88,7 @@ impl Cqt {
         let reduced_n_fft = n_fft >> (octaves - 1);
 
         let mut planner = FftPlanner::new();
-        let fft = planner.plan_fft_forward(reduced_n_fft as usize);
+        let fft = planner.plan_fft_forward(reduced_n_fft);
 
         let (cqt_kernel, delay) = Self::cqt_kernel(
             sr,
@@ -147,8 +147,8 @@ impl Cqt {
         let window_lengths = freqs
             .iter()
             .map(|f_k| {
-                let window_k = Q * sr as f32 / (f_k + gamma / alpha);
-                window_k
+                
+                Q * sr as f32 / (f_k + gamma / alpha)
             })
             .collect::<Vec<f32>>();
 
@@ -180,7 +180,7 @@ impl Cqt {
         let mut planner = FftPlanner::new();
         let fft = planner.plan_fft_forward(reduced_n_fft);
         let mut kernel_octaves = (0..octaves)
-            .map(|_| sprs::TriMat::new((buckets_per_octave as usize, reduced_n_fft)))
+            .map(|_| sprs::TriMat::new((buckets_per_octave, reduced_n_fft)))
             .collect::<Vec<sprs::TriMat<Complex32>>>();
         for (k, (f_k, n_k)) in std::iter::zip(freqs.iter(), window_lengths.iter()).enumerate() {
             let cur_octave = k / buckets_per_octave;
@@ -288,7 +288,7 @@ impl Cqt {
             .map(|m| m.to_csr())
             .collect::<Vec<sprs::CsMat<num_complex::Complex<f32>>>>();
 
-        let delay = Duration::from_secs_f32((n_fft as f32 - window_center as f32) / sr as f32);
+        let delay = Duration::from_secs_f32((n_fft as f32 - window_center) / sr as f32);
 
         (
             CqtKernel {
@@ -350,7 +350,7 @@ impl Cqt {
             //dbg!(cur_resampling_factor);
             //dbg!(x_selection.len());
 
-            let vv = self.resample(&x_selection, cur_resampling_factor);
+            let vv = self.resample(x_selection, cur_resampling_factor);
 
             // calculate the fft over the scaled current octave
             let mut x_fft = vv

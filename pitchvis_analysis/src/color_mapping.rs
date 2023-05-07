@@ -54,6 +54,6 @@ pub fn calculate_color(buckets_per_octave: usize, bucket: f32) -> (f32, f32, f32
         }
     }
 
-    let pitch_color = base_lcha.to_rgb().map(|rgb| (rgb as f32 / 255.0) as f32);
+    let pitch_color = base_lcha.to_rgb().map(|rgb| (rgb as f32 / 255.0));
     (pitch_color[0], pitch_color[1], pitch_color[2])
 }

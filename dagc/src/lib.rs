@@ -94,9 +94,9 @@ mod tests {
     fn it_works() {
         let mut agc = MonoAgc::new(0.001, 0.0001).expect("unreachable");
         assert_eq!(agc.gain(), 1.0);
-        assert_eq!(agc.is_gain_frozen(), false);
+        assert!(!agc.is_gain_frozen());
         agc.freeze_gain(true);
-        assert_eq!(agc.is_gain_frozen(), true);
+        assert!(agc.is_gain_frozen());
 
         let mut samples = [0.5, 1.0, -0.2];
         agc.process(&mut samples);

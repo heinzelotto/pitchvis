@@ -392,7 +392,7 @@ impl AudioStream {
                     .lock()
                     .expect("locking failed");
                 rb.buf.drain(..data.len());
-                rb.buf.extend_from_slice(&data);
+                rb.buf.extend_from_slice(data);
                 let begin = rb.buf.len() - data.len();
                 agc.process(&mut rb.buf[begin..]);
                 rb.gain = agc.gain();
