@@ -1,0 +1,28 @@
+[package]
+name = "pitchvis_serial"
+version = "0.1.0"
+authors = ["Felix Monninger <felix.monninger@gmail.com>"]
+edition = "2021"
+
+# Enable a small amount of optimization in debug mode
+[profile.dev]
+opt-level = 1
+
+# Enable high optimizations for dependencies (incl. Bevy), but not for our code:
+[profile.dev.package."*"]
+opt-level = 3
+
+[[bin]]
+name = "pitchvis_serial"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0"
+find_peaks = "0.1.5"
+log = "0.4.17"
+bevy = "0.10"
+pitchvis_analysis = { path = "../pitchvis_analysis" }
+pitchvis_audio = { path = "../pitchvis_audio" }
+itertools = "0.10.5"
+env_logger = "0.10.0"
+serialport = "4.2.0"

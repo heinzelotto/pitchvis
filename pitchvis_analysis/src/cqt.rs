@@ -28,11 +28,11 @@ pub struct CqtKernel {
 
 pub struct Cqt {
     /// The sample rate of the input audio signal
-    sr: usize,
+    _sr: usize,
     /// The number of samples in the longest FFT (will be decimated for higher octaves)
     pub n_fft: usize,
     /// The minimum frequency of the lowest note analyzed in the CQT
-    min_freq: f32,
+    _min_freq: f32,
     /// The resolution of the CQT in bins per octave (multiple of 12)
     buckets_per_octave: usize,
     /// The total range in octaves of the CQT
@@ -104,9 +104,9 @@ impl Cqt {
         println!("CQT Analysis delay: {} ms.", delay.as_millis());
 
         Self {
-            sr,
+            _sr: sr,
             n_fft,
-            min_freq,
+            _min_freq: min_freq,
             buckets_per_octave,
             octaves,
             _sparsity_quantile: sparsity_quantile,
@@ -146,13 +146,10 @@ impl Cqt {
         let Q = quality / alpha;
         let window_lengths = freqs
             .iter()
-            .map(|f_k| {
-                
-                Q * sr as f32 / (f_k + gamma / alpha)
-            })
+            .map(|f_k| Q * sr as f32 / (f_k + gamma / alpha))
             .collect::<Vec<f32>>();
 
-        dbg!(&window_lengths);
+        log::debug!("{:?}", &window_lengths);
 
         let max_window_length = window_lengths.first().unwrap();
         let window_center = n_fft as f32 - max_window_length / 2.0;

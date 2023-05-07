@@ -23,13 +23,13 @@ pub struct AnalysisState {
 }
 
 impl AnalysisState {
-    pub fn new(w: usize, h: usize) -> Self {
-        let spectrogram_buffer = vec![0; w * h * 4];
+    pub fn new(spectrum_size: usize, history_length: usize) -> Self {
+        let spectrogram_buffer = vec![0; spectrum_size * history_length * 4];
 
         Self {
             history: Vec::new(),
             x_cqt_smoothed: Vec::new(),
-            x_cqt_afterglow: Vec::new(),
+            x_cqt_afterglow: vec![0.0; spectrum_size],
             peaks: HashSet::new(),
             peaks_continuous: Vec::new(),
             spectrogram_buffer,
@@ -62,13 +62,13 @@ impl AnalysisState {
             // make smoothing range modifiable in-game
             self.history.drain(0..1);
         }
-        for i in 0..num_buckets {
+        for (i, smoothed) in x_cqt_smoothed.iter_mut().enumerate() {
             let mut v = vec![];
             for t in 0..self.history.len() {
                 v.push(self.history[t][i]);
             }
             // arithmetic mean
-            x_cqt_smoothed[i] = v.iter().sum::<f32>() / SMOOTH_LENGTH as f32;
+            *smoothed = v.iter().sum::<f32>() / SMOOTH_LENGTH as f32;
         }
 
         // let conv_radius = (self.buckets_per_octave / 12) / 2;
@@ -149,20 +149,15 @@ impl AnalysisState {
             }
         });
 
-        // self.analysis_state
-        //     .x_cqt_afterglow
-        //     .iter_mut()
-        //     .enumerate()
-        //     .for_each(|(i, x)| {
-        //         *x *= 0.85 - 0.15 * (i as f32 / (self.octaves * self.buckets_per_octave) as f32);
-        //         if *x < x_cqt_smoothed[i] {
-        //             *x = x_cqt_smoothed[i];
-        //         }
-        //     });
-
-        // TEST unmodified
-        //let x_cqt_smoothed = x_cqt.to_vec();
-
+        self.x_cqt_afterglow
+            .iter_mut()
+            .enumerate()
+            .for_each(|(i, x)| {
+                *x *= 0.85 - 0.15 * (i as f32 / (octaves * buckets_per_octave) as f32);
+                if *x < x_cqt_smoothed[i] {
+                    *x = x_cqt_smoothed[i];
+                }
+            });
         self.peaks = peaks;
         self.x_cqt_smoothed = x_cqt_smoothed;
         self.peaks_continuous = peaks_continuous;

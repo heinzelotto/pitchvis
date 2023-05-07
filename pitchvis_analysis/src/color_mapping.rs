@@ -33,7 +33,7 @@ const COLORS: [[f32; 3]; 12] = [
 ];
 
 pub fn calculate_color(buckets_per_octave: usize, bucket: f32) -> (f32, f32, f32) {
-    const GRAY_LEVEL: f32 = 0.6; // could be the mean lightness of the two neighbors. for now this is good enough.
+    const GRAY_LEVEL: f32 = 60.0; // could be the mean lightness of the two neighbors. for now this is good enough.
     const EASING_POW: f32 = 1.3;
 
     let pitch_continuous = 12.0 * bucket / (buckets_per_octave as f32);
@@ -42,17 +42,14 @@ pub fn calculate_color(buckets_per_octave: usize, bucket: f32) -> (f32, f32, f32
     let inaccuracy_cents = (pitch_continuous - pitch_continuous.round()).abs();
 
     let mut base_lcha = LCh::from_rgb(&base_color);
-    match base_lcha {
-        LCh {
-            ref mut l,
-            ref mut c,
-            h: _,
-        } => {
-            let saturation = 1.0 - (2.0 * inaccuracy_cents).powf(EASING_POW);
-            *c *= saturation;
-            *l = saturation * *l + (1.0 - saturation) * GRAY_LEVEL;
-        }
-    }
+    let LCh {
+        ref mut l,
+        ref mut c,
+        h: _,
+    } = base_lcha;
+    let saturation = 1.0 - (2.0 * inaccuracy_cents).powf(EASING_POW);
+    *c *= saturation;
+    *l = saturation * *l + (1.0 - saturation) * GRAY_LEVEL;
 
     let pitch_color = base_lcha.to_rgb().map(|rgb| (rgb as f32 / 255.0));
     (pitch_color[0], pitch_color[1], pitch_color[2])

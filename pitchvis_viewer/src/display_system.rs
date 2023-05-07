@@ -318,7 +318,7 @@ pub fn update_display(
             size *= 0.90 - 0.15 * (idx as f32 / (octaves * buckets_per_octave) as f32);
             transform.scale = size * scale_factor;
 
-            if size.x * scale_factor < 0.2 {
+            if size.x * scale_factor < 0.005 {
                 *visibility = Visibility::Hidden;
             }
         }
@@ -371,7 +371,9 @@ pub fn update_display(
 
             transform.scale = Vec3::splat(size * scale_factor);
 
-            *visibility = Visibility::Visible;
+            if transform.scale.x >= 0.005 {
+                *visibility = Visibility::Visible;
+            }
         }
     }
     // TODO: ?faster lookup through indexes
