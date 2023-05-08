@@ -11,7 +11,7 @@ use bevy::{
     },
     sprite::MaterialMesh2dBundle,
 };
-use pitchvis_analysis::{cqt, util::*};
+use pitchvis_analysis::util::*;
 
 use itertools::Itertools;
 use log::debug;

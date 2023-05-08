@@ -14,7 +14,7 @@ log = "0.4.17"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 cpal = { version = "0.15.0", features = [] }
-dagc = {version = "0.1.0", path = "../dagc" }
+dagc = {version = "0.1.0", path = "../dagc_fork" }
 env_logger = "0.10.0"
 
 [target.wasm32-unknown-unknown.dependencies]
