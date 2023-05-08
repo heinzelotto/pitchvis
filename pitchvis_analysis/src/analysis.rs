@@ -13,6 +13,8 @@ const SMOOTH_LENGTH: usize = 5;
 
 pub struct AnalysisState {
     pub history: Vec<Vec<f32>>,
+    // accum: (Vec<f32>, usize),
+    // pub averaged: Vec<f32>,
     pub x_cqt_smoothed: Vec<f32>,
     pub x_cqt_peakfiltered: Vec<f32>,
     pub x_cqt_afterglow: Vec<f32>,
@@ -29,8 +31,10 @@ impl AnalysisState {
 
         Self {
             history: Vec::new(),
-            x_cqt_smoothed: Vec::new(),
-            x_cqt_peakfiltered: Vec::new(),
+            //accum: (vec![0.0; spectrum_size], 0),
+            //averaged: vec![0.0; spectrum_size],
+            x_cqt_smoothed: vec![0.0; spectrum_size],
+            x_cqt_peakfiltered: vec![0.0; spectrum_size],
             x_cqt_afterglow: vec![0.0; spectrum_size],
             peaks: HashSet::new(),
             peaks_continuous: Vec::new(),
@@ -48,8 +52,22 @@ impl AnalysisState {
 
         assert!(num_buckets == x_cqt.len());
 
-        let k_min = arg_min(x_cqt);
-        let k_max = arg_max(x_cqt);
+        // // take an average across all history and subtract it from the current frame
+        // self.accum.1 += 1;
+        // for (i, x) in self.accum.0.iter_mut().enumerate() {
+        //     *x += x_cqt[i];
+        // }
+        // if self.accum.1 == 8000 {
+        //     for x in self.accum.0.iter_mut() {
+        //         *x /= 2.0;
+        //     }
+        //     self.accum.1 /= 2;
+        // }
+        // let averaged = self.accum.0.iter().map(|x| x / self.accum.1 as f32).collect::<Vec<f32>>();
+        // let x_cqt = x_cqt.iter().zip(averaged.iter()).map(|(x, y)| if x > y { x - y} else {0.0}).collect::<Vec<f32>>();
+
+        let k_min = arg_min(&x_cqt);
+        let k_max = arg_max(&x_cqt);
         let _min = x_cqt[k_min];
         let _max = x_cqt[k_max];
         // println!("x_cqt[{k_min}] = {min}, x_cqt[{k_max}] = {max}");
@@ -160,6 +178,7 @@ impl AnalysisState {
                 }
             });
         self.peaks = peaks;
+        //self.averaged = averaged;
         self.x_cqt_smoothed = x_cqt_smoothed;
         self.x_cqt_peakfiltered = x_cqt_peakfiltered;
         self.peaks_continuous = peaks_continuous;
