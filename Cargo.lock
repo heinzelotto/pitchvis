@@ -1848,6 +1848,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dfa686283ad6dd069f105e5ab091b04c62850d3e4cf5d67debad1933f55023df"
 
 [[package]]
+name = "hound"
+version = "3.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4d13cdbd5dbb29f9c88095bbdc2590c9cba0d0a1269b983fef6b2cdd7e9f4db1"
+
+[[package]]
 name = "humantime"
 version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2755,6 +2761,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "pitchvis_train"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "env_logger",
+ "hound",
+ "log",
+ "rustysynth",
+]
+
+[[package]]
 name = "pitchvis_viewer"
 version = "0.1.0"
 dependencies = [
@@ -3034,6 +3051,12 @@ dependencies = [
  "linux-raw-sys",
  "windows-sys 0.48.0",
 ]
+
+[[package]]
+name = "rustysynth"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7771e9f57df0424f1b72720d910970971372a6b7c05e04d81b92cec1bc588a40"
 
 [[package]]
 name = "ruzstd"

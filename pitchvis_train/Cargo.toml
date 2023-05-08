@@ -1,0 +1,23 @@
+[package]
+name = "pitchvis_train"
+version = "0.1.0"
+edition = "2021"
+
+# Enable a small amount of optimization in debug mode
+[profile.dev]
+opt-level = 1
+
+# Enable high optimizations for dependencies, but not for our code:
+[profile.dev.package."*"]
+opt-level = 3
+
+[[bin]]
+name = "pitchvis_train"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0"
+log = "0.4.17"
+env_logger = "0.10.0"
+hound = "3.5.0"
+rustysynth = "1.1.0"

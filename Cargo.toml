@@ -4,6 +4,7 @@ members = [
     "pitchvis_analysis",
     "pitchvis_audio",
     "pitchvis_serial",
+    "pitchvis_train",
     "pitchvis_viewer",
     "dagc",
 ]
