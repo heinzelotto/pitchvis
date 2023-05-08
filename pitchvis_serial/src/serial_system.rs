@@ -34,18 +34,18 @@ pub fn update_serial(
 ) {
     let analysis_state = &analysis_state.0;
 
-    let k_max = arg_max(&analysis_state.x_cqt_afterglow);
-    let max_size = analysis_state.x_cqt_afterglow[k_max];
+    let k_max = arg_max(&analysis_state.x_cqt_peakfiltered);
+    let max_size = analysis_state.x_cqt_peakfiltered[k_max];
 
     // special value to indicate begin of data
     let mut output: Vec<u8> = vec![0xFF];
     // 16 bit number of RGB triples to follow
-    let num_triples: u16 = analysis_state.x_cqt_afterglow.len().try_into().unwrap();
+    let num_triples: u16 = analysis_state.x_cqt_peakfiltered.len().try_into().unwrap();
     output.push((num_triples / 256) as u8);
     output.push((num_triples % 256) as u8);
     output.extend(
         analysis_state
-            .x_cqt_afterglow
+            .x_cqt_peakfiltered
             .iter()
             .enumerate()
             .flat_map(|(idx, size)| {
@@ -63,7 +63,7 @@ pub fn update_serial(
                 [(r * 254.0) as u8, (g * 254.0) as u8, (b * 254.0) as u8]
             }),
     );
-    dbg!(&output);
+    println!("output: {:02x?}", &output);
 
     serial_port
         .0
