@@ -45,11 +45,12 @@ fn synthesize_midi_to_wav(
 
     // The output buffer.
     let sample_count = (settings.sample_rate as f64 * midi_file.get_length()) as usize;
-    let mut left: Vec<f32> = vec![0_f32; sample_count];
-    let mut right: Vec<f32> = vec![0_f32; sample_count];
 
-    // Render the waveform.
-    sequencer.render(&mut left[..], &mut right[..]);
+    // TODO: choose chunk size based on cqt delay
+
+    let chunk_size = 11025;
+    let mut left: Vec<f32> = vec![0_f32; chunk_size];
+    let mut right: Vec<f32> = vec![0_f32; chunk_size];
 
     let spec = hound::WavSpec {
         channels: 2,
@@ -59,14 +60,34 @@ fn synthesize_midi_to_wav(
     };
     let mut writer = WavWriter::create(output_wav_path, spec).expect("Failed to create WAV file");
 
-    left.iter().zip(right.iter()).for_each(|(l, r)| {
-        writer
-            .write_sample(*l)
-            .expect("Failed to write sample to WAV file");
-        writer
-            .write_sample(*r)
-            .expect("Failed to write sample to WAV file");
-    });
+    let mut written = 0;
+    while written < sample_count {
+        // Render the waveform.
+        sequencer.render(&mut left[..], &mut right[..]);
+        written += left.len();
+
+        let active_keys = sequencer
+            .synthesizer
+            .get_active_voices()
+            .iter()
+            .map(|voice| {
+                (
+                    voice.key,
+                    (voice.current_mix_gain_left + voice.current_mix_gain_right) / 2.0,
+                )
+            })
+            .collect::<Vec<(i32, f32)>>();
+        println!("Active keys: {:?}", active_keys);
+
+        left.iter().zip(right.iter()).for_each(|(l, r)| {
+            writer
+                .write_sample(*l)
+                .expect("Failed to write sample to WAV file");
+            writer
+                .write_sample(*r)
+                .expect("Failed to write sample to WAV file");
+        });
+    }
 
     // Finalize the WAV file
     writer.finalize().expect("Failed to finalize WAV file");

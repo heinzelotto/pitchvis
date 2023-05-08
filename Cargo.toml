@@ -7,6 +7,7 @@ members = [
     "pitchvis_train",
     "pitchvis_viewer",
     "dagc",
+    "rustysynth",
 ]
 
 resolver = "2"
