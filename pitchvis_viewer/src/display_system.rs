@@ -21,6 +21,7 @@ use std::collections::HashMap;
 use std::f32::consts::PI;
 
 const HIGHEST_BASSNOTE: usize = 12 * 2 + 4;
+const CONTINUOUS_PEAKS_MODE: bool = true;
 
 #[derive(Component)]
 pub struct PitchBall(usize);
@@ -234,15 +235,8 @@ pub fn setup_display(
 }
 
 pub fn update_display_to_system(
-    //sr: usize,
-    //bufsize: usize,
-    //n_fft: usize,
-    //freq_a1: f32,
     buckets_per_octave: usize,
     octaves: usize,
-    //sparsity_quantile: f32,
-    //q: f32,
-    //gamma: f32,
 ) -> impl FnMut(
     Query<(
         &PitchBall,
@@ -268,15 +262,8 @@ pub fn update_display_to_system(
           analysis_state: Res<crate::analysis_system::AnalysisStateResource>,
           cqt_result: Res<crate::cqt_system::CqtResultResource>| {
         update_display(
-            //sr,
-            //bufsize,
-            //n_fft,
-            //freq_a1,
             buckets_per_octave,
             octaves,
-            //sparsity_quantile,
-            //q,
-            //gamma,
             balls,
             spectrum_linestrip,
             materials,
@@ -288,15 +275,8 @@ pub fn update_display_to_system(
 }
 
 pub fn update_display(
-    //sr: usize,
-    //bufsize: usize,
-    //n_fft: usize,
-    //freq_a1: f32,
     buckets_per_octave: usize,
     octaves: usize,
-    //sparsity_quantile: f32,
-    //q: f32,
-    //gamma: f32,
     mut balls: Query<(
         &PitchBall,
         &mut Visibility,
@@ -339,44 +319,72 @@ pub fn update_display(
     );
     let max_size = analysis_state.peaks_continuous[k_max].1;
 
-    let peaks_rounded = analysis_state
-        .peaks_continuous
-        .iter()
-        .map(|p| (p.0.trunc() as usize, *p))
-        .collect::<HashMap<usize, (f32, f32)>>();
+    if CONTINUOUS_PEAKS_MODE {
+        let peaks_rounded = analysis_state
+            .peaks_continuous
+            .iter()
+            .map(|p| (p.0.trunc() as usize, *p))
+            .collect::<HashMap<usize, (f32, f32)>>();
 
-    for (pitch_ball, mut visibility, mut transform, color) in &mut balls {
-        let idx = pitch_ball.0;
-        if peaks_rounded.contains_key(&idx) {
-            let (center, size) = peaks_rounded[&idx];
+        for (pitch_ball, mut visibility, mut transform, color) in &mut balls {
+            let idx = pitch_ball.0;
+            if peaks_rounded.contains_key(&idx) {
+                let (center, size) = peaks_rounded[&idx];
+
+                let (r, g, b) = pitchvis_analysis::color_mapping::calculate_color(
+                    buckets_per_octave,
+                    (center + (buckets_per_octave - 3 * (buckets_per_octave / 12)) as f32)
+                        % buckets_per_octave as f32,
+                );
+
+                let color_coefficient = 1.0 - (1.0 - size / max_size).powf(2.0);
+
+                let (x, y, z) = bin_to_spiral(buckets_per_octave, center);
+                transform.translation = Vec3::new(x, y, z);
+
+                let mut color_mat = materials.get_mut(&color).expect("ball color material");
+                // color_mat.color = Color::rgb(
+                //     r * color_coefficient,
+                //     g * color_coefficient,
+                //     b * color_coefficient,
+                // );
+                color_mat.color = Color::rgba(r, g, b, color_coefficient);
+
+                transform.scale = Vec3::splat(size * scale_factor);
+
+                if transform.scale.x >= 0.005 {
+                    *visibility = Visibility::Visible;
+                }
+            }
+        }
+        // TODO: ?faster lookup through indexes
+    } else {
+        for (pitch_ball, mut visibility, mut transform, color) in &mut balls {
+            let idx = pitch_ball.0;
+            let size = analysis_state.x_cqt_peakfiltered[idx];
 
             let (r, g, b) = pitchvis_analysis::color_mapping::calculate_color(
                 buckets_per_octave,
-                (center + (buckets_per_octave - 3 * (buckets_per_octave / 12)) as f32)
+                (idx as f32 + (buckets_per_octave - 3 * (buckets_per_octave / 12)) as f32)
                     % buckets_per_octave as f32,
             );
 
             let color_coefficient = 1.0 - (1.0 - size / max_size).powf(2.0);
 
-            let (x, y, z) = bin_to_spiral(buckets_per_octave, center);
-            transform.translation = Vec3::new(x, y, z);
+            // let (x, y, z) = bin_to_spiral(buckets_per_octave, idx as f32);
+            // transform.translation = Vec3::new(x, y, z);
 
             let mut color_mat = materials.get_mut(&color).expect("ball color material");
-            // color_mat.color = Color::rgb(
-            //     r * color_coefficient,
-            //     g * color_coefficient,
-            //     b * color_coefficient,
-            // );
+            // color_mat.color = Color::rgba(r, g, b, 1.0);
             color_mat.color = Color::rgba(r, g, b, color_coefficient);
 
             transform.scale = Vec3::splat(size * scale_factor);
 
-            if transform.scale.x >= 0.005 {
-                *visibility = Visibility::Visible;
-            }
+            // if transform.scale.x >= 0.005 {
+            *visibility = Visibility::Visible;
+            // }
         }
     }
-    // TODO: ?faster lookup through indexes
 
     for (_, line_strip) in &mut spectrum_linestrip {
         let mesh = meshes
@@ -384,8 +392,8 @@ pub fn update_display(
             .expect("spectrum line strip mesh");
         mesh.insert_attribute(
             Mesh::ATTRIBUTE_POSITION,
-            cqt_result
-                .x_cqt
+            analysis_state
+                .x_cqt_peakfiltered
                 .iter()
                 .enumerate()
                 .map(|(i, amp)| Vec3::new(i as f32 * 0.017, *amp / 10.0, 0.0))
