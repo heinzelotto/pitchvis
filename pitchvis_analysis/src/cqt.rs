@@ -42,7 +42,7 @@ pub struct Cqt {
     _gamma: f32,
     cqt_kernel: CqtKernel,
     /// The analysis delay of the CQT
-    _delay: Duration,
+    pub delay: Duration,
     fft: std::sync::Arc<dyn rustfft::Fft<f32>>,
     /// A map from the FFT size to the precomputed Fft objects used to resample the input signal to that size
     resample_ffts: HashMap<
@@ -113,7 +113,7 @@ impl Cqt {
             _quality: quality,
             _gamma: gamma,
             cqt_kernel,
-            _delay: delay,
+            delay,
             fft,
             resample_ffts: HashMap::new(),
             _t_diff: 0.0,
@@ -325,6 +325,8 @@ impl Cqt {
     }
 
     pub fn calculate_cqt_instant_in_db(&mut self, x: &[f32]) -> Vec<f32> {
+        // FIXME: could be &self if we compute all necessary ffts once in the beginning or use interior mutability for the fft hashmap
+
         // TODO: we are doing a lot of unnecessary ffts here, just because the interface of the resampler
         // neither allows us to reuse the same frame for subsequent downsamplings, nor allows us to do the
         // fft ourselves.

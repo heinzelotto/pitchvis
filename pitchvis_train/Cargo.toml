@@ -19,5 +19,5 @@ path = "src/main.rs"
 anyhow = "1.0"
 log = "0.4.17"
 env_logger = "0.10.0"
-hound = "3.5.0"
 rustysynth = { version = "1.1.0", path = "../rustysynth_fork" }
+pitchvis_analysis = { path = "../pitchvis_analysis" }
