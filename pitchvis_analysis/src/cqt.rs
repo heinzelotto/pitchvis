@@ -7,44 +7,93 @@ use std::f32::consts::PI;
 use std::ops::DivAssign;
 use std::time::Duration;
 
-/// A function to implement max() for floats, because floats don't implement Ord
-/// The assumption is that NaNs are not present in the slice.
+/// Returns the maximum value in a slice of floats.
+/// This function is necessary because floats do not implement the Ord trait.
+/// It assumes that there are no NaN values in the slice.
+///
+/// # Arguments
+///
+/// * `sl` - A slice of f32 values.
+///
+/// # Returns
+///
+/// * The maximum value in the slice.
 fn max(sl: &[f32]) -> f32 {
     sl.iter()
         .fold(f32::MIN, |cur, x| if *x > cur { *x } else { cur })
 }
 
-/// A function to implement min() for floats, because floats don't implement Ord.
-/// The assumption is that NaNs are not present in the slice.
+/// Returns the minimum value in a slice of floats.
+/// This function is necessary because floats do not implement the Ord trait.
+/// It assumes that there are no NaN values in the slice.
+///
+/// # Arguments
+///
+/// * `sl` - A slice of f32 values.
+///
+/// # Returns
+///
+/// * The minimum value in the slice.
 fn min(sl: &[f32]) -> f32 {
     sl.iter()
         .fold(f32::MAX, |cur, x| if *x < cur { *x } else { cur })
 }
 
+/// The `CqtKernel` struct represents a Constant Q Transform (CQT) kernel,
+/// consisting of a filter bank and corresponding windows.
 pub struct CqtKernel {
     pub filter_bank: Vec<sprs::CsMat<Complex32>>,
     pub windows: Vec<(usize, usize)>,
 }
 
+/// The `Cqt` struct represents a Constant Q Transform (CQT), a type of spectral transform.
+/// The CQT is a time-frequency representation where the frequency bins are geometrically spaced.
 pub struct Cqt {
-    /// The sample rate of the input audio signal
+    /// The sample rate (in Hz) of the input audio signal.
     _sr: usize,
-    /// The number of samples in the longest FFT (will be decimated for higher octaves)
+
+    /// The number of samples in the longest Fast Fourier Transform (FFT). This will be decimated
+    /// for higher octaves.
     pub n_fft: usize,
-    /// The minimum frequency of the lowest note analyzed in the CQT
+
+    /// The minimum frequency (in Hz) of the lowest note analyzed in the Constant-Q Transform (CQT).
     _min_freq: f32,
-    /// The resolution of the CQT in bins per octave (multiple of 12)
+
+    /// The resolution of the CQT, defined in terms of the number of frequency bins per octave.
+    /// This value must be a multiple of 12, reflecting the 12 semitones in a musical octave.
     buckets_per_octave: usize,
-    /// The total range in octaves of the CQT
+
+    /// The total range, in octaves, over which the CQT is computed.
     octaves: usize,
+
+    /// A quantile value used to determine the sparsity of the CQT kernel. A higher value results
+    /// in a sparser representation, with only the most impactful frequency bins being used.
     _sparsity_quantile: f32,
+
+    /// A value that determines the quality of the CQT. A higher value results in a more accurate
+    /// representation, at the cost of greater time smearing.
     _quality: f32,
+
+    /// A parameter used in the calculation of the CQT, which determines the amount of frequency
+    /// smearing in lower octaves. A higher value results in more smearing, which can be useful
+    /// for analyzing signals with time-varying frequency content where more time resolution is
+    /// desired.
     _gamma: f32,
+
+    /// The CQT kernel, which is a precomputed filter bank used in the computation of the CQT.
     cqt_kernel: CqtKernel,
-    /// The analysis delay of the CQT
+
+    /// The delay introduced by the analysis process. This is the amount of time between when a
+    /// signal is input to the system and when its CQT is available.
     pub delay: Duration,
+
+    /// A shared reference to a Fast Fourier Transform (FFT) object, which is used in the
+    /// computation of the CQT.
     fft: std::sync::Arc<dyn rustfft::Fft<f32>>,
-    /// A map from the FFT size to the precomputed Fft objects used to resample the input signal to that size
+
+    /// A map from FFT sizes to precomputed FFT objects. Each FFT object is used to resample the
+    /// input signal to the corresponding size. The map contains a pair of FFTs for each size:
+    /// one for forward transformation and one for inverse transformation.
     resample_ffts: HashMap<
         usize,
         (
@@ -52,9 +101,26 @@ pub struct Cqt {
             std::sync::Arc<dyn rustfft::Fft<f32>>,
         ),
     >,
+
     _t_diff: f32,
 }
 
+/// Creates a new `Cqt` instance.
+///
+/// # Arguments
+///
+/// * `sr` - The sample rate of the input audio signal.
+/// * `n_fft` - The number of samples in the longest FFT.
+/// * `min_freq` - The minimum frequency of the lowest note analyzed in the CQT.
+/// * `buckets_per_octave` - The resolution of the CQT in bins per octave.
+/// * `octaves` - The total range in octaves of the CQT.
+/// * `sparsity_quantile` - The sparsity quantile.
+/// * `quality` - The quality.
+/// * `gamma` - The gamma.
+///
+/// # Returns
+///
+/// * A new `Cqt` instance.
 impl Cqt {
     // #[allow(dead_code)]
     // fn test_create_sines(&self, t_diff: f32) -> Vec<f32> {
@@ -120,6 +186,22 @@ impl Cqt {
         }
     }
 
+    /// Calculates the CQT kernel.
+    ///
+    /// # Arguments
+    ///
+    /// * `sr` - The sample rate of the input audio signal.
+    /// * `n_fft` - The number of samples in the longest FFT.
+    /// * `min_freq` - The minimum frequency of the lowest note analyzed in the CQT.
+    /// * `buckets_per_octave` - The resolution of the CQT in bins per octave.
+    /// * `octaves` - The total range in octaves of the CQT.
+    /// * `sparsity_quantile` - The sparsity quantile.
+    /// * `quality` - The quality.
+    /// * `gamma` - The gamma.
+    ///
+    /// # Returns
+    ///
+    /// * A tuple consisting of the `CqtKernel` and the delay as `Duration`.
     fn cqt_kernel(
         sr: usize,
         n_fft: usize,
@@ -296,6 +378,17 @@ impl Cqt {
         )
     }
 
+    /// Resamples a given input signal by a specified factor. The resampling is performed by
+    /// transforming the signal into the frequency domain using FFT, zeroing out the high-frequency
+    /// components, and then transforming it back to the time domain. The resulting time-domain signal
+    /// is then downsampled by the given factor.
+    ///
+    /// # Arguments
+    /// * `v`: The input signal to be resampled.
+    /// * `factor`: The resampling factor. The input signal will be downsampled by this factor.
+    ///
+    /// # Returns
+    /// A vector containing the resampled signal.
     fn resample(&mut self, v: &[f32], factor: usize) -> Vec<f32> {
         let mut x_fft = v
             .iter()
@@ -324,6 +417,16 @@ impl Cqt {
             .collect::<Vec<f32>>()
     }
 
+    /// Calculates the Constant-Q Transform (CQT) of the given input signal at a specific time instant.
+    /// The result is given in dB scale. The function performs multiple FFTs on resampled versions of
+    /// the input signal and applies the precomputed CQT kernel to each FFT output to obtain the CQT.
+    /// It then converts the results into the dB scale and combines them into a single output vector.
+    ///
+    /// # Arguments
+    /// * `x`: The input signal for which the CQT is to be calculated.
+    ///
+    /// # Returns
+    /// A vector containing the CQT of the input signal in dB scale.
     pub fn calculate_cqt_instant_in_db(&mut self, x: &[f32]) -> Vec<f32> {
         // FIXME: could be &self if we compute all necessary ffts once in the beginning or use interior mutability for the fft hashmap
 
