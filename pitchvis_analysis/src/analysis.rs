@@ -9,7 +9,7 @@ const PEAK_MIN_HEIGHT: f32 = 6.0;
 const _BASSLINE_PEAK_MIN_PROMINENCE: f32 = 12.0;
 const _BASSLINE_PEAK_MIN_HEIGHT: f32 = 4.0;
 const _HIGHEST_BASSNOTE: usize = 12 * 2 + 4;
-const SMOOTH_LENGTH: usize = 5;
+const SMOOTH_LENGTH: usize = 3;
 
 pub struct AnalysisState {
     pub history: Vec<Vec<f32>>,
@@ -91,39 +91,39 @@ impl AnalysisState {
             *smoothed = v.iter().sum::<f32>() / SMOOTH_LENGTH as f32;
         }
 
-        let conv_radius = (buckets_per_octave / 12) / 2;
-        let x_cqt_smoothed_convoluted = (0..(octaves * buckets_per_octave))
-            .map(|idx| {
-                if idx < conv_radius || idx >= octaves * buckets_per_octave - conv_radius {
-                    0.0
-                } else {
-                    x_cqt_smoothed[(idx - conv_radius)..(idx + conv_radius + 1)]
-                        .iter()
-                        .sum::<f32>()
-                }
-            })
-            .collect::<Vec<f32>>();
+        // let conv_radius = (buckets_per_octave / 12) / 2;
+        // let x_cqt_smoothed_convoluted = (0..(octaves * buckets_per_octave))
+        //     .map(|idx| {
+        //         if idx < conv_radius || idx >= octaves * buckets_per_octave - conv_radius {
+        //             0.0
+        //         } else {
+        //             x_cqt_smoothed[(idx - conv_radius)..(idx + conv_radius + 1)]
+        //                 .iter()
+        //                 .sum::<f32>()
+        //         }
+        //     })
+        //     .collect::<Vec<f32>>();
 
-        let mut pf2 = PeakFinder::new(&x_cqt_smoothed_convoluted);
-        pf2.with_min_prominence(PEAK_MIN_PROMINENCE + 5.0);
-        pf2.with_min_height(PEAK_MIN_HEIGHT + 5.0);
-        let peaks2 = pf2.find_peaks();
-        let peaks2 = peaks2
-            .iter()
-            .map(|p| p.middle_position())
-            .collect::<HashSet<usize>>();
+        // let mut pf2 = PeakFinder::new(&x_cqt_smoothed_convoluted);
+        // pf2.with_min_prominence(PEAK_MIN_PROMINENCE + 5.0);
+        // pf2.with_min_height(PEAK_MIN_HEIGHT + 5.0);
+        // let peaks2 = pf2.find_peaks();
+        // let peaks2 = peaks2
+        //     .iter()
+        //     .map(|p| p.middle_position())
+        //     .collect::<HashSet<usize>>();
 
-        let x_cqt_peakfiltered = x_cqt_smoothed_convoluted
-            .iter()
-            .enumerate()
-            .map(|(i, x)| {
-                if peaks2.contains(&i) {
-                    *x / (2.0 * conv_radius as f32)
-                } else {
-                    x_cqt_smoothed[i] / 5.0
-                }
-            })
-            .collect::<Vec<f32>>();
+        // let x_cqt_peakfiltered = x_cqt_smoothed_convoluted
+        //     .iter()
+        //     .enumerate()
+        //     .map(|(i, x)| {
+        //         if peaks2.contains(&i) {
+        //             *x / (2.0 * conv_radius as f32)
+        //         } else {
+        //             0.0 // x_cqt_smoothed[i] / 5.0
+        //         }
+        //     })
+        //     .collect::<Vec<f32>>();
 
         // find peaks
         let padding_length = 1;
@@ -138,6 +138,18 @@ impl AnalysisState {
             .filter(|p| p.middle_position() >= padding_length + (buckets_per_octave / 12 + 1) / 2) // we disregard lowest A and surroundings as peaks
             .map(|p| p.middle_position() - padding_length)
             .collect::<HashSet<usize>>();
+
+        let x_cqt_peakfiltered = x_cqt_smoothed
+            .iter()
+            .enumerate()
+            .map(|(i, x)| {
+                if peaks.contains(&i) {
+                    *x
+                } else {
+                    0.0 // x_cqt_smoothed[i] / 5.0
+                }
+            })
+            .collect::<Vec<f32>>();
 
         let mut peaks_continuous = Vec::new();
         for p in &peaks {

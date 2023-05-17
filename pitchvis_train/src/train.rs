@@ -1,4 +1,7 @@
 use anyhow::Result;
+use linfa::prelude::*;
+use linfa::traits::Fit;
+use linfa::traits::Predict;
 use rustysynth::*;
 use std::fs::File;
 use std::sync::Arc;
@@ -16,7 +19,62 @@ pub const SPARSITY_QUANTILE: f32 = 0.999;
 pub const Q: f32 = 0.7 / UPSCALE_FACTOR as f32;
 pub const GAMMA: f32 = 11.6 / UPSCALE_FACTOR as f32;
 
-// pub const STEP_MS: usize = 150;
+pub const STEP_SIZE_IN_CHUNKS: usize = 10;
+
+fn fit(positive: Vec<Vec<f32>>, negative: Vec<Vec<f32>>) {
+    // Combine positive and negative data into one dataset
+    let len_p = positive.len();
+    let len_n = negative.len();
+    dbg!(&len_p, &len_n);
+    let features: Vec<Vec<f32>> = positive.into_iter().chain(negative.into_iter()).collect();
+    let targets: Vec<f32> = vec![1.0; len_p]
+        .into_iter()
+        .chain(vec![0.0; len_n].into_iter())
+        .collect();
+
+    // Convert your data to Array2, which is required by linfa
+    let features_shape = dbg!((features.len(), features[0].len()));
+    let features_data = features.into_iter().flatten().collect::<Vec<f32>>();
+    let records_array = ndarray::Array2::from_shape_vec(features_shape, features_data).unwrap();
+    let targets_array = ndarray::Array1::from_shape_vec(targets.len(), targets).unwrap();
+
+    // Create a dataset
+    let dataset: Dataset<f32, &str, ndarray::Ix1> = DatasetBase::new(records_array, targets_array)
+        .map_targets(|x: &f32| if *x == 1.0 { "positive" } else { "negative" });
+
+    // // Split the dataset into a training and a validation set
+    let mut rng = rand::thread_rng();
+    let (train, valid) = dataset.shuffle(&mut rng).split_with_ratio(0.9);
+
+    // Create a logistic regression model
+    let model = linfa_logistic::LogisticRegression::default().max_iterations(120);
+
+    // Train the model
+    let model = model.fit(&train).unwrap();
+
+    // Predict and map targets
+    let pred = model.predict(&valid);
+
+    // valid
+    //     .as_targets()
+    //     .iter()
+    //     .zip(pred.iter())
+    //     .for_each(|(t, p)| {
+    //         println!("target: {}, prediction: {}", t, p);
+    //     });
+
+    // Create a confusion matrix
+    let cm = pred.confusion_matrix(&valid).unwrap();
+
+    // Print the confusion matrix, this will print a table with four entries. On the diagonal are
+    // the number of true-positive and true-negative predictions, off the diagonal are
+    // false-positive and false-negative
+    println!("{:?}", cm);
+
+    // Calculate the accuracy and Matthew Correlation Coefficient (cross-correlation between
+    // predicted and targets)
+    println!("accuracy {}, MCC {}", cm.accuracy(), cm.mcc());
+}
 
 pub fn train() -> Result<()> {
     let mut cqt = pitchvis_analysis::cqt::Cqt::new(
@@ -45,7 +103,7 @@ pub fn train() -> Result<()> {
         midi_path,
         soundfont_path,
         cqt_delay_in_samples,
-        // step_size_in_chunks,
+        STEP_SIZE_IN_CHUNKS,
         &mut cqt,
     )?;
 
@@ -59,18 +117,20 @@ pub fn train() -> Result<()> {
         negative_x.extend_from_slice(&n_x);
     }
 
-    // average all positive_x
-    let mut avg_positive_x = vec![0.0; positive_x[0].len()];
-    for v in &positive_x {
-        for (i, x) in v.iter().enumerate() {
-            avg_positive_x[i] += x;
-        }
-    }
-    for x in &mut avg_positive_x {
-        *x /= positive_x.len() as f32;
-    }
+    fit(positive_x, negative_x);
 
-    println!("avg_positive_x: {:?}", avg_positive_x);
+    // // average all positive_x
+    // let mut avg_positive_x = vec![0.0; positive_x[0].len()];
+    // for v in &positive_x {
+    //     for (i, x) in v.iter().enumerate() {
+    //         avg_positive_x[i] += x;
+    //     }
+    // }
+    // for x in &mut avg_positive_x {
+    //     *x /= positive_x.len() as f32;
+    // }
+
+    // println!("avg_positive_x: {:?}", avg_positive_x);
 
     // let (positive_x, negative_x) = annotated_cqt
     //     .iter()
@@ -103,7 +163,7 @@ fn synthesize_midi_to_wav(
     midi_path: &str,
     soundfont_path: &str,
     cqt_delay_in_samples: usize,
-    // step_size_in_chunks: usize,
+    step_size_in_chunks: usize,
     cqt: &mut pitchvis_analysis::cqt::Cqt,
 ) -> Result<Vec<(Vec<(i32, f32)>, Vec<f32>)>> {
     let mut sf2 = File::open(soundfont_path).unwrap();
@@ -134,7 +194,10 @@ fn synthesize_midi_to_wav(
     let mut written = 0;
     let mut prev_active_keys;
     let mut active_keys = Vec::new();
+    let mut chunk_count = 0;
     while written < sample_count {
+        chunk_count += 1;
+
         // Render the waveform.
         sequencer.render(&mut left[..], &mut right[..]);
         written += left.len();
@@ -145,6 +208,10 @@ fn synthesize_midi_to_wav(
             .for_each(|(l, r)| *l = (*l + *r) / 2.0);
         ring_buffer.drain(..left.len());
         ring_buffer.extend_from_slice(left.as_slice());
+
+        if (chunk_count % step_size_in_chunks) != 0 {
+            continue;
+        }
 
         // get active keys
         prev_active_keys = active_keys;

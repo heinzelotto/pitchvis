@@ -7,15 +7,18 @@ mod audio_system;
 mod cqt_system;
 mod serial_system;
 
+// increasing BUCKETS_PER_SEMITONE or Q will improve frequency resolution at cost of time resolution,
+// increasing GAMMA will improve time resolution at lower frequencies.
 pub const SR: usize = 22050;
 pub const BUFSIZE: usize = 2 * SR;
 pub const N_FFT: usize = 2 * 16384;
 pub const FREQ_A1: f32 = 55.0;
-pub const BUCKETS_PER_OCTAVE: usize = 12 * 3;
+pub const BUCKETS_PER_SEMITONE: usize = 3;
+pub const BUCKETS_PER_OCTAVE: usize = 12 * BUCKETS_PER_SEMITONE;
 pub const OCTAVES: usize = 4;
 pub const SPARSITY_QUANTILE: f32 = 0.999;
-pub const Q: f32 = 1.0;
-pub const GAMMA: f32 = 5.0;
+pub const Q: f32 = 10.0;
+pub const GAMMA: f32 = 5.3 * Q;
 
 const FPS: u64 = 10;
 
