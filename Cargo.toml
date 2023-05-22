@@ -8,6 +8,7 @@ members = [
     "pitchvis_viewer",
     "dagc_fork",
     "rustysynth_fork",
+    "pitchvis_wasm_kiss3d",
 ]
 
 resolver = "2"
