@@ -132,6 +132,7 @@ pub fn main_fun() -> Result<()> {
                 pitchvis_analysis::analysis::SPECTROGRAM_LENGTH,
             ),
         ))
+        .insert_resource(display_system::CylinderEntityListResource(Vec::new()))
         .add_startup_system(display_system::setup_display_to_system(
             OCTAVES,
             BUCKETS_PER_OCTAVE,

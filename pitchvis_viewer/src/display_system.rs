@@ -31,6 +31,10 @@ pub struct BassCylinder;
 #[derive(Component)]
 pub struct Spectrum;
 
+/// keep an index -> entity mapping for the cylinders
+#[derive(Resource)]
+pub struct CylinderEntityListResource(pub Vec<Entity>);
+
 pub fn setup_display_to_system(
     octaves: usize,
     buckets_per_octave: usize,
@@ -39,11 +43,13 @@ pub fn setup_display_to_system(
     ResMut<Assets<Mesh>>,
     ResMut<Assets<ColorMaterial>>,
     ResMut<Assets<LineMaterial>>,
+    ResMut<CylinderEntityListResource>,
 ) {
     move |commands: Commands,
           meshes: ResMut<Assets<Mesh>>,
           materials: ResMut<Assets<ColorMaterial>>,
-          line_materials: ResMut<Assets<LineMaterial>>| {
+          line_materials: ResMut<Assets<LineMaterial>>,
+          cylinder_entities: ResMut<CylinderEntityListResource>| {
         setup_display(
             octaves,
             buckets_per_octave,
@@ -51,6 +57,7 @@ pub fn setup_display_to_system(
             meshes,
             materials,
             line_materials,
+            cylinder_entities,
         )
     }
 }
@@ -62,6 +69,7 @@ pub fn setup_display(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
     mut line_materials: ResMut<Assets<LineMaterial>>,
+    mut cylinder_entities: ResMut<CylinderEntityListResource>,
 ) {
     let spiral_points = spiral_points(octaves, buckets_per_octave);
 
@@ -91,7 +99,7 @@ pub fn setup_display(
         let q = nalgebra::point![cur.0, cur.1, cur.2];
 
         let mid = nalgebra::center(&p, &q);
-        let _h = nalgebra::distance(&p, &q);
+        let h = nalgebra::distance(&p, &q);
         let y_unit: Vector3<f32> = nalgebra::vector![0.0, 1.0, 0.0];
         let v_diff = p.sub(q);
 
@@ -101,24 +109,28 @@ pub fn setup_display(
             transform.rotate(Quat::from_euler(EulerRot::XYZ, angx, angy, angz));
         };
 
-        //cylinders.push((c, h + 0.01));
-
-        // cylinders
-        // commands.spawn((
-        //     BassCylinder,
-        //     MaterialMesh2dBundle {
-        //         mesh: meshes.add(Mesh::from(shape::Cylinder {
-        //             radius: 0.05,
-        //             height: h + 0.01,
-        //             resolution: 5,
-        //             segments: 1,
-        //         })),
-        //         material: materials.add(Color::rgb(0.8, 0.7, 0.6).into()),
-        //         transform,
-        //         visibility: Visibility::Hidden,
-        //         ..default()
-        //     },
-        // ));
+        cylinder_entities.0.push(
+            commands
+                .spawn((
+                    BassCylinder,
+                    MaterialMesh2dBundle {
+                        mesh: meshes
+                            .add(
+                                shape::Quad {
+                                    size: Vec2::new(0.05, h + 0.01),
+                                    flip: false,
+                                }
+                                .into(),
+                            )
+                            .into(),
+                        material: materials.add(Color::rgb(0.8, 0.7, 0.6).into()),
+                        transform,
+                        visibility: Visibility::Hidden,
+                        ..default()
+                    },
+                ))
+                .id(),
+        );
     }
 
     // draw rays
@@ -237,65 +249,83 @@ pub fn update_display_to_system(
     buckets_per_octave: usize,
     octaves: usize,
 ) -> impl FnMut(
-    Query<(
-        &PitchBall,
-        &mut Visibility,
-        &mut Transform,
-        &mut Handle<ColorMaterial>,
+    ParamSet<(
+        Query<(
+            &PitchBall,
+            &mut Visibility,
+            &mut Transform,
+            &mut Handle<ColorMaterial>,
+        )>,
+        Query<(&BassCylinder, &mut Visibility, &mut Handle<ColorMaterial>)>,
     )>,
     Query<(&Spectrum, &mut Handle<Mesh>)>,
     ResMut<Assets<ColorMaterial>>,
     ResMut<Assets<Mesh>>,
     Res<crate::analysis_system::AnalysisStateResource>,
     Res<crate::cqt_system::CqtResultResource>,
+    Res<CylinderEntityListResource>,
 ) + Copy {
-    move |balls: Query<(
-        &PitchBall,
-        &mut Visibility,
-        &mut Transform,
-        &mut Handle<ColorMaterial>,
+    move |set: ParamSet<(
+        Query<(
+            &PitchBall,
+            &mut Visibility,
+            &mut Transform,
+            &mut Handle<ColorMaterial>,
+        )>,
+        Query<(&BassCylinder, &mut Visibility, &mut Handle<ColorMaterial>)>,
     )>,
           spectrum_linestrip: Query<(&Spectrum, &mut Handle<Mesh>)>,
           materials: ResMut<Assets<ColorMaterial>>,
           meshes: ResMut<Assets<Mesh>>,
           analysis_state: Res<crate::analysis_system::AnalysisStateResource>,
-          cqt_result: Res<crate::cqt_system::CqtResultResource>| {
+          cqt_result: Res<crate::cqt_system::CqtResultResource>,
+          cylinder_entities: Res<CylinderEntityListResource>| {
         update_display(
             buckets_per_octave,
             octaves,
-            balls,
+            set,
             spectrum_linestrip,
             materials,
             meshes,
             analysis_state,
             cqt_result,
+            cylinder_entities,
         );
     }
 }
 
+//#yellow
 pub fn update_display(
     buckets_per_octave: usize,
     octaves: usize,
-    mut balls: Query<(
-        &PitchBall,
-        &mut Visibility,
-        &mut Transform,
-        &mut Handle<ColorMaterial>,
+    mut set: ParamSet<(
+        Query<(
+            &PitchBall,
+            &mut Visibility,
+            &mut Transform,
+            &mut Handle<ColorMaterial>,
+        )>,
+        Query<(&BassCylinder, &mut Visibility, &mut Handle<ColorMaterial>)>,
     )>,
     mut spectrum_linestrip: Query<(&Spectrum, &mut Handle<Mesh>)>,
     mut materials: ResMut<Assets<ColorMaterial>>,
     mut meshes: ResMut<Assets<Mesh>>,
     analysis_state: Res<crate::analysis_system::AnalysisStateResource>,
     cqt_result: Res<crate::cqt_system::CqtResultResource>,
+    cylinder_entities: Res<CylinderEntityListResource>,
 ) {
     let scale_factor = 1.0 / 2405.0;
 
-    for (pitch_ball, mut visibility, mut transform, _) in &mut balls {
+    for (pitch_ball, mut visibility, mut transform, _) in &mut set.p0() {
         if *visibility == Visibility::Visible {
             let idx = pitch_ball.0;
             let mut size = transform.scale / scale_factor;
-            size *= 0.90 - 0.15 * (idx as f32 / (octaves * buckets_per_octave) as f32);
+            let dropoff_factor = 0.90 - 0.15 * (idx as f32 / (octaves * buckets_per_octave) as f32);
+            size *= dropoff_factor;
             transform.scale = size * scale_factor;
+
+            // also shift shrinking circles slightly to the background so that they are not cluttering newly appearing larger circles
+            transform.translation.z *= dropoff_factor;
 
             if size.x * scale_factor < 0.002 {
                 *visibility = Visibility::Hidden;
@@ -325,7 +355,7 @@ pub fn update_display(
             .map(|p| (p.0.trunc() as usize, *p))
             .collect::<HashMap<usize, (f32, f32)>>();
 
-        for (pitch_ball, mut visibility, mut transform, color) in &mut balls {
+        for (pitch_ball, mut visibility, mut transform, color) in &mut set.p0() {
             let idx = pitch_ball.0;
             if peaks_rounded.contains_key(&idx) {
                 let (center, size) = peaks_rounded[&idx];
@@ -338,8 +368,10 @@ pub fn update_display(
 
                 let color_coefficient = 1.0 - (1.0 - size / max_size).powf(2.0);
 
-                let (x, y, z) = bin_to_spiral(buckets_per_octave, center);
-                transform.translation = Vec3::new(x, y, z);
+                let (x, y, _) = bin_to_spiral(buckets_per_octave, center);
+                // make sure larger circles are drawn on top by adding a small offset proportional to the size
+                let z_ordering_offset = (size / max_size) * 12.5;
+                transform.translation = Vec3::new(x, y, z_ordering_offset);
 
                 let mut color_mat = materials.get_mut(&color).expect("ball color material");
                 // color_mat.color = Color::rgb(
@@ -360,7 +392,7 @@ pub fn update_display(
     } else {
         // let cqt_base = &analysis_state.x_cqt_peakfiltered;
         let cqt_base = &cqt_result.x_cqt;
-        for (pitch_ball, mut visibility, mut transform, color) in &mut balls {
+        for (pitch_ball, mut visibility, mut transform, color) in &mut set.p0() {
             let idx = pitch_ball.0;
             let size = cqt_base[idx];
 
@@ -372,8 +404,10 @@ pub fn update_display(
 
             let color_coefficient = 1.0 - (1.0 - size / max_size).powf(2.0);
 
-            // let (x, y, z) = bin_to_spiral(buckets_per_octave, idx as f32);
-            // transform.translation = Vec3::new(x, y, z);
+            let (x, y, _) = bin_to_spiral(buckets_per_octave, idx as f32);
+            // make sure larger circles are drawn on top by adding a small offset proportional to the size
+            let z_ordering_offset = (size / max_size) * 12.5;
+            transform.translation = Vec3::new(x, y, z_ordering_offset);
 
             let mut color_mat = materials.get_mut(&color).expect("ball color material");
             // color_mat.color = Color::rgba(r, g, b, 1.0);
@@ -386,6 +420,14 @@ pub fn update_display(
             // }
         }
     }
+
+    update_cylinders(
+        buckets_per_octave,
+        cylinder_entities,
+        materials,
+        set.p1(),
+        &analysis_state.peaks_continuous,
+    );
 
     for (_, line_strip) in &mut spectrum_linestrip {
         let mesh = meshes
@@ -402,6 +444,7 @@ pub fn update_display(
         );
     }
 }
+//#
 
 // #[derive(PartialEq)]
 // pub enum PauseState {
@@ -798,59 +841,59 @@ impl Material for LineMaterial {
 //     }
 // }
 
-// fn update_cylinders(&mut self, gain: f32) {
-//     //let mut color_map: Vec<i32> = vec![-1; self.buckets_per_octave * self.octaves];
-//     // for (prev, cur) in peaks.iter().tuple_windows() {
-//     //     color_map[*prev..*cur].fill(*prev as i32);
-//     // }
-//     self.cylinders
-//         .iter_mut()
-//         .for_each(|c| c.0.set_visible(false));
-//     if gain > 1000.0 {
-//         return;
-//     }
-//     if let Some((center, size)) = self.analysis_state.peaks_continuous.first() {
-//         if center.trunc() as usize >= self.cylinders.len() {
-//             return;
-//         }
+fn update_cylinders(
+    buckets_per_octave: usize,
+    cylinder_entities: Res<CylinderEntityListResource>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+    mut bass_cylinders: Query<(&BassCylinder, &mut Visibility, &mut Handle<ColorMaterial>)>,
+    peaks_continuous: &[(f32, f32)],
+) {
+    //let mut color_map: Vec<i32> = vec![-1; self.buckets_per_octave * self.octaves];
+    // for (prev, cur) in peaks.iter().tuple_windows() {
+    //     color_map[*prev..*cur].fill(*prev as i32);
+    // }
+    for (_, mut visibility, _) in &mut bass_cylinders {
+        *visibility = Visibility::Hidden;
+    }
+    // if gain > 1000.0 {
+    //     return;
+    // }
+    if let Some((center, size)) = peaks_continuous.first() {
+        if center.trunc() as usize >= cylinder_entities.0.len() {
+            return;
+        }
 
-//         // color up to lowest note
-//         for idx in 0..(center.trunc() as usize) {
-//             let (ref mut c, ref height) = self.cylinders[idx];
-//             c.set_visible(true);
+        // color up to lowest note
+        for idx in 0..(center.trunc() as usize) {
+            let (_, ref mut visibility, color) = bass_cylinders
+                .get_mut(cylinder_entities.0[idx])
+                .expect("cylinder entity");
+            **visibility = Visibility::Visible;
 
-//             let color_map_ref = center.trunc() as usize;
-//             let (r, g, b) = calculate_color(
-//                 self.buckets_per_octave,
-//                 (color_map_ref as usize + self.buckets_per_octave
-//                     - 3 * (self.buckets_per_octave / 12)) as f32
-//                     % self.buckets_per_octave as f32,
-//             );
+            let color_map_ref = center.trunc() as usize;
+            let (r, g, b) = pitchvis_analysis::color_mapping::calculate_color(
+                buckets_per_octave,
+                (color_map_ref as usize + buckets_per_octave - 3 * (buckets_per_octave / 12))
+                    as f32
+                    % buckets_per_octave as f32,
+            );
 
-//             let k_max = arg_max(
-//                 &self
-//                     .analysis_state
-//                     .peaks_continuous
-//                     .iter()
-//                     .map(|p| p.1)
-//                     .collect::<Vec<f32>>(),
-//             );
-//             let max_size = self.analysis_state.peaks_continuous[k_max].1;
+            let k_max = arg_max(&peaks_continuous.iter().map(|p| p.1).collect::<Vec<f32>>());
+            let max_size = peaks_continuous[k_max].1;
 
-//             let color_coefficient = 1.0 - (1.0 - size / max_size).powf(2.0);
+            let color_coefficient = 1.0 - (1.0 - size / max_size).powf(2.0);
 
-//             c.set_color(
-//                 r * color_coefficient,
-//                 g * color_coefficient,
-//                 b * color_coefficient,
-//             );
+            materials
+                .get_mut(&color)
+                .expect("cylinder color material")
+                .color = Color::rgba(r, g, b, color_coefficient);
 
-//             let radius = 0.08;
-//             c.set_local_scale(radius, *height, radius);
-//         }
-//     }
-// }
-// }
+            // let radius = 0.08;
+            // c.set_local_scale(radius, *height, radius);
+        }
+    }
+}
+//}
 
 fn spiral_points(octaves: usize, buckets_per_octave: usize) -> Vec<(f32, f32, f32)> {
     (0..(buckets_per_octave * octaves))
