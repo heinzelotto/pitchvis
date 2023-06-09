@@ -12,3 +12,25 @@ members = [
 ]
 
 resolver = "2"
+
+# Enable a small amount of optimization in debug mode
+[profile.dev]
+opt-level = 1
+
+# Enable high optimizations for dependencies, but not for our code:
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release.package.pitchvis_serial]
+strip = true  # Automatically strip symbols from the binary.
+opt-level = "z"  # Optimize for size.
+
+
+[profile.release.package.pitchvis-wasm-kiss3d]
+strip = true
+
+[patch.crates-io]
+kiss3d = { git = "https://github.com/heinzelotto/kiss3d" }
+
+[profile.release]
+lto = true  # Enable link-time optimization.
