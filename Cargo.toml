@@ -24,7 +24,7 @@ opt-level = 3
 [profile.release.package.pitchvis_serial]
 strip = true  # Automatically strip symbols from the binary.
 opt-level = "z"  # Optimize for size.
-
+#panic = "abort"  # Abort on panic.
 
 [profile.release.package.pitchvis-wasm-kiss3d]
 strip = true

@@ -8,13 +8,10 @@ edition = "2021"
 name = "pitchvis_analysis"
 
 [dependencies]
-anyhow = "1.0"
 rustfft = "6.1.0"
 apodize = "1.0.0"
 num-complex = "0.4.2"
 sprs = "0.11.0"
 find_peaks = "0.1.5"
-#rubato = "0.12.0"
 log = "0.4.17"
-nalgebra = "0.32.2"
 lab = "0.11.0"

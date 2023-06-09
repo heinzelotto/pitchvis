@@ -1,7 +1,9 @@
+// #![no_std]
+// #![no_main]
+
 use std::time::Duration;
 
 use pitchvis_analysis::{analysis::AnalysisState, util::*};
-use pitchvis_audio::audio::RingBuffer;
 use serialport::SerialPort;
 
 // increasing BUCKETS_PER_SEMITONE or Q will improve frequency resolution at cost of time resolution,
@@ -12,12 +14,30 @@ pub const N_FFT: usize = 2 * 16384;
 pub const FREQ_A1: f32 = 55.0;
 pub const BUCKETS_PER_SEMITONE: usize = 3;
 pub const BUCKETS_PER_OCTAVE: usize = 12 * BUCKETS_PER_SEMITONE;
-pub const OCTAVES: usize = 4;
+pub const OCTAVES: usize = 5;
 pub const SPARSITY_QUANTILE: f32 = 0.999;
 pub const Q: f32 = 10.0;
 pub const GAMMA: f32 = 5.3 * Q;
 
-const FPS: u64 = 10;
+const FPS: u64 = 25;
+
+// color calculation constants
+pub const COLORS: [[f32; 3]; 12] = [
+    [0.95, 0.10, 0.10], // C
+    [0.01, 0.52, 0.71], // C#
+    [0.97, 0.79, 0.00], // D
+    [0.45, 0.34, 0.63], // Eb
+    [0.47, 0.99, 0.02], // E
+    [0.88, 0.02, 0.52], // F
+    [0.00, 0.80, 0.55], // F#
+    [0.99, 0.54, 0.03], // G
+    [0.25, 0.30, 0.64], // Ab
+    [0.95, 0.99, 0.00], // A
+    [0.52, 0.00, 0.60], // Bb
+    [0.05, 0.80, 0.15], // H
+];
+const GRAY_LEVEL: f32 = 5.0;
+const EASING_POW: f32 = 2.3;
 
 struct CqtResult {
     pub x_cqt: Vec<f32>,
@@ -57,9 +77,10 @@ fn update_serial(
                     buckets_per_octave,
                     ((idx + (buckets_per_octave - 3 * (buckets_per_octave / 12))) as f32)
                         % buckets_per_octave as f32,
+                        COLORS, GRAY_LEVEL, EASING_POW
                 );
 
-                let color_coefficient = 1.0 - (1.0 - size / max_size).powf(2.0);
+                let color_coefficient = 1.0 - (1.0 - size / max_size).powf(0.18);
                 r *= color_coefficient;
                 g *= color_coefficient;
                 b *= color_coefficient;
@@ -108,6 +129,8 @@ pub fn main() {
     audio_stream.play().unwrap();
 
     loop {
+        let start_time = std::time::Instant::now();
+
         let (x, gain) = {
             let mut x = vec![0.0_f32; cqt.n_fft];
             let rb = audio_stream.ring_buffer.lock().unwrap();
@@ -118,5 +141,9 @@ pub fn main() {
         cqt_result.gain = gain;
         analysis_state.preprocess(&cqt_result.x_cqt, OCTAVES, BUCKETS_PER_OCTAVE);
         update_serial(BUCKETS_PER_OCTAVE, &analysis_state, serial_port.as_mut());
+
+        let elapsed = start_time.elapsed();
+        let sleep_time = Duration::from_millis(1000 / FPS).saturating_sub(elapsed);
+        std::thread::sleep(sleep_time);
     }
 }

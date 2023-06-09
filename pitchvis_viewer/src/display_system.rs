@@ -11,7 +11,7 @@ use bevy::{
     },
     sprite::MaterialMesh2dBundle,
 };
-use pitchvis_analysis::util::*;
+use pitchvis_analysis::{util::*, color_mapping::{COLORS, GRAY_LEVEL, EASING_POW}};
 
 use itertools::Itertools;
 use nalgebra::{Rotation3, Vector3};
@@ -364,6 +364,7 @@ pub fn update_display(
                     buckets_per_octave,
                     (center + (buckets_per_octave - 3 * (buckets_per_octave / 12)) as f32)
                         % buckets_per_octave as f32,
+                        COLORS, GRAY_LEVEL, EASING_POW
                 );
 
                 let color_coefficient = 1.0 - (1.0 - size / max_size).powf(2.0);
@@ -400,6 +401,8 @@ pub fn update_display(
                 buckets_per_octave,
                 (idx as f32 + (buckets_per_octave - 3 * (buckets_per_octave / 12)) as f32)
                     % buckets_per_octave as f32,
+                    COLORS,
+                    GRAY_LEVEL, EASING_POW
             );
 
             let color_coefficient = 1.0 - (1.0 - size / max_size).powf(2.0);
@@ -876,6 +879,7 @@ fn update_cylinders(
                 (color_map_ref as usize + buckets_per_octave - 3 * (buckets_per_octave / 12))
                     as f32
                     % buckets_per_octave as f32,
+                    COLORS, GRAY_LEVEL, EASING_POW
             );
 
             let k_max = arg_max(&peaks_continuous.iter().map(|p| p.1).collect::<Vec<f32>>());

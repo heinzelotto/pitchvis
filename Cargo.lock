@@ -3703,12 +3703,10 @@ dependencies = [
 name = "pitchvis_analysis"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "apodize",
  "find_peaks",
  "lab",
  "log",
- "nalgebra 0.32.2",
  "num-complex 0.4.3",
  "rustfft",
  "sprs",

@@ -15,7 +15,7 @@ const _COLORS_WONKY_SATURATION: [(f32, f32, f32); 12] = [
     (0.27, 0.69, 0.39), // H
 ];
 
-const COLORS: [[f32; 3]; 12] = [
+pub const COLORS: [[f32; 3]; 12] = [
     [0.85, 0.36, 0.36], // C
     [0.01, 0.52, 0.71], // C#
     [0.97, 0.76, 0.05], // D
@@ -31,14 +31,13 @@ const COLORS: [[f32; 3]; 12] = [
     [0.57, 0.30, 0.55], // Bb
     [0.12, 0.71, 0.34], // H
 ];
+pub const GRAY_LEVEL: f32 = 60.0; // could be the mean lightness of the two neighbors. for now this is good enough.
+pub const EASING_POW: f32 = 1.3;
 
-pub fn calculate_color(buckets_per_octave: usize, bucket: f32) -> (f32, f32, f32) {
-    const GRAY_LEVEL: f32 = 60.0; // could be the mean lightness of the two neighbors. for now this is good enough.
-    const EASING_POW: f32 = 1.3;
-
+pub fn calculate_color(buckets_per_octave: usize, bucket: f32, colors: [[f32; 3]; 12], gray_level: f32, easing_pow: f32) -> (f32, f32, f32) {
     let pitch_continuous = 12.0 * bucket / (buckets_per_octave as f32);
     let base_color =
-        COLORS[(pitch_continuous.round() as usize) % 12].map(|rgb| (rgb * 255.0) as u8);
+        colors[(pitch_continuous.round() as usize) % 12].map(|rgb| (rgb * 255.0) as u8);
     let inaccuracy_cents = (pitch_continuous - pitch_continuous.round()).abs();
 
     let mut base_lcha = LCh::from_rgb(&base_color);
@@ -47,9 +46,9 @@ pub fn calculate_color(buckets_per_octave: usize, bucket: f32) -> (f32, f32, f32
         ref mut c,
         h: _,
     } = base_lcha;
-    let saturation = 1.0 - (2.0 * inaccuracy_cents).powf(EASING_POW);
+    let saturation = 1.0 - (2.0 * inaccuracy_cents).powf(easing_pow);
     *c *= saturation;
-    *l = saturation * *l + (1.0 - saturation) * GRAY_LEVEL;
+    *l = saturation * *l + (1.0 - saturation) * gray_level;
 
     let pitch_color = base_lcha.to_rgb().map(|rgb| (rgb as f32 / 255.0));
     (pitch_color[0], pitch_color[1], pitch_color[2])
