@@ -13,6 +13,8 @@ members = [
 
 resolver = "2"
 
+exclude = ["na-mainloop"]
+
 # Enable a small amount of optimization in debug mode
 [profile.dev]
 opt-level = 1
