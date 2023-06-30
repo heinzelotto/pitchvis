@@ -907,10 +907,10 @@ fn spiral_points(octaves: usize, buckets_per_octave: usize) -> Vec<(f32, f32, f3
 
 fn bin_to_spiral(buckets_per_octave: usize, x: f32) -> (f32, f32, f32) {
     let radius = 1.5 * (0.5 + (x / buckets_per_octave as f32).powf(0.75));
-    let (transl_y, transl_x) = ((x + (buckets_per_octave - 3 * (buckets_per_octave / 12)) as f32)
+    let (transl_y, transl_x) = ((x + (buckets_per_octave - 0 * (buckets_per_octave / 12)) as f32)
         / (buckets_per_octave as f32)
         * 2.0
         * PI)
         .sin_cos();
-    (transl_x * radius, transl_y * radius, 0.0) //17.0 - radius)
+    (-1.0 * transl_x * radius, transl_y * radius, 0.0) //17.0 - radius)
 }
