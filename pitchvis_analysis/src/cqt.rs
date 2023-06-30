@@ -700,18 +700,18 @@ impl Cqt {
             .map(|x| 10.0 * x.max(a_min).log10() - 10.0 * ref_power.max(a_min).log10())
             .collect::<Vec<f32>>();
         let log_spec_max = max(&log_spec);
-        let log_spec_min = min(&log_spec);
+        // println!(
+        //     "log_spec min {}, max {}, shifting to 0...top_db",
+        //     log_spec_min, log_spec_max,
+        // );
+
         log_spec.iter_mut().for_each(|x| {
             if *x < log_spec_max - top_db {
                 *x = log_spec_max - top_db
             }
         });
 
-        debug!(
-            "log_spec min {}, max {}, shifting to 0...",
-            log_spec_min, log_spec_max,
-        );
-
+        let log_spec_min = min(&log_spec);
         // cut off at 0.0, and don't let it pass top_db
         log_spec.iter_mut().for_each(|x| {
             if log_spec_min > 0.0 {

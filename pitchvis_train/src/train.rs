@@ -2,39 +2,43 @@ use anyhow::Result;
 use linfa::prelude::*;
 use linfa::traits::Fit;
 use linfa::traits::Predict;
+use pitchvis_analysis::util::arg_max;
 use rustysynth::*;
+use std::collections::HashMap;
 use std::fs::File;
 use std::sync::Arc;
 
+// increasing BUCKETS_PER_SEMITONE or Q will improve frequency resolution at cost of time resolution,
+// increasing GAMMA will improve time resolution at lower frequencies.
 pub const SR: usize = 22050;
 pub const BUFSIZE: usize = 2 * SR;
 pub const N_FFT: usize = 2 * 16384;
-pub const FREQ_A1: f32 = 27.5;
-pub const FREQ_A1_MIDI_KEY_ID: i32 = 21;
-pub const UPSCALE_FACTOR: usize = 4;
-pub const BUCKETS_PER_SEMITONE: usize = 5 * UPSCALE_FACTOR;
+pub const FREQ_A1: f32 = 55.0;
+pub const FREQ_A1_MIDI_KEY_ID: i32 = 33;
+pub const UPSCALE_FACTOR: usize = 1;
+pub const BUCKETS_PER_SEMITONE: usize = 3 * UPSCALE_FACTOR;
 pub const BUCKETS_PER_OCTAVE: usize = 12 * BUCKETS_PER_SEMITONE;
-pub const OCTAVES: usize = 7;
+pub const OCTAVES: usize = 5;
 pub const SPARSITY_QUANTILE: f32 = 0.999;
-pub const Q: f32 = 0.7 / UPSCALE_FACTOR as f32;
-pub const GAMMA: f32 = 11.6 / UPSCALE_FACTOR as f32;
+pub const Q: f32 = 10.0 / UPSCALE_FACTOR as f32;
+pub const GAMMA: f32 = 5.3 * Q;
 
-pub const STEP_SIZE_IN_CHUNKS: usize = 10;
+pub const STEP_SIZE_IN_CHUNKS: usize = 1;
 
-fn fit(positive: Vec<Vec<f32>>, negative: Vec<Vec<f32>>) {
+fn fit(positive: Vec<(Vec<f32>, f32)>, negative: Vec<(Vec<f32>, f32)>) {
     // Combine positive and negative data into one dataset
     let len_p = positive.len();
     let len_n = negative.len();
     dbg!(&len_p, &len_n);
-    let features: Vec<Vec<f32>> = positive.into_iter().chain(negative.into_iter()).collect();
+    let features: Vec<(Vec<f32>, f32)> = positive.into_iter().chain(negative.into_iter()).collect();
     let targets: Vec<f32> = vec![1.0; len_p]
         .into_iter()
         .chain(vec![0.0; len_n].into_iter())
         .collect();
 
     // Convert your data to Array2, which is required by linfa
-    let features_shape = dbg!((features.len(), features[0].len()));
-    let features_data = features.into_iter().flatten().collect::<Vec<f32>>();
+    let features_shape = dbg!((features.len(), features[0].0.len()));
+    let features_data = features.into_iter().map(|x| x.0).flatten().collect::<Vec<f32>>();
     let records_array = ndarray::Array2::from_shape_vec(features_shape, features_data).unwrap();
     let targets_array = ndarray::Array1::from_shape_vec(targets.len(), targets).unwrap();
 
@@ -97,7 +101,7 @@ pub fn train() -> Result<()> {
     );
     // let step_size_in_chunks = 1;
 
-    let midi_path = "example.mid";
+    let midi_path = "example_gf.mid";
     let soundfont_path = "MuseScore_General.sf2";
     let annotated_cqt = synthesize_midi_to_wav(
         midi_path,
@@ -165,7 +169,7 @@ fn synthesize_midi_to_wav(
     cqt_delay_in_samples: usize,
     step_size_in_chunks: usize,
     cqt: &mut pitchvis_analysis::cqt::Cqt,
-) -> Result<Vec<(Vec<(i32, f32)>, Vec<f32>)>> {
+) -> Result<Vec<(HashMap<i32, f32>, Vec<f32>)>> {
     let mut sf2 = File::open(soundfont_path).unwrap();
     let sound_font = Arc::new(SoundFont::new(&mut sf2).unwrap());
 
@@ -181,7 +185,10 @@ fn synthesize_midi_to_wav(
     // Play the MIDI file.
     sequencer.play(&midi_file, false);
 
+    let mut agc = dagc::MonoAgc::new(0.07, 0.0001).expect("mono-agc creation failed");
+
     let sample_count = (settings.sample_rate as f64 * midi_file.get_length()) as usize;
+    dbg!(settings.sample_rate, sample_count, midi_file.get_length());
 
     let mut ring_buffer = Vec::new();
     ring_buffer.resize(BUFSIZE, 0f32);
@@ -193,7 +200,7 @@ fn synthesize_midi_to_wav(
     let mut annotated_cqt = Vec::new();
     let mut written = 0;
     let mut prev_active_keys;
-    let mut active_keys = Vec::new();
+    let mut active_keys = HashMap::new();
     let mut chunk_count = 0;
     while written < sample_count {
         chunk_count += 1;
@@ -202,12 +209,20 @@ fn synthesize_midi_to_wav(
         sequencer.render(&mut left[..], &mut right[..]);
         written += left.len();
 
-        // downmix to mono into left channel and add to ring buffer
+        // downmix to mono into left channel 
         left.iter_mut()
             .zip(right.iter_mut())
             .for_each(|(l, r)| *l = (*l + *r) / 2.0);
+
+        // skip agc on silence
+        let sample_sq_sum = left.iter().map(|x| x.powi(2)).sum::<f32>();
+        agc.freeze_gain(sample_sq_sum < 1e-6);
+
+        // add to ring buffer
         ring_buffer.drain(..left.len());
         ring_buffer.extend_from_slice(left.as_slice());
+        let begin = ring_buffer.len() - left.len();
+        agc.process(&mut ring_buffer[begin..]);
 
         if (chunk_count % step_size_in_chunks) != 0 {
             continue;
@@ -215,23 +230,31 @@ fn synthesize_midi_to_wav(
 
         // get active keys
         prev_active_keys = active_keys;
-        active_keys = sequencer
+        active_keys = HashMap::new();
+        sequencer
             .synthesizer
             .get_active_voices()
-            .iter()
-            .map(|voice| {
-                (
-                    voice.key,
-                    (voice.current_mix_gain_left + voice.current_mix_gain_right) / 2.0,
-                )
-            })
-            .collect::<Vec<(i32, f32)>>();
+            .iter().map(|x| {println!("{:?}", x.key); x})
+            .for_each(|voice| {
+                    // add to active keys if gain is greater than existing entry
+                    let gain = (voice.current_mix_gain_left + voice.current_mix_gain_right) / 2.0 * agc.gain();
+                    if let Some(existing_gain) = active_keys.get(&voice.key) {
+                        if gain > *existing_gain {
+                            active_keys.insert(voice.key, gain);
+                        }
+                    } else {
+                        active_keys.insert(voice.key, gain);
+                    }
+            });
 
         // perform cqt analysis
         let x_cqt =
             cqt.calculate_cqt_instant_in_db(&ring_buffer[(ring_buffer.len() - cqt.n_fft)..]);
 
-        //println!("Active keys: {:?}\ncqt: {:?}", prev_active_keys, x_cqt);
+        println!("Active keys: {:?}\ncqt:", prev_active_keys);
+        x_cqt.chunks(BUCKETS_PER_OCTAVE).for_each(|x| {
+            println!("{x:?}", );
+        });
         annotated_cqt.push((prev_active_keys, x_cqt));
     }
 
@@ -252,8 +275,8 @@ fn synthesize_midi_to_wav(
 ///
 /// This function is mainly used for preparing data for training a logistic regression model to predict the active MIDI keys from the CQT of a segment of audio.
 fn center_cqt_and_generate_positive_and_negative_data_points(
-    annotated_cqt: &(Vec<(i32, f32)>, Vec<f32>),
-) -> (Vec<Vec<f32>>, Vec<Vec<f32>>) {
+    annotated_cqt: &(HashMap<i32, f32>, Vec<f32>),
+) -> (Vec<(Vec<f32>, f32)>, Vec<(Vec<f32>, f32)>) {
     let (active_keys, cqt_transform) = annotated_cqt;
     let mut positive_samples = Vec::new();
     let mut negative_samples = Vec::new();
@@ -261,7 +284,7 @@ fn center_cqt_and_generate_positive_and_negative_data_points(
         -24, -19, -12, -9, -8, -7, -6, -5, -4, -3, 3, 4, 5, 6, 7, 8, 9, 12, 19, 24,
     ];
 
-    for &(key, _) in active_keys.iter() {
+    for (&key, &attack) in active_keys.iter() {
         let key_index = (key - FREQ_A1_MIDI_KEY_ID) as usize * BUCKETS_PER_SEMITONE;
 
         let calc_boundaries = |key_index: usize| {
@@ -283,13 +306,14 @@ fn center_cqt_and_generate_positive_and_negative_data_points(
             // println!("midi Key {} is out of range of cqt", key);
             continue;
         }
-        let (start, start_overshoot, end, end_overshoot) = calc_boundaries(key_index);
+        let (start, start_overshoot, end, end_overshoot) = dbg!(calc_boundaries(key_index));
         let mut sample = vec![0f32; 87 * BUCKETS_PER_SEMITONE];
         sample.splice(
             (start_overshoot)..(87 * BUCKETS_PER_SEMITONE - end_overshoot),
             cqt_transform[start..end].iter().cloned(),
         );
-        positive_samples.push(sample);
+        dbg!(sample[40]/sample[arg_max(&sample)]);
+        positive_samples.push((sample, attack));
 
         // Negative samples
         for &shift in shift_values.iter() {
@@ -307,7 +331,7 @@ fn center_cqt_and_generate_positive_and_negative_data_points(
             // Check distance to other active keys
             if active_keys
                 .iter()
-                .all(|&(other_key, _)| (other_key - shifted_key).abs() >= 1)
+                .all(|(&other_key, _)| (other_key - shifted_key).abs() >= 2)
             {
                 let shifted_key_index =
                     ((key as i32 + shift) - FREQ_A1_MIDI_KEY_ID) as usize * BUCKETS_PER_SEMITONE;
@@ -319,7 +343,7 @@ fn center_cqt_and_generate_positive_and_negative_data_points(
                     (start_overshoot)..(87 * BUCKETS_PER_SEMITONE - end_overshoot),
                     cqt_transform[start..end].iter().cloned(),
                 );
-                negative_samples.push(sample);
+                negative_samples.push((sample, attack));
             }
         }
     }
@@ -333,12 +357,13 @@ mod tests {
 
     #[test]
     fn test_center_cqt_and_generate_positive_and_negative_data_points() {
-        for note in 0..50 {
-            let active_keys = vec![((33 + note) as i32, 1.0)]; // MIDI id for FREQ_A1 is 33
+        for note in 30..31 {
+            let active_keys = HashMap::from([((33 + note) as i32, 1.0)]); // MIDI id for FREQ_A1 is 33
             let mut cqt_transform = vec![0f32; 86 * BUCKETS_PER_SEMITONE];
             for (i, x) in cqt_transform.iter_mut().enumerate() {
-                *x = (1_000 - i.abs_diff(note)) as f32;
+                *x = (1_000 - i.abs_diff(note*BUCKETS_PER_SEMITONE)) as f32;
             }
+            dbg!(&cqt_transform);
             let annotated_cqt = (active_keys, cqt_transform);
 
             let (positive_samples, negative_samples) =
@@ -346,16 +371,17 @@ mod tests {
 
             // Check that the positive samples are correctly centered
             for sample in positive_samples.iter() {
-                assert_eq!(sample.len(), 86 * BUCKETS_PER_SEMITONE);
-                assert_eq!(sample[40 * BUCKETS_PER_SEMITONE], 1_000f32);
+                assert_eq!(sample.0.len(), 86 * BUCKETS_PER_SEMITONE);
+                assert_eq!(sample.0[40 * BUCKETS_PER_SEMITONE], 1_000f32);
             }
 
+            // dbg!(&positive_samples, &negative_samples);
+
             // Check that the negative samples are correctly centered and shifted
-            for (i, &shift) in [3, 4, 5, 6, 7, 8, 9, 12, 19, 24].iter().enumerate() {
-                assert_eq!(negative_samples[i].len(), 86 * BUCKETS_PER_SEMITONE);
+            let shifts: [i32; 20] = [-24, -19, -12, -9, -8, -7, -6, -5, -4, -3, 3, 4, 5, 6, 7, 8, 9, 12, 19, 24];
+            for (i, &shift) in shifts.iter().enumerate() {
                 assert_eq!(
-                    negative_samples[i][(40 + shift) * BUCKETS_PER_SEMITONE],
-                    0f32
+                    negative_samples[i].0[(40 - shift) as usize * BUCKETS_PER_SEMITONE], 1_000f32,
                 );
             }
         }

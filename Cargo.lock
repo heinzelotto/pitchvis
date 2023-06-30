@@ -3746,6 +3746,7 @@ name = "pitchvis_train"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "dagc 0.1.0",
  "env_logger",
  "linfa",
  "linfa-datasets",
