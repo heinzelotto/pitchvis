@@ -614,7 +614,7 @@ impl Cqt {
     ///
     /// # Returns
     /// A vector containing the CQT of the input signal in dB scale.
-    pub fn calculate_cqt_instant_in_db(&mut self, x: &[f32]) -> Vec<f32> {
+    pub fn calculate_cqt_instant_in_db(&self, x: &[f32]) -> Vec<f32> {
         // TODO: we are doing a lot of unnecessary ffts here, just because the interface of the resampler
         // neither allows us to reuse the same frame for subsequent downsamplings, nor allows us to do the
         // fft ourselves.

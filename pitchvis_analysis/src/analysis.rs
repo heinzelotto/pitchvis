@@ -23,6 +23,8 @@ pub struct AnalysisState {
 
     pub spectrogram_buffer: Vec<u8>,
     pub spectrogram_front_idx: usize,
+
+    pub ml_midi_base_pitches: Vec<f32>,
 }
 
 impl AnalysisState {
@@ -30,7 +32,9 @@ impl AnalysisState {
         let spectrogram_buffer = vec![0; spectrum_size * history_length * 4];
 
         Self {
-            history: Vec::new(),
+            history: (0..SMOOTH_LENGTH)
+                .map(|_| vec![0.0; spectrum_size])
+                .collect(),
             //accum: (vec![0.0; spectrum_size], 0),
             //averaged: vec![0.0; spectrum_size],
             x_cqt_smoothed: vec![0.0; spectrum_size],
@@ -40,6 +44,7 @@ impl AnalysisState {
             peaks_continuous: Vec::new(),
             spectrogram_buffer,
             spectrogram_front_idx: 0,
+            ml_midi_base_pitches: vec![0.0; 128],
         }
     }
 

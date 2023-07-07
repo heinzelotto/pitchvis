@@ -1,13 +1,22 @@
 use anyhow::Result;
+use byteorder::{LittleEndian, WriteBytesExt};
 use linfa::prelude::*;
 use linfa::traits::Fit;
 use linfa::traits::Predict;
 use ndarray::Axis;
+use npyz::TypeStr;
+use npyz::WriterBuilder;
 use pitchvis_analysis::cqt;
 use pitchvis_analysis::util::arg_max;
+use rayon::prelude::*;
 use rustysynth::*;
+use serde_big_array::BigArray;
 use std::collections::HashMap;
+use std::fs;
 use std::fs::File;
+use std::io;
+use std::io::Write;
+use std::mem::transmute;
 use std::sync::Arc;
 
 // increasing BUCKETS_PER_SEMITONE or Q will improve frequency resolution at cost of time resolution,
@@ -18,20 +27,20 @@ pub const N_FFT: usize = 2 * 16384;
 pub const FREQ_A1: f32 = 55.0;
 pub const FREQ_A1_MIDI_KEY_ID: i32 = 33;
 pub const UPSCALE_FACTOR: usize = 1;
-pub const BUCKETS_PER_SEMITONE: usize = 1 * UPSCALE_FACTOR;
+pub const BUCKETS_PER_SEMITONE: usize = 3 * UPSCALE_FACTOR;
 pub const BUCKETS_PER_OCTAVE: usize = 12 * BUCKETS_PER_SEMITONE;
-pub const OCTAVES: usize = 5;
+pub const OCTAVES: usize = 7;
 pub const SPARSITY_QUANTILE: f32 = 0.999;
 pub const Q: f32 = 10.0 / UPSCALE_FACTOR as f32;
 pub const GAMMA: f32 = 5.3 * Q;
 
-pub const STEP_SIZE_IN_CHUNKS: usize = 1;
+pub const STEP_SIZE_IN_CHUNKS: usize = 3;
 
 fn fit(positive: Vec<(Vec<f32>, f32)>, negative: Vec<(Vec<f32>, f32)>) {
     // Combine positive and negative data into one dataset
     let len_p = positive.len();
     let len_n = negative.len();
-    dbg!(&len_p, &len_n);
+    // dbg!(&len_p, &len_n);
     let features: Vec<(Vec<f32>, f32)> = positive.into_iter().chain(negative.into_iter()).collect();
     let targets: Vec<f32> = vec![1.0; len_p]
         .into_iter()
@@ -115,27 +124,71 @@ pub fn train() -> Result<()> {
     );
     // let step_size_in_chunks = 1;
 
-    let midi_path = "example.mid";
+    // read all midi files in directory
     let soundfont_path = "MuseScore_General.sf2";
-    let annotated_cqt = synthesize_midi_to_wav(
-        midi_path,
-        soundfont_path,
-        cqt_delay_in_samples,
-        STEP_SIZE_IN_CHUNKS,
-        &mut cqt,
-    )?;
+    let mut sf2 = File::open(soundfont_path).unwrap();
+    let sound_font = Arc::new(SoundFont::new(&mut sf2).unwrap());
 
-    println!("{}", annotated_cqt.len());
+    let midi_paths = fs::read_dir("midi")?
+        .map(|res| res.map(|e| e.path()))
+        .collect::<Result<Vec<_>, io::Error>>()?;
 
-    let mut positive_x = Vec::new();
-    let mut negative_x = Vec::new();
-    for x in annotated_cqt {
-        let (p_x, n_x) = generate_positive_and_negative_data_points(&x);
-        positive_x.extend_from_slice(&p_x);
-        negative_x.extend_from_slice(&n_x);
+    let data: Vec<f32> = midi_paths
+        .par_iter()
+        .flat_map(|p| {
+            println!("processing {p:?}");
+            let annotated_cqt = synthesize_midi_to_wav(
+                p.to_str().unwrap(),
+                sound_font.clone(),
+                cqt_delay_in_samples,
+                STEP_SIZE_IN_CHUNKS,
+                &cqt,
+            )
+            .unwrap_or_else(|_| {
+                println!(
+                    "failed to synthesize midi file {:?} to data point",
+                    p.to_str().unwrap()
+                );
+                vec![]
+            });
+
+            annotated_cqt
+                .iter()
+                .flat_map(|x| {
+                    let (sample, target) = generate_data(&x);
+                    assert!(sample.len() == OCTAVES * BUCKETS_PER_OCTAVE);
+                    assert!(target.len() == 128);
+                    sample
+                        .iter()
+                        .chain(target.iter())
+                        .cloned()
+                        .collect::<Vec<f32>>()
+                })
+                .collect::<Vec<f32>>()
+        })
+        .collect();
+
+    println!("{}", data.len());
+
+    let mut out_buf = vec![];
+    {
+        let mut writer = {
+            npyz::WriteOptions::new()
+                .dtype(npyz::DType::Plain("<f4".parse::<TypeStr>().unwrap()))
+                .shape(&[data.len() as u64])
+                .writer(&mut out_buf)
+                .begin_nd()?
+        };
+
+        writer.extend(&data)?;
+        writer.finish()?;
     }
 
-    fit(positive_x, negative_x);
+    // write to file
+    let mut file = File::create("data.npy")?;
+    file.write_all(&out_buf)?;
+
+    //fit(positive_x, negative_x);
 
     // // average all positive_x
     // let mut avg_positive_x = vec![0.0; positive_x[0].len()];
@@ -179,17 +232,14 @@ pub fn train() -> Result<()> {
 
 fn synthesize_midi_to_wav(
     midi_path: &str,
-    soundfont_path: &str,
+    sound_font: Arc<SoundFont>,
     cqt_delay_in_samples: usize,
     step_size_in_chunks: usize,
-    cqt: &mut pitchvis_analysis::cqt::Cqt,
+    cqt: &pitchvis_analysis::cqt::Cqt,
 ) -> Result<Vec<(HashMap<i32, f32>, Vec<f32>)>> {
-    let mut sf2 = File::open(soundfont_path).unwrap();
-    let sound_font = Arc::new(SoundFont::new(&mut sf2).unwrap());
-
     // Load the MIDI file.
     let mut mid = File::open(midi_path).unwrap();
-    let midi_file = Arc::new(MidiFile::new(&mut mid).unwrap());
+    let midi_file = Arc::new(MidiFile::new(&mut mid)?);
 
     // Create the MIDI file sequencer.
     let settings = SynthesizerSettings::new(SR as i32);
@@ -232,7 +282,7 @@ fn synthesize_midi_to_wav(
         let sample_sq_sum = left.iter().map(|x| x.powi(2)).sum::<f32>();
         agc.freeze_gain(sample_sq_sum < 1e-6);
 
-        println!("gain: {}", agc.gain());
+        //println!("gain: {}", agc.gain());
 
         // add to ring buffer
         ring_buffer.drain(..left.len());
@@ -251,10 +301,10 @@ fn synthesize_midi_to_wav(
             .synthesizer
             .get_active_voices()
             .iter()
-            .map(|x| {
-                println!("{:?}", x.key);
-                x
-            })
+            // .map(|x| {
+            //     println!("{:?}", x.key);
+            //     x
+            // })
             .for_each(|voice| {
                 // add to active keys if gain is greater than existing entry
                 let gain =
@@ -272,10 +322,10 @@ fn synthesize_midi_to_wav(
         let x_cqt =
             cqt.calculate_cqt_instant_in_db(&ring_buffer[(ring_buffer.len() - cqt.n_fft)..]);
 
-        println!("Active keys: {:?}\ncqt:", prev_active_keys);
-        x_cqt.chunks(BUCKETS_PER_OCTAVE).for_each(|x| {
-            println!("{x:?}",);
-        });
+        // println!("Active keys: {:?}\ncqt:", prev_active_keys);
+        // x_cqt.chunks(BUCKETS_PER_OCTAVE).for_each(|x| {
+        //     println!("{x:?}",);
+        // });
         annotated_cqt.push((prev_active_keys, x_cqt));
     }
 
@@ -333,7 +383,7 @@ fn center_cqt_and_generate_positive_and_negative_data_points(
             (start_overshoot)..(87 * BUCKETS_PER_SEMITONE - end_overshoot),
             cqt_transform[start..end].iter().cloned(),
         );
-        dbg!(sample[40] / sample[arg_max(&sample)]);
+        // dbg!(sample[40] / sample[arg_max(&sample)]);
         positive_samples.push((sample, attack));
 
         // Negative samples
@@ -372,37 +422,23 @@ fn center_cqt_and_generate_positive_and_negative_data_points(
     (positive_samples, negative_samples)
 }
 
-const G: i32 = 67;
-
-fn generate_positive_and_negative_data_points(
+fn generate_data(
     annotated_cqt: &(HashMap<i32, f32>, Vec<f32>),
-) -> (Vec<(Vec<f32>, f32)>, Vec<(Vec<f32>, f32)>) {
+) -> ([f32; OCTAVES * BUCKETS_PER_OCTAVE], [f32; 128]) {
     let (active_keys, cqt_transform) = annotated_cqt;
-    let mut positive_samples = Vec::new();
-    let mut negative_samples = Vec::new();
+    let mut samples = [0f32; OCTAVES * BUCKETS_PER_OCTAVE];
+    let mut targets = [0f32; 128];
 
-    if active_keys.contains_key(&G) {
-        let attack = active_keys[&G];
-        positive_samples.push((cqt_transform.clone(), attack));
-        println!(
-            "yes {} ",
-            cqt_transform[(G - FREQ_A1_MIDI_KEY_ID) as usize * BUCKETS_PER_SEMITONE]
-        );
-    } else {
-        // Check distance to other active keys
-        if active_keys
-            .iter()
-            .all(|(&other_key, _)| (other_key - G).abs() >= 2)
-        {
-            println!(
-                "no  {} ",
-                cqt_transform[(G - FREQ_A1_MIDI_KEY_ID) as usize * BUCKETS_PER_SEMITONE]
-            );
-            negative_samples.push((cqt_transform.clone(), 10.0));
-        }
+    samples = cqt_transform[..].try_into().unwrap();
+
+    // TODO: generate some pitch wobble, e. g. out of tune instruments. ?Can we do this in the cqt domain ?or should we add random tunings to instruments during midi generation
+    // TODO: maybe also use different sound fonts
+
+    for (&key, &attack) in active_keys.iter() {
+        targets[key as usize] = (attack > 0.5) as u8 as f32;
     }
 
-    (positive_samples, negative_samples)
+    (samples, targets)
 }
 
 #[cfg(test)]
@@ -417,7 +453,7 @@ mod tests {
             for (i, x) in cqt_transform.iter_mut().enumerate() {
                 *x = (1_000 - i.abs_diff(note * BUCKETS_PER_SEMITONE)) as f32;
             }
-            dbg!(&cqt_transform);
+            // dbgs!(&cqt_transform);
             let annotated_cqt = (active_keys, cqt_transform);
 
             let (positive_samples, negative_samples) =

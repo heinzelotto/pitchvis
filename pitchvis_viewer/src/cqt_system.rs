@@ -32,7 +32,7 @@ pub fn update_cqt_to_system(
 
 pub fn update_cqt(
     bufsize: usize,
-    mut cqt: ResMut<CqtResource>,
+    cqt: ResMut<CqtResource>,
     rb: Res<AudioBufferResource>,
     mut cqt_result: ResMut<CqtResultResource>,
 ) {

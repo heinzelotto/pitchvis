@@ -32,6 +32,7 @@ pitchvis_audio = { path = "../pitchvis_audio" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 env_logger = "0.10.0"
+tch = "0.13.0"
 
 [target.wasm32-unknown-unknown.dependencies]
 wasm-bindgen = "0.2"

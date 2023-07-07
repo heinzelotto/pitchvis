@@ -9,6 +9,7 @@ mod analysis_system;
 mod audio_system;
 mod cqt_system;
 mod display_system;
+mod ml_system;
 mod util;
 
 // increasing BUCKETS_PER_SEMITONE or Q will improve frequency resolution at cost of time resolution,
@@ -17,12 +18,13 @@ pub const SR: usize = 22050;
 pub const BUFSIZE: usize = 2 * SR;
 pub const N_FFT: usize = 2 * 16384;
 pub const FREQ_A1: f32 = 55.0;
+pub const FREQ_A1_MIDI_KEY_ID: i32 = 33;
 pub const UPSCALE_FACTOR: usize = 1;
-pub const BUCKETS_PER_SEMITONE: usize = 5 * UPSCALE_FACTOR;
+pub const BUCKETS_PER_SEMITONE: usize = 3 * UPSCALE_FACTOR;
 pub const BUCKETS_PER_OCTAVE: usize = 12 * BUCKETS_PER_SEMITONE;
 pub const OCTAVES: usize = 7;
 pub const SPARSITY_QUANTILE: f32 = 0.999;
-pub const Q: f32 = 6.0 / UPSCALE_FACTOR as f32;
+pub const Q: f32 = 10.0 / UPSCALE_FACTOR as f32;
 pub const GAMMA: f32 = 5.3 * Q;
 
 const FPS: u64 = 30;
@@ -112,8 +114,11 @@ pub fn main_fun() -> Result<()> {
     let update_cqt_system = cqt_system::update_cqt_to_system(BUFSIZE);
     let update_analysis_state_system =
         analysis_system::update_analysis_state_to_system(OCTAVES, BUCKETS_PER_OCTAVE);
+    let update_ml_system = ml_system::update_ml_to_system();
     let update_display_system =
         display_system::update_display_to_system(BUCKETS_PER_OCTAVE, OCTAVES);
+
+    let ml_model_resource = ml_system::MlModelResource(ml_system::MlModel::new("model.pt"));
 
     App::new()
         .add_plugins(DefaultPlugins)
@@ -132,6 +137,7 @@ pub fn main_fun() -> Result<()> {
                 pitchvis_analysis::analysis::SPECTROGRAM_LENGTH,
             ),
         ))
+        .insert_resource(ml_model_resource)
         .insert_resource(display_system::CylinderEntityListResource(Vec::new()))
         .add_startup_system(display_system::setup_display_to_system(
             OCTAVES,
@@ -141,7 +147,8 @@ pub fn main_fun() -> Result<()> {
         .add_system(frame_limiter_system)
         .add_system(update_cqt_system)
         .add_system(update_analysis_state_system.after(update_cqt_system))
-        .add_system(update_display_system.after(update_analysis_state_system))
+        .add_system(update_ml_system.after(update_analysis_state_system))
+        .add_system(update_display_system.after(update_ml_system))
         .run();
     Ok(())
 }

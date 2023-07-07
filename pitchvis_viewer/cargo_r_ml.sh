@@ -1,0 +1,1 @@
+LD_LIBRARY_PATH=/home/otheruser/Downloads/libtorch-cxx11-abi-shared-with-deps-2.0.0+cu117/libtorch/lib RUST_BACKTRACE=1 LIBTORCH_STATIC=0 cargo r --features bevy/dynamic_linking --release --bin pitchvis

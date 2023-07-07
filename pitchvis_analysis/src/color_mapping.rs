@@ -34,7 +34,13 @@ pub const COLORS: [[f32; 3]; 12] = [
 pub const GRAY_LEVEL: f32 = 60.0; // could be the mean lightness of the two neighbors. for now this is good enough.
 pub const EASING_POW: f32 = 1.3;
 
-pub fn calculate_color(buckets_per_octave: usize, bucket: f32, colors: [[f32; 3]; 12], gray_level: f32, easing_pow: f32) -> (f32, f32, f32) {
+pub fn calculate_color(
+    buckets_per_octave: usize,
+    bucket: f32,
+    colors: [[f32; 3]; 12],
+    gray_level: f32,
+    easing_pow: f32,
+) -> (f32, f32, f32) {
     let pitch_continuous = 12.0 * bucket / (buckets_per_octave as f32);
     let base_color =
         colors[(pitch_continuous.round() as usize) % 12].map(|rgb| (rgb * 255.0) as u8);

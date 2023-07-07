@@ -1,3 +1,5 @@
+// TODO: make a config object and pass that around instead of all these parameters
+
 use bevy::{
     pbr::{MaterialPipeline, MaterialPipelineKey},
     prelude::*,
@@ -11,7 +13,10 @@ use bevy::{
     },
     sprite::MaterialMesh2dBundle,
 };
-use pitchvis_analysis::{util::*, color_mapping::{COLORS, GRAY_LEVEL, EASING_POW}};
+use pitchvis_analysis::{
+    color_mapping::{COLORS, EASING_POW, GRAY_LEVEL},
+    util::*,
+};
 
 use itertools::Itertools;
 use nalgebra::{Rotation3, Vector3};
@@ -364,7 +369,9 @@ pub fn update_display(
                     buckets_per_octave,
                     (center + (buckets_per_octave - 3 * (buckets_per_octave / 12)) as f32)
                         % buckets_per_octave as f32,
-                        COLORS, GRAY_LEVEL, EASING_POW
+                    COLORS,
+                    GRAY_LEVEL,
+                    EASING_POW,
                 );
 
                 let color_coefficient = 1.0 - (1.0 - size / max_size).powf(2.0);
@@ -381,6 +388,17 @@ pub fn update_display(
                 //     b * color_coefficient,
                 // );
                 color_mat.color = Color::rgba(r, g, b, color_coefficient);
+
+                // color white (for now) if this is a base frequency
+                if let Some(midi_pitch) = cqt_bin_to_midi_pitch(buckets_per_octave, idx) {
+                    let inferred_midi_pitch_strength =
+                        analysis_state.ml_midi_base_pitches[midi_pitch];
+                    if inferred_midi_pitch_strength > 0.4 {
+                        color_mat.color = Color::rgba(r, g, b, 1.0);
+                    } else {
+                        color_mat.color = Color::rgba(r, g, b, color_coefficient * 0.1);
+                    }
+                }
 
                 transform.scale = Vec3::splat(size * scale_factor);
 
@@ -401,8 +419,9 @@ pub fn update_display(
                 buckets_per_octave,
                 (idx as f32 + (buckets_per_octave - 3 * (buckets_per_octave / 12)) as f32)
                     % buckets_per_octave as f32,
-                    COLORS,
-                    GRAY_LEVEL, EASING_POW
+                COLORS,
+                GRAY_LEVEL,
+                EASING_POW,
             );
 
             let color_coefficient = 1.0 - (1.0 - size / max_size).powf(2.0);
@@ -879,7 +898,9 @@ fn update_cylinders(
                 (color_map_ref as usize + buckets_per_octave - 3 * (buckets_per_octave / 12))
                     as f32
                     % buckets_per_octave as f32,
-                    COLORS, GRAY_LEVEL, EASING_POW
+                COLORS,
+                GRAY_LEVEL,
+                EASING_POW,
             );
 
             let k_max = arg_max(&peaks_continuous.iter().map(|p| p.1).collect::<Vec<f32>>());
@@ -913,4 +934,14 @@ fn bin_to_spiral(buckets_per_octave: usize, x: f32) -> (f32, f32, f32) {
         * PI)
         .sin_cos();
     (-1.0 * transl_x * radius, transl_y * radius, 0.0) //17.0 - radius)
+}
+
+fn cqt_bin_to_midi_pitch(buckets_per_octave: usize, bin: usize) -> Option<usize> {
+    let midi_pitch = (bin as f32 / buckets_per_octave as f32 * 12.0).round() as usize
+        + crate::FREQ_A1_MIDI_KEY_ID as usize;
+    if midi_pitch > 127 {
+        None
+    } else {
+        Some(midi_pitch)
+    }
 }

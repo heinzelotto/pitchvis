@@ -77,7 +77,9 @@ fn update_serial(
                     buckets_per_octave,
                     ((idx + (buckets_per_octave - 3 * (buckets_per_octave / 12))) as f32)
                         % buckets_per_octave as f32,
-                        COLORS, GRAY_LEVEL, EASING_POW
+                    COLORS,
+                    GRAY_LEVEL,
+                    EASING_POW,
                 );
 
                 let color_coefficient = 1.0 - (1.0 - size / max_size).powf(0.18);
