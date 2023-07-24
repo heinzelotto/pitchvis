@@ -1,3 +1,9 @@
+// TODO:
+// increase BUCKETS_PER_SEMITONE
+// add pitch wobble/bend/shift to samples
+// add time stretch to samples
+// use different sound fonts for synthesis
+
 use anyhow::Result;
 use byteorder::{LittleEndian, WriteBytesExt};
 use linfa::prelude::*;

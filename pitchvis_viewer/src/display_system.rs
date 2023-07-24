@@ -365,7 +365,7 @@ pub fn update_display(
             if peaks_rounded.contains_key(&idx) {
                 let (center, size) = peaks_rounded[&idx];
 
-                let (r, g, b) = pitchvis_analysis::color_mapping::calculate_color(
+                let (r, g, b) = pitchvis_analysis::calculate_color(
                     buckets_per_octave,
                     (center + (buckets_per_octave - 3 * (buckets_per_octave / 12)) as f32)
                         % buckets_per_octave as f32,
@@ -393,7 +393,7 @@ pub fn update_display(
                 if let Some(midi_pitch) = cqt_bin_to_midi_pitch(buckets_per_octave, idx) {
                     let inferred_midi_pitch_strength =
                         analysis_state.ml_midi_base_pitches[midi_pitch];
-                    if inferred_midi_pitch_strength > 0.4 {
+                    if inferred_midi_pitch_strength > 0.35 {
                         color_mat.color = Color::rgba(r, g, b, 1.0);
                     } else {
                         color_mat.color = Color::rgba(r, g, b, color_coefficient * 0.1);
@@ -415,7 +415,7 @@ pub fn update_display(
             let idx = pitch_ball.0;
             let size = cqt_base[idx];
 
-            let (r, g, b) = pitchvis_analysis::color_mapping::calculate_color(
+            let (r, g, b) = pitchvis_analysis::calculate_color(
                 buckets_per_octave,
                 (idx as f32 + (buckets_per_octave - 3 * (buckets_per_octave / 12)) as f32)
                     % buckets_per_octave as f32,

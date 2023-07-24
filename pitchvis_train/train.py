@@ -12,7 +12,7 @@ data = np.load('data.npy')
 
 OCTAVES = 7
 BUCKETS_PER_OCTAVE = 36
-T = 3
+T = 5
 
 def window_data(data, window_size):
     windows = []
@@ -68,10 +68,12 @@ class MLP(nn.Module):
     def __init__(self, input_size, mlp_size, mlp_layers, output_size, dropout):
         super(MLP, self).__init__()
         self.layers = nn.ModuleList()
+
+        # TODO: maybe try 2d convolution again
         
         # Convolutional layer
-        self.conv1 = nn.Conv1d(1, 16, kernel_size=3, stride=2, padding=0)
-        O_conv = ((T*OCTAVES*BUCKETS_PER_OCTAVE - 3 + 2*0)/2) + 1
+        self.conv1 = nn.Conv1d(1, 16, kernel_size=5, stride=2, padding=0)
+        O_conv = ((T*OCTAVES*BUCKETS_PER_OCTAVE - 5 + 2*0)/2) + 1
         O_pool = ((O_conv - 2 + 2*0)/2) + 1
         print(16*O_pool)
         self.fc1 = nn.Linear(16 * int(O_pool), mlp_size)  # This should be adapted to your input size
