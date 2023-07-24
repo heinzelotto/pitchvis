@@ -11,23 +11,68 @@ const _BASSLINE_PEAK_MIN_HEIGHT: f32 = 4.0;
 const _HIGHEST_BASSNOTE: usize = 12 * 2 + 4;
 const SMOOTH_LENGTH: usize = 3;
 
+/// Represents the current state of spectral analysis for musical signals.
+///
+/// `AnalysisState` stores preprocessed results and history for the purpose of
+/// visualizing and analyzing musical spectrums. It contains buffers for storing
+/// smoothed constant-Q transform (CQT) results, peak-filtered CQT results,
+/// afterglow effects, and other internal computations.
 pub struct AnalysisState {
+    /// A rolling history of the past few CQT frames. This history is used for smoothing and
+    /// enhancing the features of the current frame.
     pub history: Vec<Vec<f32>>,
-    // accum: (Vec<f32>, usize),
-    // pub averaged: Vec<f32>,
+
+    /// The smoothed version of the current CQT frame. Smoothing is performed by averaging
+    /// over the `history`.
     pub x_cqt_smoothed: Vec<f32>,
+
+    /// Represents the current CQT frame after filtering out non-peak values.
+    /// Dominant frequencies or peaks are retained while others are set to zero.
     pub x_cqt_peakfiltered: Vec<f32>,
+
+    /// Represents the afterglow effects applied to the current CQT frame. This provides
+    /// a visual decay effect, enhancing the visualization of the spectrum.
     pub x_cqt_afterglow: Vec<f32>,
+
+    /// A set of indices that have been identified as peaks in the current frame.
     pub peaks: HashSet<usize>,
+
+    /// Contains pairs of the estimated precise center and size of each detected peak.
     pub peaks_continuous: Vec<(f32, f32)>,
 
+    /// A buffer for the spectrogram visualization. The size is determined by the `spectrum_size`
+    /// multiplied by the `history_length` and further multiplied by 4 for RGBA color data.
     pub spectrogram_buffer: Vec<u8>,
+
+    /// Points to the current start position in the circular `spectrogram_buffer`.
     pub spectrogram_front_idx: usize,
 
+    /// A precomputed or user-defined list of MIDI pitches for machine learning or other
+    /// algorithms, indexed by MIDI number.
     pub ml_midi_base_pitches: Vec<f32>,
 }
 
 impl AnalysisState {
+    /// Constructs a new instance of the `AnalysisState` with the specified spectrum size and history length.
+    ///
+    /// This function initializes the state required for the analysis of a musical spectrum. It preallocates buffers for history,
+    /// smoothed constant-Q transform (CQT) results, peak-filtered CQT results, afterglow effects, and other internal computations.
+    /// The resulting `AnalysisState` is ready to process and analyze the CQT of incoming musical signals.
+    ///
+    /// # Parameters:
+    /// - `spectrum_size`: The size of the spectrum (or number of bins) being analyzed.
+    /// - `history_length`: The number of past spectrums that should be retained for the spectrogram.
+    ///
+    /// # Returns:
+    /// An initialized `AnalysisState` instance.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use analysis::AnalysisState;
+    /// let analysis_state = AnalysisState::new(1024, 10);
+    /// assert_eq!(analysis_state.x_cqt_smoothed.len(), 1024); // matches the spectrum_size
+    /// ```
     pub fn new(spectrum_size: usize, history_length: usize) -> Self {
         let spectrogram_buffer = vec![0; spectrum_size * history_length * 4];
 
@@ -48,28 +93,41 @@ impl AnalysisState {
         }
     }
 
+    /// Preprocesses the given constant-Q transform (CQT) data to compute smoothed, peak-filtered results, and related analyses.
+    ///
+    /// This function takes in a CQT spectrum, represented by the `x_cqt` parameter, and performs several preprocessing steps:
+    /// 1. Smoothing over the stored history to reduce noise and enhance relevant features.
+    /// 2. Peak detection to identify dominant frequencies.
+    /// 3. Continuous peak estimation for more precise spectral representation.
+    /// 4. Afterglow effects calculation to create a decay effect on the visual representation of the spectrum.
+    ///
+    /// It's expected that the `preprocess` function will be called once per frame or per new spectrum.
+    ///
+    /// # Parameters:
+    /// - `x_cqt`: A slice containing the constant-Q transform values of the current musical frame.
+    /// - `octaves`: The number of octaves represented in the `x_cqt` data.
+    /// - `buckets_per_octave`: The number of frequency buckets in each octave of the `x_cqt` data.
+    ///
+    /// # Panics:
+    /// This function will panic if the length of `x_cqt` is not equal to `octaves * buckets_per_octave`.
+    ///
+    /// # Notes:
+    /// - The preprocessed data, including the smoothed CQT, peak-filtered CQT, and peaks, will be stored within the `AnalysisState` object.
+    /// - The `x_cqt` parameter is expected to represent the spectrum in a log-frequency scale, as is typical for a CQT representation.
+    ///
+    /// # Examples
+    ///
+    /// Assuming the setup of an `AnalysisState` object and some dummy CQT data:
+    /// ```
+    /// # use analysis::AnalysisState;
+    /// let mut analysis_state = AnalysisState::new(1024, 10);
+    /// let dummy_x_cqt = vec![0.0; 1024]; // Replace with actual CQT data
+    /// analysis_state.preprocess(&dummy_x_cqt, 8, 128); // Assuming 8 octaves and 128 buckets per octave
+    /// ```
     pub fn preprocess(&mut self, x_cqt: &[f32], octaves: usize, buckets_per_octave: usize) {
-        // if self.pause_state == PauseState::Paused {
-        //     return;
-        // }
-
         let num_buckets = octaves * buckets_per_octave;
 
         assert!(num_buckets == x_cqt.len());
-
-        // // take an average across all history and subtract it from the current frame
-        // self.accum.1 += 1;
-        // for (i, x) in self.accum.0.iter_mut().enumerate() {
-        //     *x += x_cqt[i];
-        // }
-        // if self.accum.1 == 8000 {
-        //     for x in self.accum.0.iter_mut() {
-        //         *x /= 2.0;
-        //     }
-        //     self.accum.1 /= 2;
-        // }
-        // let averaged = self.accum.0.iter().map(|x| x / self.accum.1 as f32).collect::<Vec<f32>>();
-        // let x_cqt = x_cqt.iter().zip(averaged.iter()).map(|(x, y)| if x > y { x - y} else {0.0}).collect::<Vec<f32>>();
 
         let k_min = arg_min(&x_cqt);
         let k_max = arg_max(&x_cqt);
@@ -95,40 +153,6 @@ impl AnalysisState {
             // arithmetic mean
             *smoothed = v.iter().sum::<f32>() / SMOOTH_LENGTH as f32;
         }
-
-        // let conv_radius = (buckets_per_octave / 12) / 2;
-        // let x_cqt_smoothed_convoluted = (0..(octaves * buckets_per_octave))
-        //     .map(|idx| {
-        //         if idx < conv_radius || idx >= octaves * buckets_per_octave - conv_radius {
-        //             0.0
-        //         } else {
-        //             x_cqt_smoothed[(idx - conv_radius)..(idx + conv_radius + 1)]
-        //                 .iter()
-        //                 .sum::<f32>()
-        //         }
-        //     })
-        //     .collect::<Vec<f32>>();
-
-        // let mut pf2 = PeakFinder::new(&x_cqt_smoothed_convoluted);
-        // pf2.with_min_prominence(PEAK_MIN_PROMINENCE + 5.0);
-        // pf2.with_min_height(PEAK_MIN_HEIGHT + 5.0);
-        // let peaks2 = pf2.find_peaks();
-        // let peaks2 = peaks2
-        //     .iter()
-        //     .map(|p| p.middle_position())
-        //     .collect::<HashSet<usize>>();
-
-        // let x_cqt_peakfiltered = x_cqt_smoothed_convoluted
-        //     .iter()
-        //     .enumerate()
-        //     .map(|(i, x)| {
-        //         if peaks2.contains(&i) {
-        //             *x / (2.0 * conv_radius as f32)
-        //         } else {
-        //             0.0 // x_cqt_smoothed[i] / 5.0
-        //         }
-        //     })
-        //     .collect::<Vec<f32>>();
 
         // find peaks
         let padding_length = 1;

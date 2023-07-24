@@ -34,6 +34,42 @@ pub const COLORS: [[f32; 3]; 12] = [
 pub const GRAY_LEVEL: f32 = 60.0; // could be the mean lightness of the two neighbors. for now this is good enough.
 pub const EASING_POW: f32 = 1.3;
 
+/// Calculates a color based on a musical pitch bucket and a predefined color scale.
+///
+/// This function converts the pitch information into a continuous color representation based on
+/// the closeness of the pitch to the central tones of a 12-tone scale. The colors for the 12-tone
+/// scale are provided via the `colors` parameter.
+///
+/// # Parameters:
+/// - `buckets_per_octave`: Number of pitch buckets in one octave.
+/// - `bucket`: The specific pitch bucket for which the color is calculated.
+/// - `colors`: A 12-element array representing the colors for each of the 12 musical pitches,
+///             where each color is an RGB triplet of f32 values in [0, 1] range.
+/// - `gray_level`: The luminance value for the gray color that the pitch color will interpolate
+///                 towards if the pitch falls between two central tones.
+/// - `easing_pow`: A power factor for the easing function used in color interpolation.
+///
+/// # Returns:
+/// A tuple of three f32 values representing the RGB color of the given pitch bucket in the [0, 1] range.
+///
+/// # Notes:
+/// - If the pitch falls exactly on one of the 12 tones, the output color will be exactly the
+///   corresponding color from the `colors` array.
+/// - As the pitch moves away from a central tone, the color will interpolate towards the gray
+///   color defined by `gray_level` based on the `easing_pow` factor.
+///
+/// # Examples
+///
+/// ```
+/// # use color_mappings::calculate_color;
+/// let colors = [
+///     [0.85, 0.36, 0.36], // Red for C
+///     [0.01, 0.52, 0.71], // ... and so on for other pitches
+///     // ... fill the other 10 colors
+/// ];
+/// let result = calculate_color(12, 1.0, colors, 0.5, 2.0);
+/// assert_eq!(result, (0.01, 0.52, 0.71)); // Assuming the bucket matches the color for C# rexactly.
+/// ```
 pub fn calculate_color(
     buckets_per_octave: usize,
     bucket: f32,
