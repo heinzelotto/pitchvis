@@ -1,0 +1,52 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    ndkVersion "25.2.9519653"
+    compileSdk 33
+
+    defaultConfig {
+        applicationId "org.p1graph.pitchvis"
+        minSdk 24
+        targetSdk 33
+        versionCode 2
+        versionName "1.1"
+
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    signingConfigs {
+        release {
+            storeFile file('/home/user/.android/my-release-key.keystore') // Change to the path to your keystore file
+            storePassword 'password' // Change to your keystore password
+            keyAlias 'alias_name' // Change to your key alias
+            keyPassword 'password' // Change to your key password
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfig signingConfigs.release
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+        debug {
+            minifyEnabled false
+            //packagingOptions {
+            //    doNotStrip '**/*.so'
+            //}
+            //debuggable true
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+    namespace 'org.p1graph.pitchvis'
+}
+
+dependencies {
+
+}
+
