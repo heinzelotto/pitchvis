@@ -167,7 +167,7 @@ pub fn setup_display(
     //#[cfg(feature = "ml")]
     let spectrum_mesh = LineList {
         lines: (0..(octaves * buckets_per_octave))
-            .map(|i| Vec3::new(i as f32, 0.0, 0.0))
+            .map(|i| Vec3::new(i as f32 * 0.017, 0.0, 0.0))
             .tuple_windows()
             .collect::<Vec<(Vec3, Vec3)>>(),
         flip: false,
@@ -916,6 +916,7 @@ fn bin_to_spiral(buckets_per_octave: usize, x: f32) -> (f32, f32, f32) {
     (-1.0 * transl_x * radius, transl_y * radius, 0.0) //17.0 - radius)
 }
 
+#[cfg(feature = "ml")]
 fn cqt_bin_to_midi_pitch(buckets_per_octave: usize, bin: usize) -> Option<usize> {
     let midi_pitch = (bin as f32 / buckets_per_octave as f32 * 12.0).round() as usize
         + crate::FREQ_A1_MIDI_KEY_ID as usize;

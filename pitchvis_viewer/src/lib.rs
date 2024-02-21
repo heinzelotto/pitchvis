@@ -172,8 +172,11 @@ pub fn main_fun() -> Result<()> {
     )
     .run();
     #[cfg(not(feature = "ml"))]
-    app.add_system(update_display_system.after(update_analysis_state_system))
-        .run();
+    app.add_systems(
+        Update,
+        update_display_system.after(update_analysis_state_system),
+    )
+    .run();
 
     Ok(())
 }

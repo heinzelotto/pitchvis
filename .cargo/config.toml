@@ -1,0 +1,6 @@
+[target.aarch64-linux-android]
+ar = "aarch64-linux-android-ar"
+linker = "aarch64-linux-android-clang"
+rustflags = [
+  "-C", "link-arg=-lc++_shared",
+]
