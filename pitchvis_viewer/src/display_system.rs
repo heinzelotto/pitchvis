@@ -1,18 +1,12 @@
 // TODO: make a config object and pass that around instead of all these parameters
 
 use bevy::{
-    core_pipeline::clear_color::ClearColorConfig,
-    pbr::{MaterialPipeline, MaterialPipelineKey},
     prelude::*,
-    reflect::{TypePath, TypeUuid},
     render::{
-        mesh::{Indices, MeshVertexBufferLayout, PrimitiveTopology},
-        render_resource::{
-            AsBindGroup, PolygonMode, RenderPipelineDescriptor, ShaderRef,
-            SpecializedMeshPipelineError,
-        },
+        mesh::{Indices, PrimitiveTopology},
+        render_asset::RenderAssetUsages,
     },
-    sprite::{MaterialMesh2dBundle, Mesh2d, Mesh2dHandle},
+    sprite::{MaterialMesh2dBundle, Mesh2dHandle},
 };
 use pitchvis_analysis::{
     color_mapping::{COLORS, EASING_POW, GRAY_LEVEL},
@@ -48,13 +42,11 @@ pub fn setup_display_to_system(
     Commands,
     ResMut<Assets<Mesh>>,
     ResMut<Assets<ColorMaterial>>,
-    ResMut<Assets<StandardMaterial>>,
     ResMut<CylinderEntityListResource>,
 ) {
     move |commands: Commands,
           meshes: ResMut<Assets<Mesh>>,
           materials: ResMut<Assets<ColorMaterial>>,
-          pbr_materials: ResMut<Assets<StandardMaterial>>,
           cylinder_entities: ResMut<CylinderEntityListResource>| {
         setup_display(
             octaves,
@@ -62,8 +54,6 @@ pub fn setup_display_to_system(
             commands,
             meshes,
             materials,
-            pbr_materials,
-            // line_materials,
             cylinder_entities,
         )
     }
@@ -75,18 +65,17 @@ pub fn setup_display(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
-    mut pbr_materials: ResMut<Assets<StandardMaterial>>,
     mut cylinder_entities: ResMut<CylinderEntityListResource>,
 ) {
     let spiral_points = spiral_points(octaves, buckets_per_octave);
 
-    for (idx, (x, y, z)) in spiral_points.iter().enumerate() {
+    for (idx, (x, y, _z)) in spiral_points.iter().enumerate() {
         // spheres
         let color_material: ColorMaterial = Color::rgb(1.0, 0.7, 0.6).into();
         commands.spawn((
             PitchBall(idx),
             MaterialMesh2dBundle {
-                mesh: meshes.add(shape::Circle::new(10.0).into()).into(),
+                mesh: meshes.add(Circle::new(10.0)).into(),
                 material: materials.add(color_material),
                 transform: Transform::from_xyz(*x * 1.0, *y * 1.0, -0.01), // needs to be slightly behind the 2d camera
                 visibility: Visibility::Visible,
@@ -121,16 +110,8 @@ pub fn setup_display(
                 .spawn((
                     BassCylinder,
                     MaterialMesh2dBundle {
-                        mesh: meshes
-                            .add(
-                                shape::Quad {
-                                    size: Vec2::new(0.05, h + 0.01),
-                                    flip: false,
-                                }
-                                .into(),
-                            )
-                            .into(),
-                        material: materials.add(Color::rgb(0.8, 0.7, 0.6).into()),
+                        mesh: meshes.add(Rectangle::new(0.05, h + 0.01)).into(),
+                        material: materials.add(Color::rgb(0.8, 0.7, 0.6)),
                         transform,
                         visibility: Visibility::Hidden,
                         ..default()
@@ -161,7 +142,7 @@ pub fn setup_display(
                 thickness: 0.05,
             }))
             .into(),
-        material: materials.add(Color::rgb(0.3, 0.3, 0.3).into()),
+        material: materials.add(Color::rgb(0.3, 0.3, 0.3)),
         transform: Transform::from_xyz(0.0, 0.0, -13.0),
         ..default()
     });
@@ -176,8 +157,8 @@ pub fn setup_display(
         thickness: 0.05,
     };
     commands.spawn(MaterialMesh2dBundle {
-        mesh: meshes.add(spiral_mesh.into()).into(),
-        material: materials.add(Color::rgb(0.3, 0.3, 0.3).into()),
+        mesh: meshes.add(spiral_mesh).into(),
+        material: materials.add(Color::rgb(0.3, 0.3, 0.3)),
         transform: Transform::from_xyz(0.0, 0.0, -13.0),
         ..default()
     });
@@ -196,8 +177,8 @@ pub fn setup_display(
     commands.spawn((
         Spectrum,
         MaterialMesh2dBundle {
-            mesh: meshes.add(spectrum_mesh.into()).into(),
-            material: materials.add(Color::rgb(0.25, 0.85, 0.20).into()),
+            mesh: meshes.add(spectrum_mesh).into(),
+            material: materials.add(Color::rgb(0.25, 0.85, 0.20)),
             transform: Transform::from_xyz(-12.0, 3.0, -13.0),
             ..default()
         },
@@ -231,13 +212,11 @@ pub fn setup_display(
 
     // spawn a camera2dbundle with coordinates that match those of the 3d camera at the z=0 plane
     commands.spawn(Camera2dBundle {
-        camera_2d: Camera2d {
-            clear_color: ClearColorConfig::Custom(Color::rgb(0.23, 0.23, 0.25)),
-            ..default()
-        },
+        camera_2d: Camera2d { ..default() },
         camera: Camera {
             // renders after / on top of the main camera
             order: 1,
+            clear_color: ClearColorConfig::Custom(Color::rgb(0.23, 0.23, 0.25)),
             ..default()
         },
         projection: OrthographicProjection {
@@ -379,7 +358,7 @@ pub fn update_display(
                 let z_ordering_offset = (size / max_size - 1.01) * 12.5;
                 transform.translation = Vec3::new(x, y, z_ordering_offset);
 
-                let mut color_mat = materials.get_mut(&*color).expect("ball color material");
+                let color_mat = materials.get_mut(&*color).expect("ball color material");
                 // color_mat.color = Color::rgb(
                 //     r * color_coefficient,
                 //     g * color_coefficient,
@@ -429,7 +408,7 @@ pub fn update_display(
             let z_ordering_offset = (size / max_size - 1.01) * 12.5;
             transform.translation = Vec3::new(x, y, z_ordering_offset);
 
-            let mut color_mat = materials.get_mut(&*color).expect("ball color material");
+            let color_mat = materials.get_mut(&*color).expect("ball color material");
             // color_mat.color = Color::rgba(r, g, b, 1.0);
             color_mat.color = Color::rgba(r, g, b, color_coefficient);
 
@@ -449,7 +428,7 @@ pub fn update_display(
         &analysis_state.peaks_continuous,
     );
 
-    for (a, line_strip) in &mut spectrum_linestrip {
+    for (_, line_strip) in &mut spectrum_linestrip {
         let spectrum_mesh = LineList {
             lines: cqt_result
                 .x_cqt
@@ -522,8 +501,11 @@ impl From<LineList> for Mesh {
         let normals: Vec<_> = vertices.iter().map(|(_, n, _)| *n).collect();
         let uvs: Vec<_> = vertices.iter().map(|(_, _, uv)| *uv).collect();
 
-        let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
-        mesh.set_indices(Some(indices));
+        let mut mesh = Mesh::new(
+            PrimitiveTopology::TriangleList,
+            RenderAssetUsages::default(),
+        );
+        mesh.insert_indices(indices);
         mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
         mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
         mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
