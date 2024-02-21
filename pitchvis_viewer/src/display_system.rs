@@ -1,17 +1,18 @@
 // TODO: make a config object and pass that around instead of all these parameters
 
 use bevy::{
+    core_pipeline::clear_color::ClearColorConfig,
     pbr::{MaterialPipeline, MaterialPipelineKey},
     prelude::*,
-    reflect::TypeUuid,
+    reflect::{TypePath, TypeUuid},
     render::{
-        mesh::{MeshVertexBufferLayout, PrimitiveTopology},
+        mesh::{Indices, MeshVertexBufferLayout, PrimitiveTopology},
         render_resource::{
             AsBindGroup, PolygonMode, RenderPipelineDescriptor, ShaderRef,
             SpecializedMeshPipelineError,
         },
     },
-    sprite::MaterialMesh2dBundle,
+    sprite::{MaterialMesh2dBundle, Mesh2d, Mesh2dHandle},
 };
 use pitchvis_analysis::{
     color_mapping::{COLORS, EASING_POW, GRAY_LEVEL},
@@ -47,13 +48,13 @@ pub fn setup_display_to_system(
     Commands,
     ResMut<Assets<Mesh>>,
     ResMut<Assets<ColorMaterial>>,
-    ResMut<Assets<LineMaterial>>,
+    ResMut<Assets<StandardMaterial>>,
     ResMut<CylinderEntityListResource>,
 ) {
     move |commands: Commands,
           meshes: ResMut<Assets<Mesh>>,
           materials: ResMut<Assets<ColorMaterial>>,
-          line_materials: ResMut<Assets<LineMaterial>>,
+          pbr_materials: ResMut<Assets<StandardMaterial>>,
           cylinder_entities: ResMut<CylinderEntityListResource>| {
         setup_display(
             octaves,
@@ -61,7 +62,8 @@ pub fn setup_display_to_system(
             commands,
             meshes,
             materials,
-            line_materials,
+            pbr_materials,
+            // line_materials,
             cylinder_entities,
         )
     }
@@ -73,7 +75,7 @@ pub fn setup_display(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
-    mut line_materials: ResMut<Assets<LineMaterial>>,
+    mut pbr_materials: ResMut<Assets<StandardMaterial>>,
     mut cylinder_entities: ResMut<CylinderEntityListResource>,
 ) {
     let spiral_points = spiral_points(octaves, buckets_per_octave);
@@ -84,9 +86,9 @@ pub fn setup_display(
         commands.spawn((
             PitchBall(idx),
             MaterialMesh2dBundle {
-                mesh: meshes.add(shape::Circle::new(50.0).into()).into(),
+                mesh: meshes.add(shape::Circle::new(10.0).into()).into(),
                 material: materials.add(color_material),
-                transform: Transform::from_xyz(*x * 1.0, *y * 1.0, *z * 1.0),
+                transform: Transform::from_xyz(*x * 1.0, *y * 1.0, -0.01), // needs to be slightly behind the 2d camera
                 visibility: Visibility::Visible,
                 ..default()
             },
@@ -108,7 +110,7 @@ pub fn setup_display(
         let y_unit: Vector3<f32> = nalgebra::vector![0.0, 1.0, 0.0];
         let v_diff = p.sub(q);
 
-        let mut transform = Transform::from_xyz(mid.x, mid.y, mid.z);
+        let mut transform = Transform::from_xyz(mid.x, mid.y, -12.7);
         if let Some(rotation) = Rotation3::rotation_between(&y_unit, &v_diff) {
             let (angx, angy, angz) = rotation.euler_angles();
             transform.rotate(Quat::from_euler(EulerRot::XYZ, angx, angy, angz));
@@ -151,40 +153,52 @@ pub fn setup_display(
         })
         .collect();
 
-    commands.spawn(MaterialMeshBundle {
-        mesh: meshes.add(Mesh::from(LineList { lines: line_list })),
-        material: line_materials.add(LineMaterial {
-            color: Color::rgb(0.25, 0.20, 0.20),
-        }),
+    commands.spawn(MaterialMesh2dBundle {
+        mesh: meshes
+            .add(Mesh::from(LineList {
+                lines: line_list,
+                flip: false,
+                thickness: 0.05,
+            }))
+            .into(),
+        material: materials.add(Color::rgb(0.3, 0.3, 0.3).into()),
+        transform: Transform::from_xyz(0.0, 0.0, -13.0),
         ..default()
     });
 
-    commands.spawn(MaterialMeshBundle {
-        mesh: meshes.add(Mesh::from(LineStrip {
-            points: spiral_points
-                .iter()
-                .map(|(x, y, z)| Vec3::new(*x, *y, *z))
-                .collect::<Vec<Vec3>>(),
-        })),
-        material: line_materials.add(LineMaterial {
-            color: Color::rgb(0.25, 0.20, 0.20),
-        }),
+    let spiral_mesh = LineList {
+        lines: spiral_points
+            .iter()
+            .map(|(x, y, z)| Vec3::new(*x, *y, *z))
+            .tuple_windows()
+            .collect::<Vec<(Vec3, Vec3)>>(),
+        flip: false,
+        thickness: 0.05,
+    };
+    commands.spawn(MaterialMesh2dBundle {
+        mesh: meshes.add(spiral_mesh.into()).into(),
+        material: materials.add(Color::rgb(0.3, 0.3, 0.3).into()),
+        transform: Transform::from_xyz(0.0, 0.0, -13.0),
         ..default()
     });
 
     // spectrum
+    //#[cfg(feature = "ml")]
+    let spectrum_mesh = LineList {
+        lines: (0..(octaves * buckets_per_octave))
+            .map(|i| Vec3::new(i as f32, 0.0, 0.0))
+            .tuple_windows()
+            .collect::<Vec<(Vec3, Vec3)>>(),
+        flip: false,
+        thickness: 0.01,
+    };
+    //#[cfg(feature = "ml")]
     commands.spawn((
         Spectrum,
-        MaterialMeshBundle {
-            mesh: meshes.add(Mesh::from(LineStrip {
-                points: (0..(octaves * buckets_per_octave))
-                    .map(|i| Vec3::new(i as f32, 0.0, 0.0))
-                    .collect::<Vec<Vec3>>(),
-            })),
-            material: line_materials.add(LineMaterial {
-                color: Color::rgb(0.25, 0.85, 0.20),
-            }),
-            transform: Transform::from_xyz(-14.0, 3.0, 0.0),
+        MaterialMesh2dBundle {
+            mesh: meshes.add(spectrum_mesh.into()).into(),
+            material: materials.add(Color::rgb(0.25, 0.85, 0.20).into()),
+            transform: Transform::from_xyz(-12.0, 3.0, -13.0),
             ..default()
         },
     ));
@@ -193,6 +207,9 @@ pub fn setup_display(
     commands.spawn(PointLightBundle {
         point_light: PointLight {
             intensity: 10500.0,
+            // Shadows makes some Android devices segfault, this is under investigation
+            // https://github.com/bevyengine/bevy/issues/8214
+            #[cfg(not(target_os = "android"))]
             shadows_enabled: true,
             ..default()
         },
@@ -202,6 +219,9 @@ pub fn setup_display(
     commands.spawn(PointLightBundle {
         point_light: PointLight {
             intensity: 10500.0,
+            //  Shadows makes some Android devices segfault, this is under investigation
+            //https://github.com/bevyengine/bevy/issues/8214
+            #[cfg(not(target_os = "android"))]
             shadows_enabled: true,
             ..default()
         },
@@ -209,31 +229,10 @@ pub fn setup_display(
         ..default()
     });
 
-    // camera
-    commands.spawn(Camera3dBundle {
-        transform: Transform::from_xyz(0.0, 0.0, 19.0).looking_at(Vec3::ZERO, Vec3::Y),
-        // clear the whole viewport with the given color
-        camera_3d: Camera3d {
-            // clear the whole viewport with the given color
-            //clear_color: ClearColorConfig::Custom(Color::rgb(0.23, 0.23, 0.25)),
-            ..Default::default()
-        },
-        projection: Projection::Perspective(PerspectiveProjection {
-            fov: std::f32::consts::FRAC_PI_4, // 45 degrees
-            ..Default::default()
-        }),
-        ..default()
-    });
-
-    //Projection::Orthographic(OrthographicProjection { scale: 0.05, ..default() }),
-    //transform: Transform::from_xyz(0.0, 0.0, 999.0).
-    /*transform: Transform::from_xyz(0.0, 0.0, -30.0).looking_at(Vec3::ZERO, Vec3::Y),*/
-
     // spawn a camera2dbundle with coordinates that match those of the 3d camera at the z=0 plane
     commands.spawn(Camera2dBundle {
         camera_2d: Camera2d {
-            // no "background color", we need to see the main camera's output
-            clear_color: bevy::core_pipeline::clear_color::ClearColorConfig::None,
+            clear_color: ClearColorConfig::Custom(Color::rgb(0.23, 0.23, 0.25)),
             ..default()
         },
         camera: Camera {
@@ -263,7 +262,7 @@ pub fn update_display_to_system(
         )>,
         Query<(&BassCylinder, &mut Visibility, &mut Handle<ColorMaterial>)>,
     )>,
-    Query<(&Spectrum, &mut Handle<Mesh>)>,
+    Query<(&Spectrum, &mut Mesh2dHandle)>,
     ResMut<Assets<ColorMaterial>>,
     ResMut<Assets<Mesh>>,
     Res<crate::analysis_system::AnalysisStateResource>,
@@ -279,7 +278,7 @@ pub fn update_display_to_system(
         )>,
         Query<(&BassCylinder, &mut Visibility, &mut Handle<ColorMaterial>)>,
     )>,
-          spectrum_linestrip: Query<(&Spectrum, &mut Handle<Mesh>)>,
+          spectrum_linestrip: Query<(&Spectrum, &mut Mesh2dHandle)>,
           materials: ResMut<Assets<ColorMaterial>>,
           meshes: ResMut<Assets<Mesh>>,
           analysis_state: Res<crate::analysis_system::AnalysisStateResource>,
@@ -299,7 +298,6 @@ pub fn update_display_to_system(
     }
 }
 
-//#yellow
 pub fn update_display(
     buckets_per_octave: usize,
     octaves: usize,
@@ -312,14 +310,14 @@ pub fn update_display(
         )>,
         Query<(&BassCylinder, &mut Visibility, &mut Handle<ColorMaterial>)>,
     )>,
-    mut spectrum_linestrip: Query<(&Spectrum, &mut Handle<Mesh>)>,
+    mut spectrum_linestrip: Query<(&Spectrum, &mut Mesh2dHandle)>,
     mut materials: ResMut<Assets<ColorMaterial>>,
     mut meshes: ResMut<Assets<Mesh>>,
     analysis_state: Res<crate::analysis_system::AnalysisStateResource>,
     cqt_result: Res<crate::cqt_system::CqtResultResource>,
     cylinder_entities: Res<CylinderEntityListResource>,
 ) {
-    let scale_factor = 1.0 / 2405.0;
+    let scale_factor = 1.0 / 305.0;
 
     for (pitch_ball, mut visibility, mut transform, _) in &mut set.p0() {
         if *visibility == Visibility::Visible {
@@ -330,7 +328,7 @@ pub fn update_display(
             transform.scale = size * scale_factor;
 
             // also shift shrinking circles slightly to the background so that they are not cluttering newly appearing larger circles
-            transform.translation.z *= dropoff_factor;
+            transform.translation.z -= 0.001;
 
             if size.x * scale_factor < 0.002 {
                 *visibility = Visibility::Hidden;
@@ -378,10 +376,10 @@ pub fn update_display(
 
                 let (x, y, _) = bin_to_spiral(buckets_per_octave, center);
                 // make sure larger circles are drawn on top by adding a small offset proportional to the size
-                let z_ordering_offset = (size / max_size) * 12.5;
+                let z_ordering_offset = (size / max_size - 1.01) * 12.5;
                 transform.translation = Vec3::new(x, y, z_ordering_offset);
 
-                let mut color_mat = materials.get_mut(&color).expect("ball color material");
+                let mut color_mat = materials.get_mut(&*color).expect("ball color material");
                 // color_mat.color = Color::rgb(
                 //     r * color_coefficient,
                 //     g * color_coefficient,
@@ -389,7 +387,7 @@ pub fn update_display(
                 // );
                 color_mat.color = Color::rgba(r, g, b, color_coefficient);
 
-                // color white (for now) if this is a base frequency
+                #[cfg(feature = "ml")]
                 if let Some(midi_pitch) = cqt_bin_to_midi_pitch(buckets_per_octave, idx) {
                     let inferred_midi_pitch_strength =
                         analysis_state.ml_midi_base_pitches[midi_pitch];
@@ -428,10 +426,10 @@ pub fn update_display(
 
             let (x, y, _) = bin_to_spiral(buckets_per_octave, idx as f32);
             // make sure larger circles are drawn on top by adding a small offset proportional to the size
-            let z_ordering_offset = (size / max_size) * 12.5;
+            let z_ordering_offset = (size / max_size - 1.01) * 12.5;
             transform.translation = Vec3::new(x, y, z_ordering_offset);
 
-            let mut color_mat = materials.get_mut(&color).expect("ball color material");
+            let mut color_mat = materials.get_mut(&*color).expect("ball color material");
             // color_mat.color = Color::rgba(r, g, b, 1.0);
             color_mat.color = Color::rgba(r, g, b, color_coefficient);
 
@@ -443,7 +441,7 @@ pub fn update_display(
         }
     }
 
-    update_cylinders(
+    update_bass_spiral(
         buckets_per_octave,
         cylinder_entities,
         materials,
@@ -451,22 +449,24 @@ pub fn update_display(
         &analysis_state.peaks_continuous,
     );
 
-    for (_, line_strip) in &mut spectrum_linestrip {
-        let mesh = meshes
-            .get_mut(&line_strip)
-            .expect("spectrum line strip mesh");
-        mesh.insert_attribute(
-            Mesh::ATTRIBUTE_POSITION,
-            cqt_result
+    for (a, line_strip) in &mut spectrum_linestrip {
+        let spectrum_mesh = LineList {
+            lines: cqt_result
                 .x_cqt
                 .iter()
                 .enumerate()
                 .map(|(i, amp)| Vec3::new(i as f32 * 0.017, *amp / 10.0, 0.0))
-                .collect::<Vec<Vec3>>(),
-        );
+                .tuple_windows()
+                .collect::<Vec<(Vec3, Vec3)>>(),
+            flip: false,
+            thickness: 0.01,
+        };
+        let mesh = meshes
+            .get_mut(&line_strip.0)
+            .expect("spectrum line strip mesh");
+        *mesh = spectrum_mesh.into();
     }
 }
-//#
 
 // #[derive(PartialEq)]
 // pub enum PauseState {
@@ -474,62 +474,60 @@ pub fn update_display(
 //     Paused,
 // }
 
-/// A list of points that will have a line drawn between each consecutive points
-#[derive(Debug, Clone)]
-pub struct LineStrip {
-    pub points: Vec<Vec3>,
-}
-
-impl From<LineStrip> for Mesh {
-    fn from(line: LineStrip) -> Self {
-        // This tells wgpu that the positions are a list of points
-        // where a line will be drawn between each consecutive point
-        let mut mesh = Mesh::new(PrimitiveTopology::LineStrip);
-
-        mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, line.points);
-        mesh
-    }
-}
-
-/// A list of lines with a start and end position
+/// A list of lines with a start and end position each
 #[derive(Debug, Clone)]
 pub struct LineList {
+    /// Full width and height of the rectangle.
     pub lines: Vec<(Vec3, Vec3)>,
+    /// Horizontally-flip the texture coordinates of the resulting mesh.
+    pub flip: bool,
+    /// Width of the line
+    pub thickness: f32,
 }
 
 impl From<LineList> for Mesh {
-    fn from(line: LineList) -> Self {
-        // This tells wgpu that the positions are list of lines
-        // where every pair is a start and end point
-        let mut mesh = Mesh::new(PrimitiveTopology::LineList);
+    fn from(strip: LineList) -> Self {
+        let mut vertices = Vec::new();
+        let mut indices = Vec::new();
+        // iterate over strip.points, partitioned into tuples of (p, q)
+        for (p, q) in strip.lines.iter() {
+            let dx = p.x - q.x;
+            let dy = p.y - q.y;
+            let l = dx.hypot(dy);
+            let u = dx * strip.thickness * 0.5 / l;
+            let v = dy * strip.thickness * 0.5 / l;
 
-        let vertices: Vec<_> = line.lines.into_iter().flat_map(|(a, b)| [a, b]).collect();
-        mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vertices);
+            let v0 = Vec3::new(p.x + v, p.y - u, 0.0);
+            let v1 = Vec3::new(p.x - v, p.y + u, 0.0);
+            let v2 = Vec3::new(q.x - v, q.y + u, 0.0);
+            let v3 = Vec3::new(q.x + v, q.y - u, 0.0);
+
+            let prior_len = vertices.len();
+            indices.push(2 + prior_len as u32);
+            indices.push(1 + prior_len as u32);
+            indices.push(0 + prior_len as u32);
+            indices.push(2 + prior_len as u32);
+            indices.push(0 + prior_len as u32);
+            indices.push(3 + prior_len as u32);
+
+            vertices.push((v0, [0.0, 0.0, 1.0], [0.0, 1.0]));
+            vertices.push((v1, [0.0, 0.0, 1.0], [0.0, 0.0]));
+            vertices.push((v2, [0.0, 0.0, 1.0], [1.0, 0.0]));
+            vertices.push((v3, [0.0, 0.0, 1.0], [1.0, 1.0]));
+        }
+
+        let indices = Indices::U32(indices);
+
+        let positions: Vec<_> = vertices.iter().map(|(p, _, _)| *p).collect();
+        let normals: Vec<_> = vertices.iter().map(|(_, n, _)| *n).collect();
+        let uvs: Vec<_> = vertices.iter().map(|(_, _, uv)| *uv).collect();
+
+        let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
+        mesh.set_indices(Some(indices));
+        mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+        mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+        mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
         mesh
-    }
-}
-
-#[derive(Default, AsBindGroup, TypeUuid, Debug, Clone)]
-#[uuid = "050ce6ac-080a-4d8c-b6b5-b5bab7560d8f"]
-pub struct LineMaterial {
-    #[uniform(0)]
-    color: Color,
-}
-
-impl Material for LineMaterial {
-    fn fragment_shader() -> ShaderRef {
-        "shaders/line_material.wgsl".into()
-    }
-
-    fn specialize(
-        _pipeline: &MaterialPipeline<Self>,
-        descriptor: &mut RenderPipelineDescriptor,
-        _layout: &MeshVertexBufferLayout,
-        _key: MaterialPipelineKey<Self>,
-    ) -> Result<(), SpecializedMeshPipelineError> {
-        // This is the important part to tell bevy to render this material as a line between vertices
-        descriptor.primitive.polygon_mode = PolygonMode::Line;
-        Ok(())
     }
 }
 
@@ -863,7 +861,7 @@ impl Material for LineMaterial {
 //     }
 // }
 
-fn update_cylinders(
+fn update_bass_spiral(
     buckets_per_octave: usize,
     cylinder_entities: Res<CylinderEntityListResource>,
     mut materials: ResMut<Assets<ColorMaterial>>,
@@ -909,7 +907,7 @@ fn update_cylinders(
             let color_coefficient = 1.0 - (1.0 - size / max_size).powf(2.0);
 
             materials
-                .get_mut(&color)
+                .get_mut(&*color)
                 .expect("cylinder color material")
                 .color = Color::rgba(r, g, b, color_coefficient);
 
@@ -918,7 +916,6 @@ fn update_cylinders(
         }
     }
 }
-//}
 
 fn spiral_points(octaves: usize, buckets_per_octave: usize) -> Vec<(f32, f32, f32)> {
     (0..(buckets_per_octave * octaves))
@@ -927,7 +924,8 @@ fn spiral_points(octaves: usize, buckets_per_octave: usize) -> Vec<(f32, f32, f3
 }
 
 fn bin_to_spiral(buckets_per_octave: usize, x: f32) -> (f32, f32, f32) {
-    let radius = 1.5 * (0.5 + (x / buckets_per_octave as f32).powf(0.75));
+    //let radius = 1.5 * (0.5 + (x / buckets_per_octave as f32).powf(0.75));
+    let radius = 2.0 * (0.3 + (x / buckets_per_octave as f32).powf(0.75));
     let (transl_y, transl_x) = ((x + (buckets_per_octave - 0 * (buckets_per_octave / 12)) as f32)
         / (buckets_per_octave as f32)
         * 2.0
