@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Random Piano Generator</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"
+        integrity="sha512-jduERlz7En1IUZR54bqzpNI64AbffZWR//KJgF71SJ8D8/liKFZ+s1RxmUmB+bhCnIfzebdZsULwOrbVB5f3nQ=="
+        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+</head>
+
+<body>
+    <button id="loadButton">Load</button>
+    <button id="playButton">Play Random Notes</button>
+    <!-- dropdown list from 1 to 4 -->
+    <p>Number of notes to play:</p>
+    <select id="chord_size">
+        <option value="1">1</option>
+        <option value="2">2</option>
+        <option value="3">3</option>
+        <option value="4">4</option>
+    </select>
+
+    <p>Notes played:</p>
+    <div id="notes_played"></div>
+
+    <script>
+    </script>
+
+    <script>
+        document.getElementById('loadButton').addEventListener('click', function () {
+            // Ensure Tone.js audio context is started/resumed upon user interaction
+            Tone.start().then(() => {
+                const sampler = new Tone.Sampler({
+                    urls: {
+                        'A2': "A2.mp3",
+                        'A3': "A3.mp3",
+                        'A4': "A4.mp3",
+                        'A5': "A5.mp3",
+                        'C2': "C2.mp3",
+                        'C3': "C3.mp3",
+                        'C4': "C4.mp3",
+                        'C5': "C5.mp3",
+                        'D#2': "Ds2.mp3",
+                        'D#3': "Ds3.mp3",
+                        'D#4': "Ds4.mp3",
+                        'D#5': "Ds5.mp3",
+                        'F#2': "Fs2.mp3",
+                        'F#3': "Fs3.mp3",
+                        'F#4': "Fs4.mp3",
+                        'F#5': "Fs5.mp3",
+                    },
+                    baseUrl: "https://tonejs.github.io/audio/salamander/",
+                    release: 0.5,
+                    onload: () => {
+                        document.getElementById('playButton').addEventListener('click', function () {
+                            // Function to generate a random note
+                            function getRandomNote() {
+                                const notes = [
+                                    'C2', 'C#2', 'D2', 'D#2', 'E2', 'F2', 'F#2', 'G2', 'G#2', 'A2', 'A#2', 'B2',
+                                    'C3', 'C#3', 'D3', 'D#3', 'E3', 'F3', 'F#3', 'G3', 'G#3', 'A3', 'A#3', 'B3',
+                                    'C4', 'C#4', 'D4', 'D#4', 'E4', 'F4', 'F#4', 'G4', 'G#4', 'A4', 'A#4', 'B4',
+                                    'C5', 'C#5', 'D5', 'D#5', 'E5', 'F5', 'F#5', 'G5', 'G#5', 'A5', 'A#5', 'B5',];
+                                return notes[Math.floor(Math.random() * notes.length)];
+                            }
+                            
+                            var notes = [];
+                            document.getElementById('notes_played').innerHTML = '';
+                            // Play up to four random notes, get the number of notes from the dropdown list
+                            for (let i = 0; i < document.getElementById('chord_size').value; i++) {
+                                do {
+                                    var note = getRandomNote();
+                                } while (notes.includes(note));
+                                sampler.triggerAttackRelease(note, "3", Tone.now() + Math.random() * 0.06);
+                                sampler.triggerAttackRelease(note, "3", Tone.now() + 3.5 + Math.random() * 0.06);
+                                sampler.triggerAttackRelease(note, "3", Tone.now() + 7 + Math.random() * 0.06);
+                                notes.push(note);
+                            }
+                            // sleep for a while
+                            setTimeout(() => {
+                                document.getElementById('notes_played').innerHTML = notes.join(', ');
+                            }, 10000);
+                        });
+                    }
+                }).toDestination();
+
+
+            });
+        });
+    </script>
+</body>
+
+</html>
