@@ -28,7 +28,7 @@ path = "src/main.rs"
 anyhow = "1.0"
 itertools = "0.12.1"
 log = "0.4.17"
-bevy = "0.13.0"
+bevy = "0.13.2"
 nalgebra = "0.32.2"
 pitchvis_analysis = { path = "../pitchvis_analysis" }
 pitchvis_audio = { path = "../pitchvis_audio" }

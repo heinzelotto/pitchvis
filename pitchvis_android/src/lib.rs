@@ -3,6 +3,7 @@ use crate::audio_system::AudioBufferResource;
 use anyhow::Result;
 use bevy::diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin};
 use bevy::prelude::*;
+use bevy::window::ApplicationLifetime;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 mod analysis_system;
@@ -15,7 +16,8 @@ mod util;
 use android_activity::AndroidApp;
 use jni::{
     objects::{JObject, JValue},
-    sys::{jobject, jstring}, JavaVM,
+    sys::{jobject, jstring},
+    JavaVM,
 };
 
 #[cfg_attr(not(feature = "ml"), link(name = "c++_shared"))]
@@ -101,6 +103,24 @@ fn frame_limiter_system() {
     thread::sleep(time::Duration::from_millis((1000 / FPS).saturating_sub(5)));
 }
 
+fn handle_lifetime_events_system(mut lifetime_events: EventReader<ApplicationLifetime>) {
+    for event in lifetime_events.read() {
+        match event {
+            // Upon receiving the `Suspended` event, the application has 1 frame before it is paused
+            // As audio happens in an independent thread, it needs to be stopped
+            ApplicationLifetime::Suspended => {
+                // TODO: stop audio etc.
+            }
+            // On `Resumed``, audio can continue playing
+            ApplicationLifetime::Resumed => {
+                // TODO: play audio
+            }
+            // `Started` is the only other event for now, more to come in the next Bevy version
+            _ => (),
+        }
+    }
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 pub fn main_fun() -> Result<()> {
     env_logger::init();
@@ -132,9 +152,9 @@ pub fn main_fun() -> Result<()> {
     let ml_model_resource = ml_system::MlModelResource(ml_system::MlModel::new("model.pt"));
 
     let mut app = App::new();
-        app.add_plugins(DefaultPlugins)
-        .add_plugin(LogDiagnosticsPlugin::default())
-        .add_plugin(FrameTimeDiagnosticsPlugin::default())
+    app.add_plugins(DefaultPlugins)
+        .add_plugins(LogDiagnosticsPlugin::default())
+        .add_plugins(FrameTimeDiagnosticsPlugin::default())
         //.add_plugin(MaterialPlugin::<display_system::LineMaterial>::default())
         .insert_resource(cqt_system::CqtResource(cqt))
         .insert_resource(cqt_system::CqtResultResource::new(
@@ -150,24 +170,40 @@ pub fn main_fun() -> Result<()> {
         ));
 
     #[cfg(feature = "ml")]
-        app.insert_resource(ml_model_resource);
+    app.insert_resource(ml_model_resource);
 
     app.insert_resource(display_system::CylinderEntityListResource(Vec::new()))
-        .add_startup_system(display_system::setup_display_to_system(
-            OCTAVES,
-            BUCKETS_PER_OCTAVE,
-        ))
-        .add_system(bevy::window::close_on_esc)
-        .add_system(frame_limiter_system)
-        .add_system(update_cqt_system)
-        .add_system(update_analysis_state_system.after(update_cqt_system));
-#[cfg(feature = "ml")]
-        app.add_system(update_ml_system.after(update_analysis_state_system))
-        .add_system(update_display_system.after(update_ml_system))
-        .run();
-#[cfg(not(feature = "ml"))]
-        app.add_system(update_display_system.after(update_analysis_state_system))
-        .run();
+        .add_systems(
+            Startup,
+            display_system::setup_display_to_system(OCTAVES, BUCKETS_PER_OCTAVE),
+        )
+        .add_systems(
+            Update,
+            (
+                bevy::window::close_on_esc,
+                frame_limiter_system,
+                update_cqt_system,
+            ),
+        )
+        .add_systems(
+            Update,
+            update_analysis_state_system.after(update_cqt_system),
+        );
+    #[cfg(feature = "ml")]
+    app.add_systems(
+        Update,
+        (
+            update_ml_system.after(update_analysis_state_system),
+            update_display_system.after(update_ml_system),
+        ),
+    )
+    .run();
+    #[cfg(not(feature = "ml"))]
+    app.add_systems(
+        Update,
+        update_display_system.after(update_analysis_state_system),
+    )
+    .run();
 
     Ok(())
 }
@@ -225,15 +261,24 @@ pub fn request_microphone_permission(android_app: &AndroidApp, permission: &str)
 #[cfg(not(feature = "ml"))]
 #[bevy_main]
 fn main() {
-    use bevy::{render::{RenderPlugin, settings::{WgpuSettings, WgpuFeatures}}, log::LogPlugin};
+    use bevy::{
+        log::LogPlugin,
+        render::{
+            settings::{WgpuFeatures, WgpuSettings},
+            RenderPlugin,
+        },
+    };
 
     env_logger::init();
 
     if !microphone_permission_granted("android.permission.RECORD_AUDIO") {
         log::info!("requesting microphone permission");
-        request_microphone_permission(bevy_winit::ANDROID_APP
-            .get()
-            .expect("Bevy must be setup with the #[bevy_main] macro on Android"), "android.permission.RECORD_AUDIO");
+        request_microphone_permission(
+            bevy_winit::ANDROID_APP
+                .get()
+                .expect("Bevy must be setup with the #[bevy_main] macro on Android"),
+            "android.permission.RECORD_AUDIO",
+        );
     }
     // wait until permission is granted
     while !microphone_permission_granted("android.permission.RECORD_AUDIO") {
@@ -242,11 +287,12 @@ fn main() {
 
     // keep screen awake. This is a bitflags! enum, the second argument is an empty bitflags mask
     bevy_winit::ANDROID_APP
-            .get()
-            .expect("Bevy must be setup with the #[bevy_main] macro on Android").set_window_flags(
-                android_activity::WindowManagerFlags::KEEP_SCREEN_ON,
-                android_activity::WindowManagerFlags::empty(),
-            );
+        .get()
+        .expect("Bevy must be setup with the #[bevy_main] macro on Android")
+        .set_window_flags(
+            android_activity::WindowManagerFlags::KEEP_SCREEN_ON,
+            android_activity::WindowManagerFlags::empty(),
+        );
 
     //let audio_stream = pitchvis_audio::audio::AudioStream::new(SR, BUFSIZE).unwrap();
 
@@ -319,56 +365,67 @@ fn main() {
         display_system::update_display_to_system(BUCKETS_PER_OCTAVE, OCTAVES);
 
     let mut app = App::new();
-        app.add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                //resizable: false,
-                mode: bevy::window::WindowMode::BorderlessFullscreen,
+    app.add_plugins(
+        DefaultPlugins
+            .set(WindowPlugin {
+                primary_window: Some(Window {
+                    //resizable: false,
+                    mode: bevy::window::WindowMode::BorderlessFullscreen,
+                    ..default()
+                }),
                 ..default()
-            }),
-            ..default()
-        })
-        .set(LogPlugin {
-            filter: "debug".into(),
-            level: bevy::log::Level::DEBUG,
-        })
-        // .set(RenderPlugin {
-        //     wgpu_settings: WgpuSettings {
-        //         features: WgpuFeatures::POLYGON_MODE_LINE,
-        //         ..default()
-        //     },})
-    
+            })
+            .set(LogPlugin {
+                filter: "debug".into(),
+                level: bevy::log::Level::DEBUG,
+                update_subscriber: None,
+            }), // .set(RenderPlugin {
+                //     wgpu_settings: WgpuSettings {
+                //         features: WgpuFeatures::POLYGON_MODE_LINE,
+                //         ..default()
+                //     },})
     )
-        .add_plugin(LogDiagnosticsPlugin::default())
-        .add_plugin(FrameTimeDiagnosticsPlugin::default())
-        //.add_plugin(MaterialPlugin::<display_system::LineMaterial>::default())
-        .insert_resource(cqt_system::CqtResource(cqt))
-        .insert_resource(cqt_system::CqtResultResource::new(
-            OCTAVES,
-            BUCKETS_PER_OCTAVE,
-        ))
-        .insert_resource(audio_system::AudioBufferResource(ring_buffer))
-        .insert_resource(analysis_system::AnalysisStateResource(
-            pitchvis_analysis::analysis::AnalysisState::new(
-                OCTAVES * BUCKETS_PER_OCTAVE,
-                pitchvis_analysis::analysis::SPECTROGRAM_LENGTH,
-            ),
-        ));
+    .add_plugins(LogDiagnosticsPlugin::default())
+    .add_plugins(FrameTimeDiagnosticsPlugin::default())
+    //.add_plugin(MaterialPlugin::<display_system::LineMaterial>::default())
+    .insert_resource(cqt_system::CqtResource(cqt))
+    .insert_resource(cqt_system::CqtResultResource::new(
+        OCTAVES,
+        BUCKETS_PER_OCTAVE,
+    ))
+    .insert_resource(audio_system::AudioBufferResource(ring_buffer))
+    .insert_resource(analysis_system::AnalysisStateResource(
+        pitchvis_analysis::analysis::AnalysisState::new(
+            OCTAVES * BUCKETS_PER_OCTAVE,
+            pitchvis_analysis::analysis::SPECTROGRAM_LENGTH,
+        ),
+    ));
 
     app.insert_resource(display_system::CylinderEntityListResource(Vec::new()))
-        .add_startup_system(display_system::setup_display_to_system(
-            OCTAVES,
-            BUCKETS_PER_OCTAVE,
-        ))
-        .add_system(bevy::window::close_on_esc)
-        .add_system(frame_limiter_system)
-        .add_system(update_cqt_system)
-        .add_system(update_analysis_state_system.after(update_cqt_system))
-        .add_system(update_display_system.after(update_analysis_state_system));
+        .add_systems(
+            Startup,
+            display_system::setup_display_to_system(OCTAVES, BUCKETS_PER_OCTAVE),
+        )
+        .add_systems(
+            Update,
+            (
+                bevy::window::close_on_esc,
+                frame_limiter_system,
+                update_cqt_system,
+            ),
+        )
+        .add_systems(
+            Update,
+            (
+                update_analysis_state_system.after(update_cqt_system),
+                update_display_system.after(update_analysis_state_system),
+            ),
+        );
 
-        // MSAA makes some Android devices panic, this is under investigation
+    // MSAA makes some Android devices panic, this is under investigation
     // https://github.com/bevyengine/bevy/issues/8229
     #[cfg(target_os = "android")]
     app.insert_resource(Msaa::Off);
 
-        app.run();
+    app.run();
 }

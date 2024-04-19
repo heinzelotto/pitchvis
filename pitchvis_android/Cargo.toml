@@ -34,7 +34,7 @@ crate-type = ["cdylib"]
 anyhow = "1.0"
 itertools = "0.10.5"
 log = "0.4.17"
-bevy = "0.11.2"
+bevy = "0.13.2"
 nalgebra = "0.32.2"
 pitchvis_analysis = { path = "../pitchvis_analysis" }
 pitchvis_audio = { path = "../pitchvis_audio" }

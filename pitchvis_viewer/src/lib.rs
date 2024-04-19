@@ -230,6 +230,7 @@ fn main() {
             .set(LogPlugin {
                 filter: "debug".into(),
                 level: bevy::log::Level::DEBUG,
+                update_subscriber: None,
             }), // .set(RenderPlugin {
                 //     wgpu_settings: WgpuSettings {
                 //         features: WgpuFeatures::POLYGON_MODE_LINE,

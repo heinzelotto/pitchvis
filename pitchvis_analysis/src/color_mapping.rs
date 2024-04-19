@@ -31,6 +31,21 @@ pub const COLORS: [[f32; 3]; 12] = [
     [0.57, 0.30, 0.55], // Bb
     [0.12, 0.71, 0.34], // H
 ];
+
+// as hex values
+// "#d85b5b",
+// "#0284b5",
+// "#f7c10c",
+// "#7256a0",
+// "#77c438",
+// "#c65184",
+// "#00a38e",
+// "#f2893a",
+// "#4c5ea3",
+// "#fff407",
+// "#914c8c",
+// "#1eb556",
+
 pub const GRAY_LEVEL: f32 = 60.0; // could be the mean lightness of the two neighbors. for now this is good enough.
 pub const EASING_POW: f32 = 1.3;
 
