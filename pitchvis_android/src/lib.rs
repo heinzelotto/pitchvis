@@ -1,9 +1,11 @@
 #[cfg(target_arch = "wasm32")]
 use crate::audio_system::AudioBufferResource;
-use anyhow::Result;
 use bevy::diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin};
-use bevy::prelude::*;
+use bevy::input::keyboard::KeyboardInput;
+use bevy::input::mouse::MouseButtonInput;
+use bevy::input::touch::TouchPhase;
 use bevy::window::ApplicationLifetime;
+use bevy::{prelude::*};
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 mod analysis_system;
@@ -39,64 +41,6 @@ pub const Q: f32 = 10.0 / UPSCALE_FACTOR as f32;
 pub const GAMMA: f32 = 5.3 * Q;
 
 const FPS: u64 = 30;
-
-#[wasm_bindgen]
-#[cfg(target_arch = "wasm32")]
-pub async fn main_fun() -> Result<(), JsValue> {
-    let audio_stream = pitchvis_audio::audio::AudioStream::async_new(SR, BUFSIZE)
-        .await
-        .unwrap();
-
-    let cqt = pitchvis_analysis::cqt::Cqt::new(
-        SR,
-        N_FFT,
-        FREQ_A1,
-        BUCKETS_PER_OCTAVE,
-        OCTAVES,
-        SPARSITY_QUANTILE,
-        Q,
-        GAMMA,
-    );
-
-    audio_stream.play().unwrap();
-
-    let update_cqt_system = cqt_system::update_cqt_to_system(BUFSIZE);
-    let update_analysis_state_system =
-        analysis_system::update_analysis_state_to_system(OCTAVES, BUCKETS_PER_OCTAVE);
-    let update_display_system =
-        display_system::update_display_to_system(BUCKETS_PER_OCTAVE, OCTAVES);
-
-    App::new()
-        .add_plugins(DefaultPlugins)
-        .add_plugin(LogDiagnosticsPlugin::default())
-        .add_plugin(FrameTimeDiagnosticsPlugin::default())
-        // .add_plugin(MaterialPlugin::<display_system::LineMaterial>::default())
-        .insert_resource(cqt_system::CqtResource(cqt))
-        .insert_resource(cqt_system::CqtResultResource::new(
-            OCTAVES,
-            BUCKETS_PER_OCTAVE,
-        ))
-        .insert_resource(audio_system::AudioBufferResource(
-            audio_stream.ring_buffer.clone(),
-        ))
-        .insert_resource(analysis_system::AnalysisStateResource(
-            pitchvis_analysis::analysis::AnalysisState::new(
-                OCTAVES * BUCKETS_PER_OCTAVE,
-                pitchvis_analysis::analysis::SPECTROGRAM_LENGTH,
-            ),
-        ))
-        .add_startup_system(display_system::setup_display_to_system(
-            OCTAVES,
-            BUCKETS_PER_OCTAVE,
-        ))
-        .add_system(bevy::window::close_on_esc)
-        .add_system(update_cqt_system)
-        .add_system(update_analysis_state_system.after(update_cqt_system))
-        .add_system(update_display_system.after(update_analysis_state_system))
-        .run();
-
-    Ok(())
-}
 
 fn frame_limiter_system() {
     use std::{thread, time};
@@ -138,109 +82,25 @@ fn user_input_system(
     }
 }
 
-fn handle_lifetime_events_system(mut lifetime_events: EventReader<ApplicationLifetime>) {
+fn handle_lifetime_events_system(
+    mut lifetime_events: EventReader<ApplicationLifetime>,
+    audio_control_tx: ResMut<AudioControlChannelResource>,
+) {
     for event in lifetime_events.read() {
         match event {
             // Upon receiving the `Suspended` event, the application has 1 frame before it is paused
             // As audio happens in an independent thread, it needs to be stopped
             ApplicationLifetime::Suspended => {
-                // TODO: stop audio etc.
+                audio_control_tx.0.send(AudioControl::Pause).unwrap();
             }
             // On `Resumed``, audio can continue playing
             ApplicationLifetime::Resumed => {
-                // TODO: play audio
+                audio_control_tx.0.send(AudioControl::Play).unwrap();
             }
             // `Started` is the only other event for now, more to come in the next Bevy version
             _ => (),
         }
     }
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-pub fn main_fun() -> Result<()> {
-    env_logger::init();
-
-    let audio_stream = pitchvis_audio::audio::AudioStream::new(SR, BUFSIZE).unwrap();
-
-    let cqt = pitchvis_analysis::cqt::Cqt::new(
-        SR,
-        N_FFT,
-        FREQ_A1,
-        BUCKETS_PER_OCTAVE,
-        OCTAVES,
-        SPARSITY_QUANTILE,
-        Q,
-        GAMMA,
-    );
-
-    audio_stream.play().unwrap();
-
-    let update_cqt_system = cqt_system::update_cqt_to_system(BUFSIZE);
-    let update_analysis_state_system =
-        analysis_system::update_analysis_state_to_system(OCTAVES, BUCKETS_PER_OCTAVE);
-    #[cfg(feature = "ml")]
-    let update_ml_system = ml_system::update_ml_to_system();
-    let update_display_system =
-        display_system::update_display_to_system(BUCKETS_PER_OCTAVE, OCTAVES);
-
-    #[cfg(feature = "ml")]
-    let ml_model_resource = ml_system::MlModelResource(ml_system::MlModel::new("model.pt"));
-
-    let mut app = App::new();
-    app.add_plugins(DefaultPlugins)
-        .add_plugins(LogDiagnosticsPlugin::default())
-        .add_plugins(FrameTimeDiagnosticsPlugin::default())
-        //.add_plugin(MaterialPlugin::<display_system::LineMaterial>::default())
-        .insert_resource(cqt_system::CqtResource(cqt))
-        .insert_resource(cqt_system::CqtResultResource::new(
-            OCTAVES,
-            BUCKETS_PER_OCTAVE,
-        ))
-        .insert_resource(audio_system::AudioBufferResource(audio_stream.ring_buffer))
-        .insert_resource(analysis_system::AnalysisStateResource(
-            pitchvis_analysis::analysis::AnalysisState::new(
-                OCTAVES * BUCKETS_PER_OCTAVE,
-                pitchvis_analysis::analysis::SPECTROGRAM_LENGTH,
-            ),
-        ));
-
-    #[cfg(feature = "ml")]
-    app.insert_resource(ml_model_resource);
-
-    app.insert_resource(display_system::CylinderEntityListResource(Vec::new()))
-        .add_systems(
-            Startup,
-            display_system::setup_display_to_system(OCTAVES, BUCKETS_PER_OCTAVE),
-        )
-        .add_systems(
-            Update,
-            (
-                bevy::window::close_on_esc,
-                frame_limiter_system,
-                update_cqt_system,
-            ),
-        )
-        .add_systems(
-            Update,
-            update_analysis_state_system.after(update_cqt_system),
-        );
-    #[cfg(feature = "ml")]
-    app.add_systems(
-        Update,
-        (
-            update_ml_system.after(update_analysis_state_system),
-            update_display_system.after(update_ml_system),
-        ),
-    )
-    .run();
-    #[cfg(not(feature = "ml"))]
-    app.add_systems(
-        Update,
-        update_display_system.after(update_analysis_state_system),
-    )
-    .run();
-
-    Ok(())
 }
 
 fn microphone_permission_granted(perm: &str) -> bool {
@@ -293,10 +153,22 @@ pub fn request_microphone_permission(android_app: &AndroidApp, permission: &str)
         .unwrap();
 }
 
+/// This enum is used to control the audio stream. It is sent to the audio thread via a channel. This allows us to control the audio stream from the bevy thread.
+enum AudioControl {
+    Play,
+    Pause,
+}
+
+#[derive(Resource)]
+struct AudioControlChannelResource(std::sync::mpsc::Sender<AudioControl>);
+
 #[cfg(not(feature = "ml"))]
 #[bevy_main]
 fn main() {
+    use std::sync::mpsc;
+
     use bevy::{
+        audio,
         log::LogPlugin,
         render::{
             settings::{WgpuFeatures, WgpuSettings},
@@ -329,8 +201,6 @@ fn main() {
             android_activity::WindowManagerFlags::empty(),
         );
 
-    //let audio_stream = pitchvis_audio::audio::AudioStream::new(SR, BUFSIZE).unwrap();
-
     let cqt = pitchvis_analysis::cqt::Cqt::new(
         SR,
         N_FFT,
@@ -342,8 +212,7 @@ fn main() {
         GAMMA,
     );
 
-    //audio_stream.play().unwrap();
-
+    let (audio_control_channel_tx, audio_control_channel_rx) = mpsc::channel::<AudioControl>();
     let mut ring_buffer = pitchvis_audio::audio::RingBuffer {
         buf: Vec::new(),
         gain: 0.0,
@@ -351,47 +220,67 @@ fn main() {
     ring_buffer.buf.resize(BUFSIZE, 0f32);
     let ring_buffer = std::sync::Mutex::from(ring_buffer);
     let ring_buffer = std::sync::Arc::new(ring_buffer);
-    let mut agc = dagc::MonoAgc::new(0.07, 0.0001).expect("mono-agc creation failed");
+    // spawn thread for audio
     let ring_buffer_input_thread_clone = ring_buffer.clone();
-    let mut audio_stream = aaudio::AAudioStreamBuilder::new()
-        .unwrap()
-        .set_direction(aaudio::Direction::Input)
-        .set_performance_mode(aaudio::PerformanceMode::LowLatency)
-        .set_sample_rate(SR as i32)
-        .set_format(aaudio::Format::F32)
-        .set_channel_count(1)
-        .set_sharing_mode(aaudio::SharingMode::Exclusive)
-        .set_callbacks(
-            move |_, data: &mut [u8], frames: i32| {
-                let data = unsafe {
-                    std::slice::from_raw_parts_mut(data.as_ptr() as *mut f32, frames as usize * 1)
-                };
-                if let Some(x) = data.iter().find(|x| !x.is_finite()) {
-                    log::warn!("bad audio sample encountered: {x}");
-                    return aaudio::CallbackResult::Continue;
+    std::thread::spawn(move || {
+        let mut agc = dagc::MonoAgc::new(0.07, 0.0001).expect("mono-agc creation failed");
+        let mut audio_stream = aaudio::AAudioStreamBuilder::new()
+            .unwrap()
+            .set_direction(aaudio::Direction::Input)
+            .set_performance_mode(aaudio::PerformanceMode::LowLatency)
+            .set_sample_rate(SR as i32)
+            .set_format(aaudio::Format::F32)
+            .set_channel_count(1)
+            .set_sharing_mode(aaudio::SharingMode::Exclusive)
+            .set_callbacks(
+                move |_, data: &mut [u8], frames: i32| {
+                    let data = unsafe {
+                        std::slice::from_raw_parts_mut(
+                            data.as_ptr() as *mut f32,
+                            frames as usize * 1,
+                        )
+                    };
+                    if let Some(x) = data.iter().find(|x| !x.is_finite()) {
+                        log::warn!("bad audio sample encountered: {x}");
+                        return aaudio::CallbackResult::Continue;
+                    }
+                    let sample_sq_sum = data.iter().map(|x| x.powi(2)).sum::<f32>();
+                    agc.freeze_gain(sample_sq_sum < 1e-6);
+
+                    //log::info!("audio callback");
+
+                    let mut rb = ring_buffer_input_thread_clone
+                        .lock()
+                        .expect("locking failed");
+                    rb.buf.drain(..data.len());
+                    rb.buf.extend_from_slice(data);
+                    let begin = rb.buf.len() - data.len();
+                    agc.process(&mut rb.buf[begin..]);
+                    rb.gain = agc.gain();
+
+                    aaudio::CallbackResult::Continue
+                },
+                |_, _| {},
+            )
+            .open_stream()
+            .unwrap();
+
+        audio_stream.request_start().unwrap();
+
+        loop {
+            match audio_control_channel_rx.recv() {
+                Ok(AudioControl::Play) => {
+                    audio_stream.request_start().unwrap();
                 }
-                let sample_sq_sum = data.iter().map(|x| x.powi(2)).sum::<f32>();
-                agc.freeze_gain(sample_sq_sum < 1e-6);
-
-                //log::info!("audio callback");
-
-                let mut rb = ring_buffer_input_thread_clone
-                    .lock()
-                    .expect("locking failed");
-                rb.buf.drain(..data.len());
-                rb.buf.extend_from_slice(data);
-                let begin = rb.buf.len() - data.len();
-                agc.process(&mut rb.buf[begin..]);
-                rb.gain = agc.gain();
-
-                aaudio::CallbackResult::Continue
-            },
-            |_, _| {},
-        )
-        .open_stream()
-        .unwrap();
-
-    audio_stream.request_start().unwrap();
+                Ok(AudioControl::Pause) => {
+                    audio_stream.request_pause().unwrap();
+                }
+                Err(_) => {
+                    break;
+                }
+            }
+        }
+    });
 
     let update_cqt_system = cqt_system::update_cqt_to_system(BUFSIZE);
     let update_analysis_state_system =
@@ -400,7 +289,7 @@ fn main() {
         display_system::update_display_to_system(BUCKETS_PER_OCTAVE, OCTAVES);
 
     let mut app = App::new();
-    app.add_plugins(
+    app.add_plugins((
         DefaultPlugins
             .set(WindowPlugin {
                 primary_window: Some(Window {
@@ -414,15 +303,10 @@ fn main() {
                 filter: "debug".into(),
                 level: bevy::log::Level::DEBUG,
                 update_subscriber: None,
-            }), // .set(RenderPlugin {
-                //     wgpu_settings: WgpuSettings {
-                //         features: WgpuFeatures::POLYGON_MODE_LINE,
-                //         ..default()
-                //     },})
-    )
-    .add_plugins(LogDiagnosticsPlugin::default())
-    .add_plugins(FrameTimeDiagnosticsPlugin::default())
-    //.add_plugin(MaterialPlugin::<display_system::LineMaterial>::default())
+            }),
+        LogDiagnosticsPlugin::default(),
+        FrameTimeDiagnosticsPlugin::default(),
+    ))
     .insert_resource(cqt_system::CqtResource(cqt))
     .insert_resource(cqt_system::CqtResultResource::new(
         OCTAVES,
@@ -434,29 +318,25 @@ fn main() {
             OCTAVES * BUCKETS_PER_OCTAVE,
             pitchvis_analysis::analysis::SPECTROGRAM_LENGTH,
         ),
-    ));
-
-    app.insert_resource(display_system::CylinderEntityListResource(Vec::new()))
-        .add_systems(
-            Startup,
-            display_system::setup_display_to_system(OCTAVES, BUCKETS_PER_OCTAVE),
-        )
-        .add_systems(
-            Update,
-            (
-                bevy::window::close_on_esc,
-                frame_limiter_system,
-                update_cqt_system,
-                user_input_system,
-            ),
-        )
-        .add_systems(
-            Update,
-            (
-                update_analysis_state_system.after(update_cqt_system),
-                update_display_system.after(update_analysis_state_system),
-            ),
-        );
+    ))
+    .insert_resource(display_system::CylinderEntityListResource(Vec::new()))
+    .insert_resource(AudioControlChannelResource(audio_control_channel_tx))
+    .add_systems(
+        Startup,
+        display_system::setup_display_to_system(OCTAVES, BUCKETS_PER_OCTAVE),
+    )
+    .add_systems(
+        Update,
+        (
+            bevy::window::close_on_esc,
+            frame_limiter_system,
+            update_cqt_system,
+            user_input_system,
+            handle_lifetime_events_system,
+            update_analysis_state_system.after(update_cqt_system),
+            update_display_system.after(update_analysis_state_system),
+        ),
+    );
 
     // MSAA makes some Android devices panic, this is under investigation
     // https://github.com/bevyengine/bevy/issues/8229

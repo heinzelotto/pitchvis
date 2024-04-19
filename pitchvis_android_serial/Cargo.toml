@@ -8,7 +8,7 @@ edition = "2021"
 [dependencies]
 log = "0.4"
 android_logger = "0.11.0"
-android-activity = { version = "0.4.1", features = ["game-activity"] }
+android-activity = { version = "0.5", features = ["game-activity"] }
 atomic_float = "0.1"
 anyhow = "1"
 find_peaks = "0.1.5"

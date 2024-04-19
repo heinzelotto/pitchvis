@@ -44,10 +44,10 @@ dagc = {version = "0.1.0", path = "../dagc_fork" } # TODO: fork and reference fo
 aaudio = "0.1.0"
 
 #[target.'cfg(target_os = "android")'.dependencies]
-android-activity = { version = "0.5.2", features = ["native-activity"] }
+android-activity = { version = "0.5", features = ["native-activity"] }
 jni = "0.21.0"
 ndk-context = "0.1.1"
-bevy_winit = "0.11.2"
+bevy_winit = "0.13.2"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 env_logger = "0.10.0"
