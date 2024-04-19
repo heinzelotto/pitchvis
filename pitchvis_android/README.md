@@ -1,3 +1,5 @@
+See `build_debug.sh` and `build_release.sh`.
+
 This is the same as agdk-winit-wgpu except it runs with `NativeActivity`
 instead of `GameActivity`
 
