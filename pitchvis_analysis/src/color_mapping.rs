@@ -32,6 +32,10 @@ pub const COLORS: [[f32; 3]; 12] = [
     [0.12, 0.71, 0.34], // H
 ];
 
+pub const PITCH_NAMES: [&str; 12] = [
+    "C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B",
+];
+
 // as hex values
 // "#d85b5b",
 // "#0284b5",

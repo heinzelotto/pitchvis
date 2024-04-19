@@ -2,6 +2,9 @@
 use crate::audio_system::AudioBufferResource;
 use anyhow::Result;
 use bevy::diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin};
+use bevy::input::keyboard::KeyboardInput;
+use bevy::input::mouse::MouseButtonInput;
+use bevy::input::touch::TouchPhase;
 use bevy::prelude::*;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
@@ -93,6 +96,41 @@ fn frame_limiter_system() {
     thread::sleep(time::Duration::from_millis((1000 / FPS).saturating_sub(5)));
 }
 
+fn user_input_system(
+    mut touch_events: EventReader<TouchInput>,
+    mut keyboard_input_events: EventReader<KeyboardInput>,
+    mut mouse_button_input_events: EventReader<MouseButtonInput>,
+    mut settings: ResMut<display_system::SettingsState>,
+) {
+    for touch in touch_events.read() {
+        if touch.phase == TouchPhase::Ended {
+            settings.display_pitch_names = !settings.display_pitch_names;
+        }
+    }
+
+    for keyboard_input in keyboard_input_events.read() {
+        if keyboard_input.state.is_pressed() {
+            match keyboard_input.key_code {
+                KeyCode::Space => {
+                    settings.display_pitch_names = !settings.display_pitch_names;
+                }
+                _ => {}
+            }
+        }
+    }
+
+    for mouse_button_input in mouse_button_input_events.read() {
+        if mouse_button_input.state.is_pressed() {
+            match mouse_button_input.button {
+                MouseButton::Left => {
+                    settings.display_pitch_names = !settings.display_pitch_names;
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
 // desktop main function
 #[cfg(not(target_arch = "wasm32"))]
 pub fn main_fun() -> Result<()> {
@@ -140,7 +178,10 @@ pub fn main_fun() -> Result<()> {
                 OCTAVES * BUCKETS_PER_OCTAVE,
                 pitchvis_analysis::analysis::SPECTROGRAM_LENGTH,
             ),
-        ));
+        ))
+        .insert_resource(display_system::SettingsState {
+            display_pitch_names: true,
+        });
 
     #[cfg(feature = "ml")]
     app.insert_resource(ml_model_resource);
@@ -156,6 +197,7 @@ pub fn main_fun() -> Result<()> {
                 bevy::window::close_on_esc,
                 frame_limiter_system,
                 update_cqt_system,
+                user_input_system,
             ),
         )
         .add_systems(

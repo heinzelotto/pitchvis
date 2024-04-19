@@ -1,6 +1,7 @@
 // TODO: make a config object and pass that around instead of all these parameters
 
 use bevy::{
+    math::vec3,
     prelude::*,
     render::{
         mesh::{Indices, PrimitiveTopology},
@@ -9,7 +10,7 @@ use bevy::{
     sprite::{MaterialMesh2dBundle, Mesh2dHandle},
 };
 use pitchvis_analysis::{
-    color_mapping::{COLORS, EASING_POW, GRAY_LEVEL},
+    color_mapping::{COLORS, EASING_POW, GRAY_LEVEL, PITCH_NAMES},
     util::*,
 };
 
@@ -30,6 +31,14 @@ pub struct BassCylinder;
 
 #[derive(Component)]
 pub struct Spectrum;
+
+#[derive(Component)]
+pub struct PitchNameText;
+
+#[derive(Resource)]
+pub struct SettingsState {
+    pub display_pitch_names: bool,
+}
 
 /// keep an index -> entity mapping for the cylinders
 #[derive(Resource)]
@@ -67,7 +76,9 @@ pub fn setup_display(
     mut materials: ResMut<Assets<ColorMaterial>>,
     mut cylinder_entities: ResMut<CylinderEntityListResource>,
 ) {
-    let spiral_points = spiral_points(octaves, buckets_per_octave);
+    assert!(buckets_per_octave % 12 == 0);
+
+    let spiral_points = calculate_spiral_points(octaves, buckets_per_octave);
 
     for (idx, (x, y, _z)) in spiral_points.iter().enumerate() {
         // spheres
@@ -133,7 +144,6 @@ pub fn setup_display(
             )
         })
         .collect();
-
     commands.spawn(MaterialMesh2dBundle {
         mesh: meshes
             .add(Mesh::from(LineList {
@@ -147,6 +157,8 @@ pub fn setup_display(
         ..default()
     });
 
+    // draw spiral
+    // TODO: consider a higher resolution, it's a bit choppy with buckets_per_semitone = 3
     let spiral_mesh = LineList {
         lines: spiral_points
             .iter()
@@ -226,6 +238,36 @@ pub fn setup_display(
         },
         ..default()
     });
+
+    // text
+    let text_spiral_points = calculate_spiral_points(octaves, 12);
+    for (idx, (x, y, _z)) in text_spiral_points[text_spiral_points.len() - 12..]
+        .iter()
+        .enumerate()
+    {
+        let pitch_idx = (idx + 12 - 3) % 12;
+        let [r, g, b] = COLORS[pitch_idx];
+        // squash it a bit in y direction and make it a bit larger in x direction to fit C and F# better
+        let (x, y) = (x * (0.85 + 0.025 * x.abs()), y * (0.85 + 0.025 * x.abs()));
+        commands.spawn((
+            Text2dBundle {
+                text: Text::from_section(
+                    PITCH_NAMES[pitch_idx],
+                    TextStyle {
+                        font_size: 40.0,
+                        color: Color::rgb(r, g, b),
+                        ..default()
+                    },
+                )
+                .with_justify(JustifyText::Center),
+                // needs to be slightly behind the 2d camera and the balls
+                transform: Transform::from_xyz(x, y, -0.02).with_scale(vec3(0.02, 0.02, 1.0)),
+                visibility: Visibility::Visible,
+                ..default()
+            },
+            PitchNameText,
+        ));
+    }
 }
 
 pub fn update_display_to_system(
@@ -240,6 +282,7 @@ pub fn update_display_to_system(
             &mut Handle<ColorMaterial>,
         )>,
         Query<(&BassCylinder, &mut Visibility, &mut Handle<ColorMaterial>)>,
+        Query<(&PitchNameText, &mut Visibility)>,
     )>,
     Query<(&Spectrum, &mut Mesh2dHandle)>,
     ResMut<Assets<ColorMaterial>>,
@@ -247,6 +290,7 @@ pub fn update_display_to_system(
     Res<crate::analysis_system::AnalysisStateResource>,
     Res<crate::cqt_system::CqtResultResource>,
     Res<CylinderEntityListResource>,
+    Res<SettingsState>,
 ) + Copy {
     move |set: ParamSet<(
         Query<(
@@ -256,13 +300,15 @@ pub fn update_display_to_system(
             &mut Handle<ColorMaterial>,
         )>,
         Query<(&BassCylinder, &mut Visibility, &mut Handle<ColorMaterial>)>,
+        Query<(&PitchNameText, &mut Visibility)>,
     )>,
           spectrum_linestrip: Query<(&Spectrum, &mut Mesh2dHandle)>,
           materials: ResMut<Assets<ColorMaterial>>,
           meshes: ResMut<Assets<Mesh>>,
           analysis_state: Res<crate::analysis_system::AnalysisStateResource>,
           cqt_result: Res<crate::cqt_system::CqtResultResource>,
-          cylinder_entities: Res<CylinderEntityListResource>| {
+          cylinder_entities: Res<CylinderEntityListResource>,
+          settings_state: Res<SettingsState>| {
         update_display(
             buckets_per_octave,
             octaves,
@@ -273,6 +319,7 @@ pub fn update_display_to_system(
             analysis_state,
             cqt_result,
             cylinder_entities,
+            settings_state,
         );
     }
 }
@@ -288,6 +335,7 @@ pub fn update_display(
             &mut Handle<ColorMaterial>,
         )>,
         Query<(&BassCylinder, &mut Visibility, &mut Handle<ColorMaterial>)>,
+        Query<(&PitchNameText, &mut Visibility)>,
     )>,
     mut spectrum_linestrip: Query<(&Spectrum, &mut Mesh2dHandle)>,
     mut materials: ResMut<Assets<ColorMaterial>>,
@@ -295,6 +343,7 @@ pub fn update_display(
     analysis_state: Res<crate::analysis_system::AnalysisStateResource>,
     cqt_result: Res<crate::cqt_system::CqtResultResource>,
     cylinder_entities: Res<CylinderEntityListResource>,
+    settings_state: Res<SettingsState>,
 ) {
     let scale_factor = 1.0 / 305.0;
 
@@ -444,6 +493,14 @@ pub fn update_display(
             .get_mut(&line_strip.0)
             .expect("spectrum line strip mesh");
         *mesh = spectrum_mesh.into();
+    }
+
+    for (_, mut visibility) in &mut set.p2() {
+        if settings_state.display_pitch_names {
+            *visibility = Visibility::Visible;
+        } else {
+            *visibility = Visibility::Hidden;
+        }
     }
 }
 
@@ -899,7 +956,7 @@ fn update_bass_spiral(
     }
 }
 
-fn spiral_points(octaves: usize, buckets_per_octave: usize) -> Vec<(f32, f32, f32)> {
+fn calculate_spiral_points(octaves: usize, buckets_per_octave: usize) -> Vec<(f32, f32, f32)> {
     (0..(buckets_per_octave * octaves))
         .map(|i| bin_to_spiral(buckets_per_octave, i as f32))
         .collect()

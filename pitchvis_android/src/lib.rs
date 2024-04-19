@@ -103,6 +103,41 @@ fn frame_limiter_system() {
     thread::sleep(time::Duration::from_millis((1000 / FPS).saturating_sub(5)));
 }
 
+fn user_input_system(
+    mut touch_events: EventReader<TouchInput>,
+    mut keyboard_input_events: EventReader<KeyboardInput>,
+    mut mouse_button_input_events: EventReader<MouseButtonInput>,
+    mut settings: ResMut<display_system::SettingsState>,
+) {
+    for touch in touch_events.read() {
+        if touch.phase == TouchPhase::Ended {
+            settings.display_pitch_names = !settings.display_pitch_names;
+        }
+    }
+
+    for keyboard_input in keyboard_input_events.read() {
+        if keyboard_input.state.is_pressed() {
+            match keyboard_input.key_code {
+                KeyCode::Space => {
+                    settings.display_pitch_names = !settings.display_pitch_names;
+                }
+                _ => {}
+            }
+        }
+    }
+
+    for mouse_button_input in mouse_button_input_events.read() {
+        if mouse_button_input.state.is_pressed() {
+            match mouse_button_input.button {
+                MouseButton::Left => {
+                    settings.display_pitch_names = !settings.display_pitch_names;
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
 fn handle_lifetime_events_system(mut lifetime_events: EventReader<ApplicationLifetime>) {
     for event in lifetime_events.read() {
         match event {
@@ -412,6 +447,7 @@ fn main() {
                 bevy::window::close_on_esc,
                 frame_limiter_system,
                 update_cqt_system,
+                user_input_system,
             ),
         )
         .add_systems(
