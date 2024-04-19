@@ -177,24 +177,24 @@ pub fn setup_display(
 
     // spectrum
     //#[cfg(feature = "ml")]
-    let spectrum_mesh = LineList {
-        lines: (0..(octaves * buckets_per_octave))
-            .map(|i| Vec3::new(i as f32 * 0.017, 0.0, 0.0))
-            .tuple_windows()
-            .collect::<Vec<(Vec3, Vec3)>>(),
-        flip: false,
-        thickness: 0.01,
-    };
+    // let spectrum_mesh = LineList {
+    //     lines: (0..(octaves * buckets_per_octave))
+    //         .map(|i| Vec3::new(i as f32 * 0.017, 0.0, 0.0))
+    //         .tuple_windows()
+    //         .collect::<Vec<(Vec3, Vec3)>>(),
+    //     flip: false,
+    //     thickness: 0.01,
+    // };
     //#[cfg(feature = "ml")]
-    commands.spawn((
-        Spectrum,
-        MaterialMesh2dBundle {
-            mesh: meshes.add(spectrum_mesh).into(),
-            material: materials.add(Color::rgb(0.25, 0.85, 0.20)),
-            transform: Transform::from_xyz(-12.0, 3.0, -13.0),
-            ..default()
-        },
-    ));
+    // commands.spawn((
+    //     Spectrum,
+    //     MaterialMesh2dBundle {
+    //         mesh: meshes.add(spectrum_mesh).into(),
+    //         material: materials.add(Color::rgb(0.25, 0.85, 0.20)),
+    //         transform: Transform::from_xyz(-12.0, 3.0, -13.0),
+    //         ..default()
+    //     },
+    // ));
 
     // light
     commands.spawn(PointLightBundle {

@@ -273,7 +273,7 @@ fn main() {
                     audio_stream.request_start().unwrap();
                 }
                 Ok(AudioControl::Pause) => {
-                    audio_stream.request_pause().unwrap();
+                    audio_stream.request_stop().unwrap();
                 }
                 Err(_) => {
                     break;
@@ -321,6 +321,9 @@ fn main() {
     ))
     .insert_resource(display_system::CylinderEntityListResource(Vec::new()))
     .insert_resource(AudioControlChannelResource(audio_control_channel_tx))
+    .insert_resource(display_system::SettingsState {
+        display_pitch_names: true,
+    })
     .add_systems(
         Startup,
         display_system::setup_display_to_system(OCTAVES, BUCKETS_PER_OCTAVE),
