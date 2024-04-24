@@ -1,11 +1,12 @@
 #[cfg(target_arch = "wasm32")]
 use crate::audio_system::AudioBufferResource;
+// use bevy::app::AppExit;
 use bevy::diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin};
 use bevy::input::keyboard::KeyboardInput;
 use bevy::input::mouse::MouseButtonInput;
 use bevy::input::touch::TouchPhase;
+use bevy::prelude::*;
 use bevy::window::ApplicationLifetime;
-use bevy::{prelude::*};
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 mod analysis_system;
@@ -84,18 +85,31 @@ fn user_input_system(
 
 fn handle_lifetime_events_system(
     mut lifetime_events: EventReader<ApplicationLifetime>,
-    audio_control_tx: ResMut<AudioControlChannelResource>,
+    // audio_control_tx: ResMut<AudioControlChannelResource>,
+    // mut exit: EventWriter<AppExit>,
 ) {
     for event in lifetime_events.read() {
         match event {
             // Upon receiving the `Suspended` event, the application has 1 frame before it is paused
             // As audio happens in an independent thread, it needs to be stopped
             ApplicationLifetime::Suspended => {
-                audio_control_tx.0.send(AudioControl::Pause).unwrap();
+                // FIXME: suspending audio does not seem to be good enough, we still get crashes
+                // that block the entire android UI and sometimes seem to require a reboot.
+                // audio_control_tx.0.send(AudioControl::Pause).unwrap();
+
+                // log
+                log::warn!("Application suspended, exiting.");
+
+                // For now, just quit.
+                // FIXME: also doesn't seem to work, the app is not exiting
+                //exit.send(AppExit);
+
+                // This is a workaround to exit the app, but it's not clean.
+                std::process::exit(0);
             }
             // On `Resumed``, audio can continue playing
             ApplicationLifetime::Resumed => {
-                audio_control_tx.0.send(AudioControl::Play).unwrap();
+                // audio_control_tx.0.send(AudioControl::Play).unwrap();
             }
             // `Started` is the only other event for now, more to come in the next Bevy version
             _ => (),
@@ -154,13 +168,13 @@ pub fn request_microphone_permission(android_app: &AndroidApp, permission: &str)
 }
 
 /// This enum is used to control the audio stream. It is sent to the audio thread via a channel. This allows us to control the audio stream from the bevy thread.
-enum AudioControl {
-    Play,
-    Pause,
-}
+// enum AudioControl {
+//     Play,
+//     Pause,
+// }
 
-#[derive(Resource)]
-struct AudioControlChannelResource(std::sync::mpsc::Sender<AudioControl>);
+// #[derive(Resource)]
+// struct AudioControlChannelResource(std::sync::mpsc::Sender<AudioControl>);
 
 #[cfg(not(feature = "ml"))]
 #[bevy_main]
@@ -176,7 +190,7 @@ fn main() {
         },
     };
 
-    env_logger::init();
+    //env_logger::init();
 
     if !microphone_permission_granted("android.permission.RECORD_AUDIO") {
         log::info!("requesting microphone permission");
@@ -212,7 +226,7 @@ fn main() {
         GAMMA,
     );
 
-    let (audio_control_channel_tx, audio_control_channel_rx) = mpsc::channel::<AudioControl>();
+    // let (audio_control_channel_tx, audio_control_channel_rx) = mpsc::channel::<AudioControl>();
     let mut ring_buffer = pitchvis_audio::audio::RingBuffer {
         buf: Vec::new(),
         gain: 0.0,
@@ -222,65 +236,47 @@ fn main() {
     let ring_buffer = std::sync::Arc::new(ring_buffer);
     // spawn thread for audio
     let ring_buffer_input_thread_clone = ring_buffer.clone();
-    std::thread::spawn(move || {
-        let mut agc = dagc::MonoAgc::new(0.07, 0.0001).expect("mono-agc creation failed");
-        let mut audio_stream = aaudio::AAudioStreamBuilder::new()
-            .unwrap()
-            .set_direction(aaudio::Direction::Input)
-            .set_performance_mode(aaudio::PerformanceMode::LowLatency)
-            .set_sample_rate(SR as i32)
-            .set_format(aaudio::Format::F32)
-            .set_channel_count(1)
-            .set_sharing_mode(aaudio::SharingMode::Exclusive)
-            .set_callbacks(
-                move |_, data: &mut [u8], frames: i32| {
-                    let data = unsafe {
-                        std::slice::from_raw_parts_mut(
-                            data.as_ptr() as *mut f32,
-                            frames as usize * 1,
-                        )
-                    };
-                    if let Some(x) = data.iter().find(|x| !x.is_finite()) {
-                        log::warn!("bad audio sample encountered: {x}");
-                        return aaudio::CallbackResult::Continue;
-                    }
-                    let sample_sq_sum = data.iter().map(|x| x.powi(2)).sum::<f32>();
-                    agc.freeze_gain(sample_sq_sum < 1e-6);
 
-                    //log::info!("audio callback");
-
-                    let mut rb = ring_buffer_input_thread_clone
-                        .lock()
-                        .expect("locking failed");
-                    rb.buf.drain(..data.len());
-                    rb.buf.extend_from_slice(data);
-                    let begin = rb.buf.len() - data.len();
-                    agc.process(&mut rb.buf[begin..]);
-                    rb.gain = agc.gain();
-
-                    aaudio::CallbackResult::Continue
-                },
-                |_, _| {},
-            )
-            .open_stream()
-            .unwrap();
-
-        audio_stream.request_start().unwrap();
-
-        loop {
-            match audio_control_channel_rx.recv() {
-                Ok(AudioControl::Play) => {
-                    audio_stream.request_start().unwrap();
+    let mut agc = dagc::MonoAgc::new(0.07, 0.0001).expect("mono-agc creation failed");
+    let mut audio_stream = aaudio::AAudioStreamBuilder::new()
+        .unwrap()
+        .set_direction(aaudio::Direction::Input)
+        .set_performance_mode(aaudio::PerformanceMode::LowLatency)
+        .set_sample_rate(SR as i32)
+        .set_format(aaudio::Format::F32)
+        .set_channel_count(1)
+        .set_sharing_mode(aaudio::SharingMode::Exclusive)
+        .set_callbacks(
+            move |_, data: &mut [u8], frames: i32| {
+                let data = unsafe {
+                    std::slice::from_raw_parts_mut(data.as_ptr() as *mut f32, frames as usize * 1)
+                };
+                if let Some(x) = data.iter().find(|x| !x.is_finite()) {
+                    log::warn!("bad audio sample encountered: {x}");
+                    return aaudio::CallbackResult::Continue;
                 }
-                Ok(AudioControl::Pause) => {
-                    audio_stream.request_stop().unwrap();
-                }
-                Err(_) => {
-                    break;
-                }
-            }
-        }
-    });
+                let sample_sq_sum = data.iter().map(|x| x.powi(2)).sum::<f32>();
+                agc.freeze_gain(sample_sq_sum < 1e-6);
+
+                log::info!("audio callback");
+
+                let mut rb = ring_buffer_input_thread_clone
+                    .lock()
+                    .expect("locking failed");
+                rb.buf.drain(..data.len());
+                rb.buf.extend_from_slice(data);
+                let begin = rb.buf.len() - data.len();
+                agc.process(&mut rb.buf[begin..]);
+                rb.gain = agc.gain();
+
+                aaudio::CallbackResult::Continue
+            },
+            |_, _| {},
+        )
+        .open_stream()
+        .unwrap();
+
+    audio_stream.request_start().unwrap();
 
     let update_cqt_system = cqt_system::update_cqt_to_system(BUFSIZE);
     let update_analysis_state_system =
@@ -300,7 +296,7 @@ fn main() {
                 ..default()
             })
             .set(LogPlugin {
-                filter: "debug".into(),
+                filter: "wgpu=error,debug".to_string(),
                 level: bevy::log::Level::DEBUG,
                 update_subscriber: None,
             }),
@@ -320,7 +316,7 @@ fn main() {
         ),
     ))
     .insert_resource(display_system::CylinderEntityListResource(Vec::new()))
-    .insert_resource(AudioControlChannelResource(audio_control_channel_tx))
+    // .insert_resource(AudioControlChannelResource(audio_control_channel_tx))
     .insert_resource(display_system::SettingsState {
         display_pitch_names: true,
     })
