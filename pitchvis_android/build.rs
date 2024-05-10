@@ -1,5 +1,5 @@
 fn main() {
-    println!("cargo:rustc-link-search=native=/home/otheruser/Android/Sdk/ndk/25.2.9519653/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/33/");
+    println!("cargo:rustc-link-search=native=/home/otheruser/Android/Sdk/ndk/26.3.11579264/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/33/");
 
     // //println!("cargo:rustc-link-search=native=/home/otheruser/Android/Sdk/ndk/25.2.9519653/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/arm-linux-androideabi/33/");
 

@@ -1,7 +1,7 @@
 use crate::util::*;
 use find_peaks::PeakFinder;
 
-use std::collections::HashSet;
+use std::{cmp::{max, min}, collections::HashSet};
 
 pub const SPECTROGRAM_LENGTH: usize = 400;
 const PEAK_MIN_PROMINENCE: f32 = 13.0;
@@ -10,6 +10,7 @@ const _BASSLINE_PEAK_MIN_PROMINENCE: f32 = 12.0;
 const _BASSLINE_PEAK_MIN_HEIGHT: f32 = 4.0;
 const _HIGHEST_BASSNOTE: usize = 12 * 2 + 4;
 const SMOOTH_LENGTH: usize = 3;
+const CALMNESS_HISTORY_LENGTH: usize = 90;
 
 /// Represents the current state of spectral analysis for musical signals.
 ///
@@ -50,6 +51,9 @@ pub struct AnalysisState {
     /// A precomputed or user-defined list of MIDI pitches for machine learning or other
     /// algorithms, indexed by MIDI number.
     pub ml_midi_base_pitches: Vec<f32>,
+
+    /// A buffer for storing a calmness value for each bin in the spectrum.
+    pub calmness: Vec<f32>,
 }
 
 impl AnalysisState {
@@ -90,6 +94,7 @@ impl AnalysisState {
             spectrogram_buffer,
             spectrogram_front_idx: 0,
             ml_midi_base_pitches: vec![0.0; 128],
+            calmness: vec![0.0; spectrum_size],
         }
     }
 
@@ -155,18 +160,7 @@ impl AnalysisState {
         }
 
         // find peaks
-        let padding_length = 1;
-        let mut x_cqt_padded_left = vec![0.0; padding_length];
-        x_cqt_padded_left.extend(x_cqt_smoothed.iter());
-        let mut fp = PeakFinder::new(&x_cqt_padded_left);
-        fp.with_min_prominence(PEAK_MIN_PROMINENCE);
-        fp.with_min_height(PEAK_MIN_HEIGHT);
-        let peaks = fp.find_peaks();
-        let peaks = peaks
-            .iter()
-            .filter(|p| p.middle_position() >= padding_length + (buckets_per_octave / 12 + 1) / 2) // we disregard lowest A and surroundings as peaks
-            .map(|p| p.middle_position() - padding_length)
-            .collect::<HashSet<usize>>();
+        let peaks = find_peaks(&x_cqt_smoothed, buckets_per_octave);
 
         let x_cqt_peakfiltered = x_cqt_smoothed
             .iter()
@@ -223,5 +217,48 @@ impl AnalysisState {
         self.x_cqt_smoothed = x_cqt_smoothed;
         self.x_cqt_peakfiltered = x_cqt_peakfiltered;
         self.peaks_continuous = peaks_continuous;
+
+        self.update_calmness(x_cqt, octaves, buckets_per_octave);
     }
+
+    fn update_calmness(&mut self, x_cqt: &[f32], octaves: usize, buckets_per_octave: usize) {
+            // for each bin, take the few bins around it into account as well. If the bin is a
+            // peak, it is promoted as calm. Calmness currently means that the note has been
+            // sustained for a while.
+        let mut peaks_around = vec![false; octaves * buckets_per_octave];
+        let radius = buckets_per_octave / 12 / 2;
+
+        // we want unsmoothed peaks for this
+        let peaks = find_peaks(x_cqt, buckets_per_octave);
+        for p in peaks {
+            for i in max(0, p as i32 - radius as i32)..min((octaves * buckets_per_octave) as i32, p as i32 + radius as i32) {
+                peaks_around[i as usize] = true;
+            }
+        }
+
+        for i in 0..octaves * buckets_per_octave {
+            if peaks_around[i] {
+                self.calmness[i] += 1.0 / CALMNESS_HISTORY_LENGTH as f32;
+            }
+
+            self.calmness[i] -= self.calmness[i] / CALMNESS_HISTORY_LENGTH as f32;
+        }
+    }
+}
+
+fn find_peaks(cqt: &[f32], buckets_per_octave: usize) -> HashSet<usize> {
+    let padding_length = 1;
+    let mut x_cqt_padded_left = vec![0.0; padding_length];
+    x_cqt_padded_left.extend(cqt.iter());
+    let mut fp = PeakFinder::new(&x_cqt_padded_left);
+    fp.with_min_prominence(PEAK_MIN_PROMINENCE);
+    fp.with_min_height(PEAK_MIN_HEIGHT);
+    let peaks = fp.find_peaks();
+    let peaks = peaks
+        .iter()
+        .filter(|p| p.middle_position() >= padding_length + (buckets_per_octave / 12 + 1) / 2) // we disregard lowest A and surroundings as peaks
+        .map(|p| p.middle_position() - padding_length)
+        .collect::<HashSet<usize>>();
+
+    peaks
 }

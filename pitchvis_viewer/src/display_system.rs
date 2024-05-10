@@ -1,5 +1,7 @@
 // TODO: make a config object and pass that around instead of all these parameters
 
+pub(crate) mod material;
+
 use bevy::{
     math::vec3,
     prelude::*,
@@ -20,6 +22,8 @@ use nalgebra::{Rotation3, Vector3};
 use std::collections::HashMap;
 use std::f32::consts::PI;
 
+use crate::display_system::material::NoisyColorMaterial;
+
 const HIGHEST_BASSNOTE: usize = 12 * 2 + 4;
 const CONTINUOUS_PEAKS_MODE: bool = true;
 
@@ -35,9 +39,17 @@ pub struct Spectrum;
 #[derive(Component)]
 pub struct PitchNameText;
 
+#[derive(PartialEq)]
+pub enum DisplayMode {
+    PitchnamesCalmness,
+    Calmness,
+    Pitchnames,
+    Neither,
+}
+
 #[derive(Resource)]
 pub struct SettingsState {
-    pub display_pitch_names: bool,
+    pub display_mode: DisplayMode,
 }
 
 /// keep an index -> entity mapping for the cylinders
@@ -51,18 +63,21 @@ pub fn setup_display_to_system(
     Commands,
     ResMut<Assets<Mesh>>,
     ResMut<Assets<ColorMaterial>>,
+    ResMut<Assets<NoisyColorMaterial>>,
     ResMut<CylinderEntityListResource>,
 ) {
     move |commands: Commands,
           meshes: ResMut<Assets<Mesh>>,
-          materials: ResMut<Assets<ColorMaterial>>,
+          color_materials: ResMut<Assets<ColorMaterial>>,
+          noisy_color_materials: ResMut<Assets<NoisyColorMaterial>>,
           cylinder_entities: ResMut<CylinderEntityListResource>| {
         setup_display(
             octaves,
             buckets_per_octave,
             commands,
             meshes,
-            materials,
+            color_materials,
+            noisy_color_materials,
             cylinder_entities,
         )
     }
@@ -73,7 +88,8 @@ pub fn setup_display(
     buckets_per_octave: usize,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
+    mut color_materials: ResMut<Assets<ColorMaterial>>,
+    mut noisy_color_materials: ResMut<Assets<NoisyColorMaterial>>,
     mut cylinder_entities: ResMut<CylinderEntityListResource>,
 ) {
     assert!(buckets_per_octave % 12 == 0);
@@ -82,12 +98,15 @@ pub fn setup_display(
 
     for (idx, (x, y, _z)) in spiral_points.iter().enumerate() {
         // spheres
-        let color_material: ColorMaterial = Color::rgb(1.0, 0.7, 0.6).into();
+        let noisy_color_material = NoisyColorMaterial {
+            color: Color::rgb(1.0, 0.7, 0.6).into(),
+            noise_level: 0.0,
+        };
         commands.spawn((
             PitchBall(idx),
             MaterialMesh2dBundle {
                 mesh: meshes.add(Circle::new(10.0)).into(),
-                material: materials.add(color_material),
+                material: noisy_color_materials.add(noisy_color_material),
                 transform: Transform::from_xyz(*x * 1.0, *y * 1.0, -0.01), // needs to be slightly behind the 2d camera
                 visibility: Visibility::Visible,
                 ..default()
@@ -122,7 +141,7 @@ pub fn setup_display(
                     BassCylinder,
                     MaterialMesh2dBundle {
                         mesh: meshes.add(Rectangle::new(0.05, h + 0.01)).into(),
-                        material: materials.add(Color::rgb(0.8, 0.7, 0.6)),
+                        material: color_materials.add(Color::rgb(0.8, 0.7, 0.6)),
                         transform,
                         visibility: Visibility::Hidden,
                         ..default()
@@ -152,7 +171,7 @@ pub fn setup_display(
                 thickness: 0.05,
             }))
             .into(),
-        material: materials.add(Color::rgb(0.3, 0.3, 0.3)),
+        material: color_materials.add(Color::rgb(0.3, 0.3, 0.3)),
         transform: Transform::from_xyz(0.0, 0.0, -13.0),
         ..default()
     });
@@ -170,7 +189,7 @@ pub fn setup_display(
     };
     commands.spawn(MaterialMesh2dBundle {
         mesh: meshes.add(spiral_mesh).into(),
-        material: materials.add(Color::rgb(0.3, 0.3, 0.3)),
+        material: color_materials.add(Color::rgb(0.3, 0.3, 0.3)),
         transform: Transform::from_xyz(0.0, 0.0, -13.0),
         ..default()
     });
@@ -279,13 +298,14 @@ pub fn update_display_to_system(
             &PitchBall,
             &mut Visibility,
             &mut Transform,
-            &mut Handle<ColorMaterial>,
+            &mut Handle<NoisyColorMaterial>,
         )>,
         Query<(&BassCylinder, &mut Visibility, &mut Handle<ColorMaterial>)>,
         Query<(&PitchNameText, &mut Visibility)>,
     )>,
     Query<(&Spectrum, &mut Mesh2dHandle)>,
     ResMut<Assets<ColorMaterial>>,
+    ResMut<Assets<NoisyColorMaterial>>,
     ResMut<Assets<Mesh>>,
     Res<crate::analysis_system::AnalysisStateResource>,
     Res<crate::cqt_system::CqtResultResource>,
@@ -297,13 +317,14 @@ pub fn update_display_to_system(
             &PitchBall,
             &mut Visibility,
             &mut Transform,
-            &mut Handle<ColorMaterial>,
+            &mut Handle<NoisyColorMaterial>,
         )>,
         Query<(&BassCylinder, &mut Visibility, &mut Handle<ColorMaterial>)>,
         Query<(&PitchNameText, &mut Visibility)>,
     )>,
           spectrum_linestrip: Query<(&Spectrum, &mut Mesh2dHandle)>,
-          materials: ResMut<Assets<ColorMaterial>>,
+          color_materials: ResMut<Assets<ColorMaterial>>,
+          noisy_color_materials: ResMut<Assets<NoisyColorMaterial>>,
           meshes: ResMut<Assets<Mesh>>,
           analysis_state: Res<crate::analysis_system::AnalysisStateResource>,
           cqt_result: Res<crate::cqt_system::CqtResultResource>,
@@ -314,7 +335,8 @@ pub fn update_display_to_system(
             octaves,
             set,
             spectrum_linestrip,
-            materials,
+            color_materials,
+            noisy_color_materials,
             meshes,
             analysis_state,
             cqt_result,
@@ -332,13 +354,14 @@ pub fn update_display(
             &PitchBall,
             &mut Visibility,
             &mut Transform,
-            &mut Handle<ColorMaterial>,
+            &mut Handle<NoisyColorMaterial>,
         )>,
         Query<(&BassCylinder, &mut Visibility, &mut Handle<ColorMaterial>)>,
         Query<(&PitchNameText, &mut Visibility)>,
     )>,
     mut spectrum_linestrip: Query<(&Spectrum, &mut Mesh2dHandle)>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
+    color_materials: ResMut<Assets<ColorMaterial>>,
+    mut noisy_color_materials: ResMut<Assets<NoisyColorMaterial>>,
     mut meshes: ResMut<Assets<Mesh>>,
     analysis_state: Res<crate::analysis_system::AnalysisStateResource>,
     cqt_result: Res<crate::cqt_system::CqtResultResource>,
@@ -407,7 +430,9 @@ pub fn update_display(
                 let z_ordering_offset = (size / max_size - 1.01) * 12.5;
                 transform.translation = Vec3::new(x, y, z_ordering_offset);
 
-                let color_mat = materials.get_mut(&*color).expect("ball color material");
+                let color_mat = noisy_color_materials
+                    .get_mut(&*color)
+                    .expect("ball color material");
                 // color_mat.color = Color::rgb(
                 //     r * color_coefficient,
                 //     g * color_coefficient,
@@ -426,8 +451,18 @@ pub fn update_display(
                     }
                 }
 
-                transform.scale = Vec3::splat(size * scale_factor);
+                // set calmness visual effect.
+                // FIXME: Usually we see values of 0.75 for very calm notes... Fix this to be more intuitive.
+                if settings_state.display_mode == DisplayMode::PitchnamesCalmness
+                    || settings_state.display_mode == DisplayMode::Calmness
+                {
+                color_mat.noise_level = (0.5 - analysis_state.calmness[idx]).clamp(0.0, 1.0);
+                } else {
+                    color_mat.noise_level = 0.0;
+                }
 
+                // scale and threshold to vanish
+                transform.scale = Vec3::splat(size * scale_factor);
                 if transform.scale.x >= 0.002 {
                     *visibility = Visibility::Visible;
                 }
@@ -457,7 +492,9 @@ pub fn update_display(
             let z_ordering_offset = (size / max_size - 1.01) * 12.5;
             transform.translation = Vec3::new(x, y, z_ordering_offset);
 
-            let color_mat = materials.get_mut(&*color).expect("ball color material");
+            let color_mat = noisy_color_materials
+                .get_mut(&*color)
+                .expect("ball color material");
             // color_mat.color = Color::rgba(r, g, b, 1.0);
             color_mat.color = Color::rgba(r, g, b, color_coefficient);
 
@@ -472,7 +509,7 @@ pub fn update_display(
     update_bass_spiral(
         buckets_per_octave,
         cylinder_entities,
-        materials,
+        color_materials,
         set.p1(),
         &analysis_state.peaks_continuous,
     );
@@ -496,7 +533,9 @@ pub fn update_display(
     }
 
     for (_, mut visibility) in &mut set.p2() {
-        if settings_state.display_pitch_names {
+        if settings_state.display_mode == DisplayMode::PitchnamesCalmness
+            || settings_state.display_mode == DisplayMode::Pitchnames
+        {
             *visibility = Visibility::Visible;
         } else {
             *visibility = Visibility::Hidden;

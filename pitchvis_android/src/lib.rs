@@ -6,6 +6,7 @@ use bevy::input::keyboard::KeyboardInput;
 use bevy::input::mouse::MouseButtonInput;
 use bevy::input::touch::TouchPhase;
 use bevy::prelude::*;
+use bevy::sprite::Material2dPlugin;
 use bevy::window::ApplicationLifetime;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
@@ -48,6 +49,15 @@ fn frame_limiter_system() {
     thread::sleep(time::Duration::from_millis((1000 / FPS).saturating_sub(5)));
 }
 
+fn cycle_display_mode(mode: &display_system::DisplayMode) -> display_system::DisplayMode {
+    match mode {
+        display_system::DisplayMode::PitchnamesCalmness => display_system::DisplayMode::Calmness,
+        display_system::DisplayMode::Calmness => display_system::DisplayMode::Pitchnames,
+        display_system::DisplayMode::Pitchnames => display_system::DisplayMode::Neither,
+        display_system::DisplayMode::Neither => display_system::DisplayMode::PitchnamesCalmness,
+    }
+}
+
 fn user_input_system(
     mut touch_events: EventReader<TouchInput>,
     mut keyboard_input_events: EventReader<KeyboardInput>,
@@ -56,7 +66,7 @@ fn user_input_system(
 ) {
     for touch in touch_events.read() {
         if touch.phase == TouchPhase::Ended {
-            settings.display_pitch_names = !settings.display_pitch_names;
+            settings.display_mode = cycle_display_mode(&settings.display_mode);
         }
     }
 
@@ -64,7 +74,7 @@ fn user_input_system(
         if keyboard_input.state.is_pressed() {
             match keyboard_input.key_code {
                 KeyCode::Space => {
-                    settings.display_pitch_names = !settings.display_pitch_names;
+                    settings.display_mode = cycle_display_mode(&settings.display_mode);
                 }
                 _ => {}
             }
@@ -75,7 +85,7 @@ fn user_input_system(
         if mouse_button_input.state.is_pressed() {
             match mouse_button_input.button {
                 MouseButton::Left => {
-                    settings.display_pitch_names = !settings.display_pitch_names;
+                    settings.display_mode = cycle_display_mode(&settings.display_mode);
                 }
                 _ => {}
             }
@@ -179,7 +189,9 @@ pub fn request_microphone_permission(android_app: &AndroidApp, permission: &str)
 #[cfg(not(feature = "ml"))]
 #[bevy_main]
 fn main() {
-    use std::sync::mpsc;
+    std::env::set_var("RUST_BACKTRACE", "1");
+
+    use std::{process::exit, sync::mpsc};
 
     use bevy::{
         audio,
@@ -258,7 +270,7 @@ fn main() {
                 let sample_sq_sum = data.iter().map(|x| x.powi(2)).sum::<f32>();
                 agc.freeze_gain(sample_sq_sum < 1e-6);
 
-                log::info!("audio callback");
+                // log::info!("audio callback");
 
                 let mut rb = ring_buffer_input_thread_clone
                     .lock()
@@ -296,12 +308,13 @@ fn main() {
                 ..default()
             })
             .set(LogPlugin {
-                filter: "wgpu=error,debug".to_string(),
+                filter: "wgpu=debug,debug".to_string(),
                 level: bevy::log::Level::DEBUG,
                 update_subscriber: None,
             }),
         LogDiagnosticsPlugin::default(),
         FrameTimeDiagnosticsPlugin::default(),
+        Material2dPlugin::<display_system::material::NoisyColorMaterial>::default(),
     ))
     .insert_resource(cqt_system::CqtResource(cqt))
     .insert_resource(cqt_system::CqtResultResource::new(
@@ -318,7 +331,7 @@ fn main() {
     .insert_resource(display_system::CylinderEntityListResource(Vec::new()))
     // .insert_resource(AudioControlChannelResource(audio_control_channel_tx))
     .insert_resource(display_system::SettingsState {
-        display_pitch_names: true,
+        display_mode: display_system::DisplayMode::PitchnamesCalmness,
     })
     .add_systems(
         Startup,

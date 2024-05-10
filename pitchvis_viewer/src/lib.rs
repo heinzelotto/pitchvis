@@ -6,6 +6,7 @@ use bevy::input::keyboard::KeyboardInput;
 use bevy::input::mouse::MouseButtonInput;
 use bevy::input::touch::TouchPhase;
 use bevy::prelude::*;
+use bevy::sprite::Material2dPlugin;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 mod analysis_system;
@@ -96,6 +97,15 @@ fn frame_limiter_system() {
     thread::sleep(time::Duration::from_millis((1000 / FPS).saturating_sub(5)));
 }
 
+fn cycle_display_mode(mode: &display_system::DisplayMode) -> display_system::DisplayMode {
+    match mode {
+        display_system::DisplayMode::PitchnamesCalmness => display_system::DisplayMode::Calmness,
+        display_system::DisplayMode::Calmness => display_system::DisplayMode::Pitchnames,
+        display_system::DisplayMode::Pitchnames => display_system::DisplayMode::Neither,
+        display_system::DisplayMode::Neither => display_system::DisplayMode::PitchnamesCalmness,
+    }
+}
+
 fn user_input_system(
     mut touch_events: EventReader<TouchInput>,
     mut keyboard_input_events: EventReader<KeyboardInput>,
@@ -104,7 +114,7 @@ fn user_input_system(
 ) {
     for touch in touch_events.read() {
         if touch.phase == TouchPhase::Ended {
-            settings.display_pitch_names = !settings.display_pitch_names;
+            settings.display_mode = cycle_display_mode(&settings.display_mode);
         }
     }
 
@@ -112,7 +122,7 @@ fn user_input_system(
         if keyboard_input.state.is_pressed() {
             match keyboard_input.key_code {
                 KeyCode::Space => {
-                    settings.display_pitch_names = !settings.display_pitch_names;
+                    settings.display_mode = cycle_display_mode(&settings.display_mode);
                 }
                 _ => {}
             }
@@ -123,7 +133,7 @@ fn user_input_system(
         if mouse_button_input.state.is_pressed() {
             match mouse_button_input.button {
                 MouseButton::Left => {
-                    settings.display_pitch_names = !settings.display_pitch_names;
+                    settings.display_mode = cycle_display_mode(&settings.display_mode);
                 }
                 _ => {}
             }
@@ -167,6 +177,9 @@ pub fn main_fun() -> Result<()> {
         .add_plugins(LogDiagnosticsPlugin::default())
         .add_plugins(FrameTimeDiagnosticsPlugin::default())
         //.add_plugin(MaterialPlugin::<display_system::LineMaterial>::default())
+        .add_plugins(Material2dPlugin::<
+            display_system::material::NoisyColorMaterial,
+        >::default())
         .insert_resource(cqt_system::CqtResource(cqt))
         .insert_resource(cqt_system::CqtResultResource::new(
             OCTAVES,
@@ -180,7 +193,7 @@ pub fn main_fun() -> Result<()> {
             ),
         ))
         .insert_resource(display_system::SettingsState {
-            display_pitch_names: true,
+            display_mode: display_system::DisplayMode::PitchnamesCalmness,
         });
 
     #[cfg(feature = "ml")]
