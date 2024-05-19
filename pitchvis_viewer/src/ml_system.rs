@@ -1,4 +1,4 @@
-use tch::{CModule, Device, Tensor};
+use tch::{CModule, Device, Kind, Tensor};
 
 const OCTAVES: usize = 7;
 const BUCKETS_PER_OCTAVE: usize = 36;
@@ -42,7 +42,7 @@ pub struct MlModelResource(pub MlModel);
 
 pub fn update_ml_to_system(
 ) -> impl FnMut(Res<MlModelResource>, ResMut<AnalysisStateResource>) + Copy {
-    move |ml_model: Res<MlModelResource>, analysis_state: ResMut<AnalysisStateResource>| {
+    move |ml_model: Res<MlModelResource>, mut analysis_state: ResMut<AnalysisStateResource>| {
         update_ml(ml_model, analysis_state);
     }
 }

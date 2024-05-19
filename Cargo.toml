@@ -2,7 +2,6 @@
 
 members = [
     "pitchvis_analysis",
-    "pitchvis_android",
     "pitchvis_audio",
     "pitchvis_serial",
     "pitchvis_train",

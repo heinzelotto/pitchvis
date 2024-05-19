@@ -43,8 +43,7 @@ pub struct PitchNameText;
 pub enum DisplayMode {
     PitchnamesCalmness,
     Calmness,
-    Pitchnames,
-    Neither,
+    Debugging,
 }
 
 #[derive(Resource)]
@@ -370,7 +369,7 @@ pub fn update_display(
 ) {
     let scale_factor = 1.0 / 305.0;
 
-    for (pitch_ball, mut visibility, mut transform, _) in &mut set.p0() {
+    for (pitch_ball, mut visibility, mut transform, color) in &mut set.p0() {
         if *visibility == Visibility::Visible {
             let idx = pitch_ball.0;
             let mut size = transform.scale / scale_factor;
@@ -378,12 +377,21 @@ pub fn update_display(
             size *= dropoff_factor;
             transform.scale = size * scale_factor;
 
+            // also make them slightly more transparent when they are smaller
+            let color_mat = noisy_color_materials
+                .get_mut(&*color)
+                .expect("ball color material");
+            color_mat.color.set_a(color_mat.color.a() * dropoff_factor);
+
             // also shift shrinking circles slightly to the background so that they are not cluttering newly appearing larger circles
             transform.translation.z -= 0.001;
 
-            if size.x * scale_factor < 0.002 {
+            if size.x * scale_factor < 0.003 {
                 *visibility = Visibility::Hidden;
             }
+
+            // FIXME: test how it looks when we only show the balls that are currently active in the cqt analysis
+            // *visibility = Visibility::Hidden;
         }
     }
 
@@ -455,8 +463,9 @@ pub fn update_display(
                 // FIXME: Usually we see values of 0.75 for very calm notes... Fix this to be more intuitive.
                 if settings_state.display_mode == DisplayMode::PitchnamesCalmness
                     || settings_state.display_mode == DisplayMode::Calmness
+                    || settings_state.display_mode == DisplayMode::Debugging
                 {
-                    color_mat.noise_level = (0.5 - analysis_state.calmness[idx]).clamp(0.0, 1.0);
+                    color_mat.noise_level = (analysis_state.calmness[idx] - 0.27).clamp(0.0, 1.0);
                 } else {
                     color_mat.noise_level = 0.0;
                 }
@@ -534,7 +543,7 @@ pub fn update_display(
 
     for (_, mut visibility) in &mut set.p2() {
         if settings_state.display_mode == DisplayMode::PitchnamesCalmness
-            || settings_state.display_mode == DisplayMode::Pitchnames
+            || settings_state.display_mode == DisplayMode::Debugging
         {
             *visibility = Visibility::Visible;
         } else {

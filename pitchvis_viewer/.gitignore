@@ -1,3 +1,16 @@
-/dist
-/node_modules
+*.iml
+.gradle
+/local.properties
+/.idea
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+*.so
 
+
+# Added by cargo
+
+/target

@@ -4,6 +4,9 @@ version = "0.1.0"
 authors = ["Felix Monninger <felix.monninger@gmail.com>"]
 edition = "2021"
 
+[features]
+ml = ["dep:tch"]
+
 [package.metadata.wasm-pack.profile.release]
 wasm-opt = ['-Oz']
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -13,25 +16,39 @@ strip = true
 lto = "thin"
 opt-level = 'z'
 
-[features]
-ml = ["tch"]
+[profile.release]
+strip = true
+lto = true
+opt-level = 'z'
+panic = 'abort'
 
 [lib]
 name = "pitchvis_viewer_lib"
-crate-type = ["cdylib", "rlib"]
+#crate-type = ["cdylib", "rlib"]
 
 [[bin]]
 name = "pitchvis"
 path = "src/main.rs"
 
+
 [dependencies]
 anyhow = "1.0"
-itertools = "0.12.1"
+itertools = "0.13.0"
 log = "0.4.17"
-bevy = "0.13"
+bevy = "0.13.2"
 nalgebra = "0.32.2"
 pitchvis_analysis = { path = "../pitchvis_analysis" }
 pitchvis_audio = { path = "../pitchvis_audio" }
+
+# FIXME: these (re)imports only because of aaudio hack
+dagc = {version = "0.1.0", path = "../dagc_fork" } # TODO: fork and reference fork as patched dependency
+aaudio = "0.1.0"
+
+[target.'cfg(target_os = "android")'.dependencies]
+android-activity = { version = "0.5", features = ["native-activity"] }
+jni = "0.21.0"
+ndk-context = "0.1.1"
+bevy_winit = "0.13.1" # 0.13.2 here is not working, or jni 0.21.2 above could also be the case
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 env_logger = "0.10.0"
