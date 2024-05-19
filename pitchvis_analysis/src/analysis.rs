@@ -1,7 +1,10 @@
 use crate::util::*;
 use find_peaks::PeakFinder;
 
-use std::{cmp::{max, min}, collections::HashSet};
+use std::{
+    cmp::{max, min},
+    collections::HashSet,
+};
 
 pub const SPECTROGRAM_LENGTH: usize = 400;
 const PEAK_MIN_PROMINENCE: f32 = 13.0;
@@ -10,7 +13,7 @@ const _BASSLINE_PEAK_MIN_PROMINENCE: f32 = 12.0;
 const _BASSLINE_PEAK_MIN_HEIGHT: f32 = 4.0;
 const _HIGHEST_BASSNOTE: usize = 12 * 2 + 4;
 const SMOOTH_LENGTH: usize = 3;
-const CALMNESS_HISTORY_LENGTH: usize = 90;
+const CALMNESS_HISTORY_LENGTH: usize = 75;
 
 /// Represents the current state of spectral analysis for musical signals.
 ///
@@ -222,16 +225,21 @@ impl AnalysisState {
     }
 
     fn update_calmness(&mut self, x_cqt: &[f32], octaves: usize, buckets_per_octave: usize) {
-            // for each bin, take the few bins around it into account as well. If the bin is a
-            // peak, it is promoted as calm. Calmness currently means that the note has been
-            // sustained for a while.
+        // for each bin, take the few bins around it into account as well. If the bin is a
+        // peak, it is promoted as calm. Calmness currently means that the note has been
+        // sustained for a while.
         let mut peaks_around = vec![false; octaves * buckets_per_octave];
         let radius = buckets_per_octave / 12 / 2;
 
         // we want unsmoothed peaks for this
         let peaks = find_peaks(x_cqt, buckets_per_octave);
         for p in peaks {
-            for i in max(0, p as i32 - radius as i32)..min((octaves * buckets_per_octave) as i32, p as i32 + radius as i32) {
+            for i in max(0, p as i32 - radius as i32)
+                ..min(
+                    (octaves * buckets_per_octave) as i32,
+                    p as i32 + radius as i32,
+                )
+            {
                 peaks_around[i as usize] = true;
             }
         }

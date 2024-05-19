@@ -456,7 +456,7 @@ pub fn update_display(
                 if settings_state.display_mode == DisplayMode::PitchnamesCalmness
                     || settings_state.display_mode == DisplayMode::Calmness
                 {
-                color_mat.noise_level = (0.5 - analysis_state.calmness[idx]).clamp(0.0, 1.0);
+                    color_mat.noise_level = (0.5 - analysis_state.calmness[idx]).clamp(0.0, 1.0);
                 } else {
                     color_mat.noise_level = 0.0;
                 }

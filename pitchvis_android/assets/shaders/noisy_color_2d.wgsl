@@ -104,11 +104,18 @@ fn nois(p3: vec3<f32>) -> f32
 
 @fragment
 fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
-    let f: f32 = simplexNoise3(vec3<f32>(mesh.uv * 5.0, globals.time));
+    // only perform the computation if the noise level is less than 0.03
+    if noise_level < 0.03 {
+        return material_color;
+    }
+
+    let f: f32 = simplexNoise3(vec3<f32>(mesh.uv * 5.0, globals.time*4.0));
     // let f: f32 = hash13(vec3<f32>(mesh.uv * 5.0, globals.time));
     // let f: f32 = nois(vec3<f32>(mesh.uv * 10.0, globals.time*10.0));
 
-    let mixed = vec4f(material_color.rgb, mix(1.0, f, noise_level));
+    let noise_color = vec4<f32>(1.0,1.0, 1.0, material_color.a);
+
+    let mixed = mix(material_color, noise_color, noise_level * f * 0.45);
 
     return mixed;
 }
