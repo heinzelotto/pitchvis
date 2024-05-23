@@ -107,7 +107,7 @@ pub fn setup_display(
                 mesh: meshes.add(Circle::new(10.0)).into(),
                 material: noisy_color_materials.add(noisy_color_material),
                 transform: Transform::from_xyz(*x * 1.0, *y * 1.0, -0.01), // needs to be slightly behind the 2d camera
-                visibility: Visibility::Visible,
+                visibility: if idx % 7 == 0 { Visibility::Visible } else { Visibility::Hidden },
                 ..default()
             },
         ));
