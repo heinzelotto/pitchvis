@@ -98,7 +98,7 @@ pub fn setup_display(
     for (idx, (x, y, _z)) in spiral_points.iter().enumerate() {
         // spheres
         let noisy_color_material = NoisyColorMaterial {
-            color: Color::rgb(1.0, 0.7, 0.6).into(),
+            color: Color::rgb(1.0, 0.7, 0.6),
             noise_level: 0.0,
         };
         commands.spawn((
@@ -107,7 +107,11 @@ pub fn setup_display(
                 mesh: meshes.add(Circle::new(10.0)).into(),
                 material: noisy_color_materials.add(noisy_color_material),
                 transform: Transform::from_xyz(*x * 1.0, *y * 1.0, -0.01), // needs to be slightly behind the 2d camera
-                visibility: if idx % 7 == 0 { Visibility::Visible } else { Visibility::Hidden },
+                visibility: if idx % 7 == 0 {
+                    Visibility::Visible
+                } else {
+                    Visibility::Hidden
+                },
                 ..default()
             },
         ));
@@ -589,9 +593,9 @@ impl From<LineList> for Mesh {
             let prior_len = vertices.len();
             indices.push(2 + prior_len as u32);
             indices.push(1 + prior_len as u32);
-            indices.push(0 + prior_len as u32);
+            indices.push(prior_len as u32);
             indices.push(2 + prior_len as u32);
-            indices.push(0 + prior_len as u32);
+            indices.push(prior_len as u32);
             indices.push(3 + prior_len as u32);
 
             vertices.push((v0, [0.0, 0.0, 1.0], [0.0, 1.0]));
@@ -980,8 +984,7 @@ fn update_bass_spiral(
             let color_map_ref = center.trunc() as usize;
             let (r, g, b) = pitchvis_analysis::color_mapping::calculate_color(
                 buckets_per_octave,
-                (color_map_ref as usize + buckets_per_octave - 3 * (buckets_per_octave / 12))
-                    as f32
+                (color_map_ref + buckets_per_octave - 3 * (buckets_per_octave / 12)) as f32
                     % buckets_per_octave as f32,
                 COLORS,
                 GRAY_LEVEL,
@@ -1013,6 +1016,7 @@ fn calculate_spiral_points(octaves: usize, buckets_per_octave: usize) -> Vec<(f3
 fn bin_to_spiral(buckets_per_octave: usize, x: f32) -> (f32, f32, f32) {
     //let radius = 1.5 * (0.5 + (x / buckets_per_octave as f32).powf(0.75));
     let radius = 2.0 * (0.3 + (x / buckets_per_octave as f32).powf(0.75));
+    #[allow(clippy::erasing_op)]
     let (transl_y, transl_x) = ((x + (buckets_per_octave - 0 * (buckets_per_octave / 12)) as f32)
         / (buckets_per_octave as f32)
         * 2.0

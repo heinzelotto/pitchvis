@@ -145,6 +145,7 @@ impl Cqt {
     fn test_create_sines(&self, t_diff: f32) -> Vec<f32> {
         let mut wave = vec![0.0; self.n_fft];
 
+        #[allow(clippy::erasing_op)]
         for f in ((12 * (0) + 2)..(12 * (self.octaves - 1) + 12))
             .step_by(5)
             .map(|p| self._min_freq * (2.0).powf(p as f32 / 12.0))

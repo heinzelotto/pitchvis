@@ -39,16 +39,14 @@ bevy = "0.13.2"
 nalgebra = "0.32.2"
 pitchvis_analysis = { path = "../pitchvis_analysis" }
 pitchvis_audio = { path = "../pitchvis_audio" }
-
-# FIXME: these (re)imports only because of aaudio hack
 dagc = {version = "0.1.0", path = "../dagc_fork" } # TODO: fork and reference fork as patched dependency
-aaudio = "0.1.0"
 
 [target.'cfg(target_os = "android")'.dependencies]
 android-activity = { version = "0.5", features = ["native-activity"] }
 jni = "0.21.0"
 ndk-context = "0.1.1"
 bevy_winit = "0.13.1" # 0.13.2 here is not working, or jni 0.21.2 above could also be the case
+aaudio = "0.1.0"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 env_logger = "0.10.0"

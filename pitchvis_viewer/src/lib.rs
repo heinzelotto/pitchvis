@@ -420,7 +420,7 @@ pub fn main_fun() -> Result<()> {
     let mut app = App::new();
     app.add_plugins(DefaultPlugins)
         .add_plugins(LogDiagnosticsPlugin::default())
-        .add_plugins(FrameTimeDiagnosticsPlugin::default())
+        .add_plugins(FrameTimeDiagnosticsPlugin)
         //.add_plugin(MaterialPlugin::<display_system::LineMaterial>::default())
         .add_plugins(Material2dPlugin::<
             display_system::material::NoisyColorMaterial,
@@ -446,7 +446,10 @@ pub fn main_fun() -> Result<()> {
     app.insert_resource(display_system::CylinderEntityListResource(Vec::new()))
         .add_systems(
             Startup,
-            (display_system::setup_display_to_system(OCTAVES, BUCKETS_PER_OCTAVE), setup_fps_counter),
+            (
+                display_system::setup_display_to_system(OCTAVES, BUCKETS_PER_OCTAVE),
+                setup_fps_counter,
+            ),
         )
         .add_systems(
             Update,
@@ -455,7 +458,8 @@ pub fn main_fun() -> Result<()> {
                 frame_limiter_system,
                 update_cqt_system,
                 user_input_system,
-                fps_text_update_system, fps_counter_showhide
+                fps_text_update_system,
+                fps_counter_showhide,
             ),
         )
         .add_systems(
@@ -571,7 +575,6 @@ fn main() {
 
     app.run();
 }
-
 
 // android main function
 #[cfg(target_os = "android")]
@@ -723,7 +726,10 @@ fn main() {
     })
     .add_systems(
         Startup,
-        (display_system::setup_display_to_system(OCTAVES, BUCKETS_PER_OCTAVE), setup_fps_counter),
+        (
+            display_system::setup_display_to_system(OCTAVES, BUCKETS_PER_OCTAVE),
+            setup_fps_counter,
+        ),
     )
     .add_systems(
         Update,
@@ -735,7 +741,8 @@ fn main() {
             handle_lifetime_events_system,
             update_analysis_state_system.after(update_cqt_system),
             update_display_system.after(update_analysis_state_system),
-            fps_text_update_system, fps_counter_showhide
+            fps_text_update_system,
+            fps_counter_showhide,
         ),
     );
 
