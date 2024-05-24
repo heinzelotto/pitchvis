@@ -6,7 +6,7 @@ export ANDROID_NDK_ROOT=~/Android/Sdk/ndk/26.3.11579264/
 
 # TODO: make this into a Makefile
 
-cp/home/otheruser/Android/Sdk/ndk/26.3.11579264/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so app/src/main/jniLibs/arm64-v8a/
+cp /home/otheruser/Android/Sdk/ndk/26.3.11579264/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so app/src/main/jniLibs/arm64-v8a/
 
 mkdir -p app/src/main/assets/shaders
 cp assets/shaders/* app/src/main/assets/shaders
