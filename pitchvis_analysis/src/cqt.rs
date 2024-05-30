@@ -288,7 +288,7 @@ impl Cqt {
 
         for x in &annotated_f_w {
             debug!(
-                "{:5.0}, {:5.0}, {:5.0}, {:5.0}, {:5.0}",
+                "f: {:5.1}, w: {:5.1}, max_sr_scaling_factor_for_f: {:5.0}, min_needed_window_size: {:5.0}, x.3/x.2: {:5.0}",
                 x.0,
                 x.1,
                 x.2,
@@ -496,7 +496,11 @@ impl Cqt {
         for v in cqt_windows.grouped_by_sr_scaling.iter() {
             debug!("sr scaling {}, window: {:?}:", v.0, v.1);
             for (i, fp) in v.2.iter().enumerate() {
-                debug!("{i} {:?}", fp);
+                let window_length_in_s = (fp.window_length / sr as f32);
+                let wave_num = window_length_in_s * fp.freq;
+                let bandwidth_in_hz = 1.0 / window_length_in_s;
+                let bandwidth_in_semitones = 12.0 * (1.0 + bandwidth_in_hz / fp.freq).log2();
+                debug!("{i}, f: {:.1}, window len: {:.1} [{:.2}ms], wave_num: {:.1}, bandwidth: {:.2}Hz [{:.2} semitones]", fp.freq, fp.window_length, 1000.0 * window_length_in_s, wave_num, bandwidth_in_hz, bandwidth_in_semitones);
             }
         }
 
