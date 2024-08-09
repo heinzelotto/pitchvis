@@ -496,7 +496,7 @@ impl Cqt {
         for v in cqt_windows.grouped_by_sr_scaling.iter() {
             debug!("sr scaling {}, window: {:?}:", v.0, v.1);
             for (i, fp) in v.2.iter().enumerate() {
-                let window_length_in_s = (fp.window_length / sr as f32);
+                let window_length_in_s = fp.window_length / sr as f32;
                 let wave_num = window_length_in_s * fp.freq;
                 let bandwidth_in_hz = 1.0 / window_length_in_s;
                 let bandwidth_in_semitones = 12.0 * (1.0 + bandwidth_in_hz / fp.freq).log2();
