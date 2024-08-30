@@ -246,7 +246,6 @@ pub fn setup_display(
 
     // spawn a camera2dbundle with coordinates that match those of the 3d camera at the z=0 plane
     commands.spawn(Camera2dBundle {
-        camera_2d: Camera2d { ..default() },
         camera: Camera {
             // renders after / on top of the main camera
             order: 1,

@@ -137,8 +137,8 @@ impl AnalysisState {
 
         assert!(num_buckets == x_cqt.len());
 
-        let k_min = arg_min(&x_cqt);
-        let k_max = arg_max(&x_cqt);
+        let k_min = arg_min(x_cqt);
+        let k_max = arg_max(x_cqt);
         let _min = x_cqt[k_min];
         let _max = x_cqt[k_max];
         // println!("x_cqt[{k_min}] = {min}, x_cqt[{k_max}] = {max}");
