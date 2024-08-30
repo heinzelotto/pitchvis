@@ -61,9 +61,22 @@ struct FilterParams {
     window_length: f32,
 }
 
+/// A group of filters that can all be applied on the same (downscaled) fft size, without losing information
+#[derive(Debug)]
+struct FilterGrouping {
+    /// The maximum downsampling factor that can be applied to the signal to still cover the frequency of this filter.
+    sr_downscaling_factor: usize,
+
+    /// The window that will be taken from the signal and resampled by sr_downscaling_factor.
+    unscaled_window: UnscaledWindow,
+
+    /// The filters that can be applied on this window.
+    filters: Vec<FilterParams>,
+}
+
 pub struct CqtWindows {
     window_center: f32,
-    grouped_by_sr_scaling: Vec<(usize, UnscaledWindow, Vec<FilterParams>)>,
+    grouped_by_sr_scaling: Vec<FilterGrouping>,
 }
 
 /// A pair of precomputed FFTs for a given size:
@@ -197,8 +210,13 @@ impl Cqt {
         // prepare resample ffts
         let mut resample_ffts = HashMap::new();
         let mut planner = FftPlanner::new();
-        for wnd in cqt_kernel.windows.grouped_by_sr_scaling.iter() {
-            let cur_unscaled_fft_length = wnd.1.sufficient_n_fft_size;
+        for FilterGrouping {
+            sr_downscaling_factor,
+            unscaled_window,
+            ..
+        } in cqt_kernel.windows.grouped_by_sr_scaling.iter()
+        {
+            let cur_unscaled_fft_length = unscaled_window.sufficient_n_fft_size;
             resample_ffts
                 .entry(cur_unscaled_fft_length)
                 .or_insert_with(|| {
@@ -208,7 +226,8 @@ impl Cqt {
                     }
                 });
 
-            let cur_scaled_fft_length = wnd.1.sufficient_n_fft_size / wnd.0;
+            let cur_scaled_fft_length =
+                unscaled_window.sufficient_n_fft_size / sr_downscaling_factor;
             resample_ffts
                 .entry(cur_scaled_fft_length)
                 .or_insert_with(|| PrecomputedFft {
@@ -234,25 +253,39 @@ impl Cqt {
     }
 
     //#orange
-    /// Groups the tuples (frequency, window_size) of the filter bank according to the power of two fft that they will be applied to.
-    /// It is made sure that the fft size yields a large enough nyquist frequency to cover the highest frequency in the group, even when downsized.
+    /// Groups the tuples (frequency, window_size) of the filter bank according to the power of two fft that
+    /// they will be applied to. It is made sure that the fft size yields a large enough nyquist frequency
+    /// to cover the highest frequency in the group, even when downsized.
+    ///
+    /// This enables us to make the application of each filter more efficient by computing it on a maximally
+    ///  downsampled version of the signal while not losing information.
     fn group_window_sizes(
         sr: usize,
         n_fft: usize,
         freqs: &[f32],
         window_lengths: &[f32],
     ) -> CqtWindows {
+        /// Annotated version of the filter parameters, containing computed constraints
         #[derive(Debug, Clone, Copy)]
         struct AnnontatedFilterParams {
+            /// The filter parameters, frequency and window size.
             params: FilterParams,
-            maximum_sr_scaling_factor_for_f: f32,
+
+            /// The maximum downsampling factor that can be applied to the signal to still cover the frequency of this filter.
+            /// This directly depends on f
+            maximum_sr_downscaling_factor_for_f: f32,
+
+            /// The minimum window size needed to cover the frequency of this filter. This depends
+            /// on w, which was calculated as a function of f and the VQT quality factor (lower
+            /// frequency resolution at lower frequencies to keep window sizes and thus time smear
+            /// smaller).
             minimum_needed_window_size: usize,
         }
         let annotated_f_w: Vec<AnnontatedFilterParams> = freqs
             .iter()
             .zip(window_lengths.iter())
             .map(|(f, w)| {
-                let (maximum_sr_scaling_factor_for_f, _minimum_scaled_sr_for_f) = {
+                let maximum_sr_downscaling_factor_for_f = {
                     // because of the Gibbs phenomenon appearing in our resampling method, we set
                     // the minimum scaled sr to just a bit higher than theoretically needed one.
                     // This is a bit of a hack, but it works.
@@ -260,33 +293,28 @@ impl Cqt {
                     let minimum_scaled_sr_for_f = (f * 2.0 * grace_factor).ceil() as usize;
                     // find maximum k so that minimum_scaled_sr_for_f is smaller than sr / 2^k
                     let k = (sr as f32 / minimum_scaled_sr_for_f as f32).log2().floor() as usize;
-                    let maximum_sr_scaling_factor_for_f = 2.0f32.powf(k as f32);
-                    let minimum_scaled_sr_for_f = sr as f32 / maximum_sr_scaling_factor_for_f;
 
-                    (maximum_sr_scaling_factor_for_f, minimum_scaled_sr_for_f)
+                    // let minimum_scaled_sr_for_f = sr as f32 / maximum_sr_scaling_factor_for_f;
+
+                    2.0f32.powf(k as f32)
                 };
 
-                let (_maximum_n_fft_scaling_factor_for_w, minimum_needed_window_size) = {
+                let minimum_needed_window_size = {
                     let k = (n_fft as f32 / w).log2().floor() as usize;
-                    let maximum_n_fft_scaling_factor_for_w = 2.0f32.powf(k as f32);
-                    let minimum_needed_window_size =
-                        n_fft / maximum_n_fft_scaling_factor_for_w as usize;
+                    let maximum_n_fft_downscaling_factor_for_w = 2.0f32.powf(k as f32);
 
-                    (
-                        maximum_n_fft_scaling_factor_for_w,
-                        minimum_needed_window_size,
-                    )
+                    n_fft / maximum_n_fft_downscaling_factor_for_w as usize
                 };
 
-                let _scaled_window_size =
-                    minimum_needed_window_size / maximum_sr_scaling_factor_for_f as usize;
+                // let _scaled_window_size =
+                //     minimum_needed_window_size / maximum_sr_scaling_factor_for_f as usize;
 
                 AnnontatedFilterParams {
                     params: FilterParams {
                         freq: *f,
                         window_length: *w,
                     },
-                    maximum_sr_scaling_factor_for_f,
+                    maximum_sr_downscaling_factor_for_f,
                     minimum_needed_window_size,
                 }
             })
@@ -297,9 +325,9 @@ impl Cqt {
                 "f: {:5.1}, w: {:5.1}, max_sr_scaling_factor_for_f: {:5.0}, min_needed_window_size: {:5.0}, x.3/x.2: {:5.0}",
                 x.params.freq,
                 x.params.window_length,
-                x.maximum_sr_scaling_factor_for_f,
+                x.maximum_sr_downscaling_factor_for_f,
                 x.minimum_needed_window_size,
-                x.minimum_needed_window_size as f32 / x.maximum_sr_scaling_factor_for_f
+                x.minimum_needed_window_size as f32 / x.maximum_sr_downscaling_factor_for_f
             );
         }
 
@@ -311,13 +339,13 @@ impl Cqt {
         let mut tmp = annotated_f_w.clone();
         while !tmp.is_empty() {
             let (cur, rem) = tmp.iter().partition(|x| {
-                x.maximum_sr_scaling_factor_for_f == tmp[0].maximum_sr_scaling_factor_for_f
+                x.maximum_sr_downscaling_factor_for_f == tmp[0].maximum_sr_downscaling_factor_for_f
             });
             partitions.push(cur);
             tmp = rem;
         }
 
-        let mut grouped: Vec<(usize, UnscaledWindow, Vec<FilterParams>)> = Vec::new();
+        let mut grouped: Vec<FilterGrouping> = Vec::new();
         for p in partitions.iter() {
             let sufficient_n_fft_size = p
                 .iter()
@@ -325,7 +353,7 @@ impl Cqt {
                 .max()
                 .unwrap();
 
-            let sr_scaling = p[0].maximum_sr_scaling_factor_for_f as usize;
+            let sr_downscaling_factor = p[0].maximum_sr_downscaling_factor_for_f as usize;
             // window size is the minimum window size needed to cover the highest frequency in the group. This chunk will be taken from the signal and then resampled by sr_scaling.
             let unscaled_window_size = p[0].minimum_needed_window_size;
             assert_eq!(unscaled_window_size, sufficient_n_fft_size);
@@ -341,12 +369,16 @@ impl Cqt {
                 },
             };
             debug!(
-                "unscaled window {:?}, sr_scaling: {sr_scaling}, ratio: {:5.0}",
+                "unscaled window {:?}, sr_scaling: {sr_downscaling_factor}, ratio: {:5.0}",
                 unscaled_window,
-                unscaled_window.sufficient_n_fft_size as f32 / sr_scaling as f32,
+                unscaled_window.sufficient_n_fft_size as f32 / sr_downscaling_factor as f32,
             );
             let group = p.iter().map(|x| x.params).collect::<Vec<_>>();
-            grouped.push((sr_scaling, unscaled_window, group));
+            grouped.push(FilterGrouping {
+                sr_downscaling_factor,
+                unscaled_window,
+                filters: group,
+            });
         }
 
         CqtWindows {
@@ -496,14 +528,23 @@ impl Cqt {
         }
 
         let cqt_windows = Self::group_window_sizes(sr, n_fft, &freqs, &window_lengths);
-        for v in cqt_windows.grouped_by_sr_scaling.iter() {
-            debug!("sr scaling {}, window: {:?}:", v.0, v.1);
-            for (i, fp) in v.2.iter().enumerate() {
+        for FilterGrouping {
+            sr_downscaling_factor,
+            unscaled_window,
+            filters,
+        } in cqt_windows.grouped_by_sr_scaling.iter()
+        {
+            debug!(
+                "sr scaling {}, window: {:?}:",
+                sr_downscaling_factor, unscaled_window
+            );
+            for (i, fp) in filters.iter().enumerate() {
                 let window_length_in_s = fp.window_length / sr as f32;
                 let wave_num = window_length_in_s * fp.freq;
                 let bandwidth_in_hz = 1.0 / window_length_in_s;
                 let bandwidth_in_semitones = 12.0 * (1.0 + bandwidth_in_hz / fp.freq).log2();
-                debug!("{i}, f: {:.1}, window len: {:.1} [{:.2}ms], wave_num: {:.1}, bandwidth: {:.2}Hz [{:.2} semitones]", fp.freq, fp.window_length, 1000.0 * window_length_in_s, wave_num, bandwidth_in_hz, bandwidth_in_semitones);
+                debug!("{i}, f: {:.1}, window len: {:.1} [{:.2}ms], wave_num: {:.1}, bandwidth: {:.2}Hz [{:.2} semitones]", 
+                fp.freq, fp.window_length, 1000.0 * window_length_in_s, wave_num, bandwidth_in_hz, bandwidth_in_semitones);
             }
         }
 
@@ -511,33 +552,44 @@ impl Cqt {
         let kernel_octaves = cqt_windows
             .grouped_by_sr_scaling
             .iter()
-            .map(|(sr_scaling, wnd, filter_params_vec)| {
-                let scaled_n_fft = wnd.sufficient_n_fft_size / sr_scaling;
+            .map(
+                |FilterGrouping {
+                     sr_downscaling_factor,
+                     unscaled_window,
+                     filters,
+                 }| {
+                    let scaled_n_fft =
+                        unscaled_window.sufficient_n_fft_size / sr_downscaling_factor;
 
-                let mut mat = sprs::TriMat::new((filter_params_vec.len(), scaled_n_fft));
-                let fft = planner.plan_fft_forward(scaled_n_fft);
-                debug!("planning fft of size {}", scaled_n_fft);
+                    let mut mat = sprs::TriMat::new((filters.len(), scaled_n_fft));
+                    let fft = planner.plan_fft_forward(scaled_n_fft);
+                    debug!("planning fft of size {}", scaled_n_fft);
 
-                for (idx, filter_params) in filter_params_vec.iter().enumerate() {
-                    let filter = Self::calculate_filter(
-                        sr,
-                        sparsity_quantile,
-                        *sr_scaling,
-                        *filter_params,
-                        *wnd,
-                        cqt_windows.window_center,
-                        &fft,
-                    );
-                    // fill the kernel matrix
-                    for (i, z) in filter.iter().enumerate() {
-                        if !z.is_zero() {
-                            mat.add_triplet(idx, i, *z / scaled_n_fft as f32 * (sr as f32).sqrt());
+                    for (idx, filter_params) in filters.iter().enumerate() {
+                        let filter = Self::calculate_filter(
+                            sr,
+                            sparsity_quantile,
+                            *sr_downscaling_factor,
+                            *filter_params,
+                            *unscaled_window,
+                            cqt_windows.window_center,
+                            &fft,
+                        );
+                        // fill the kernel matrix
+                        for (i, z) in filter.iter().enumerate() {
+                            if !z.is_zero() {
+                                mat.add_triplet(
+                                    idx,
+                                    i,
+                                    *z / scaled_n_fft as f32 * (sr as f32).sqrt(),
+                                );
+                            }
                         }
                     }
-                }
 
-                mat
-            })
+                    mat
+                },
+            )
             .collect::<Vec<sprs::TriMat<Complex32>>>();
 
         let kernel = kernel_octaves
@@ -636,20 +688,26 @@ impl Cqt {
 
         let mut x_cqt = vec![Complex32::zero(); self.buckets_per_octave * self.octaves];
         let mut offset = 0;
-        for (wnd, filters) in self
+        for (
+            FilterGrouping {
+                sr_downscaling_factor,
+                unscaled_window,
+                filters,
+            },
+            filter_matrix,
+        ) in self
             .cqt_kernel
             .windows
             .grouped_by_sr_scaling
             .iter()
             .zip(self.cqt_kernel.filter_bank.iter())
         {
-            assert_eq!(wnd.2.len(), filters.shape().0);
+            assert_eq!(filters.len(), filter_matrix.shape().0);
 
-            let cur_resampling_factor = wnd.0;
-            let cur_unscaled_fft_length = wnd.1.sufficient_n_fft_size;
-            let cur_scaled_fft_length = cur_unscaled_fft_length / cur_resampling_factor;
+            let cur_unscaled_fft_length = unscaled_window.sufficient_n_fft_size;
+            let cur_scaled_fft_length = cur_unscaled_fft_length / sr_downscaling_factor;
 
-            let (window_begin, window_end) = wnd.1.window;
+            let (window_begin, window_end) = unscaled_window.window;
             assert_eq!(window_end - window_begin, cur_unscaled_fft_length);
             let x_selection = &x[window_begin..window_end];
             // dbg!(
@@ -658,7 +716,7 @@ impl Cqt {
             //     cur_resampling_factor
             // );
 
-            let vv = self.resample(x_selection, cur_resampling_factor);
+            let vv = self.resample(x_selection, *sr_downscaling_factor);
 
             let mut x_fft = vv
                 .iter()
@@ -680,11 +738,11 @@ impl Cqt {
                                       //     offset + filters.shape().0
                                       // );
             sprs::prod::mul_acc_mat_vec_csr(
-                filters.view(),
+                filter_matrix.view(),
                 x_fft,
-                &mut x_cqt[offset..(offset + filters.shape().0)],
+                &mut x_cqt[offset..(offset + filter_matrix.shape().0)],
             );
-            offset += filters.shape().0;
+            offset += filter_matrix.shape().0;
         }
 
         let power: Vec<f32> = x_cqt
