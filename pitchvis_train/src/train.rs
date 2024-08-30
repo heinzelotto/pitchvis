@@ -12,8 +12,8 @@ use linfa::traits::Predict;
 use ndarray::Axis;
 use npyz::TypeStr;
 use npyz::WriterBuilder;
-use pitchvis_analysis::cqt;
 use pitchvis_analysis::util::arg_max;
+use pitchvis_analysis::vqt;
 use rayon::prelude::*;
 use rustysynth::*;
 use serde_big_array::BigArray;
@@ -110,7 +110,7 @@ fn fit(positive: Vec<(Vec<f32>, f32)>, negative: Vec<(Vec<f32>, f32)>) {
 }
 
 pub fn train() -> Result<()> {
-    let mut cqt = pitchvis_analysis::cqt::Cqt::new(
+    let mut vqt = pitchvis_analysis::vqt::Vqt::new(
         SR,
         N_FFT,
         FREQ_A1,
@@ -121,12 +121,12 @@ pub fn train() -> Result<()> {
         GAMMA,
     );
 
-    let cqt_delay_in_samples = (cqt.delay.as_millis() as usize * SR) / 1000;
-    let cqt_delay_in_samples = (cqt_delay_in_samples / 64) * 64; // round to multiple of 64
+    let vqt_delay_in_samples = (vqt.delay.as_millis() as usize * SR) / 1000;
+    let vqt_delay_in_samples = (vqt_delay_in_samples / 64) * 64; // round to multiple of 64
     println!(
-        "anlyzing MIDI with cqt delay {}ms (= {} samples).",
-        cqt.delay.as_millis(),
-        cqt_delay_in_samples
+        "anlyzing MIDI with vqt delay {}ms (= {} samples).",
+        vqt.delay.as_millis(),
+        vqt_delay_in_samples
     );
     // let step_size_in_chunks = 1;
 
@@ -143,12 +143,12 @@ pub fn train() -> Result<()> {
         .par_iter()
         .flat_map(|p| {
             println!("processing {p:?}");
-            let annotated_cqt = synthesize_midi_to_wav(
+            let annotated_vqt = synthesize_midi_to_wav(
                 p.to_str().unwrap(),
                 sound_font.clone(),
-                cqt_delay_in_samples,
+                vqt_delay_in_samples,
                 STEP_SIZE_IN_CHUNKS,
-                &cqt,
+                &vqt,
             )
             .unwrap_or_else(|_| {
                 println!(
@@ -158,7 +158,7 @@ pub fn train() -> Result<()> {
                 vec![]
             });
 
-            annotated_cqt
+            annotated_vqt
                 .iter()
                 .flat_map(|x| {
                     let (sample, target) = generate_data(&x);
@@ -209,12 +209,12 @@ pub fn train() -> Result<()> {
 
     // println!("avg_positive_x: {:?}", avg_positive_x);
 
-    // let (positive_x, negative_x) = annotated_cqt
+    // let (positive_x, negative_x) = annotated_vqt
     //     .iter()
-    //     .flat_map(|x| center_cqt_and_generate_positive_and_negative_data_points(x))
+    //     .flat_map(|x| center_vqt_and_generate_positive_and_negative_data_points(x))
     //     .collect();
 
-    //println!("Active keys: {:?}\ncqt: {:?}", prev_active_keys, x_cqt);
+    //println!("Active keys: {:?}\nvqt: {:?}", prev_active_keys, x_vqt);
     // let mut v = vec![0f32; 86 * BUCKETS_PER_SEMITONE];
     // let note = 40;
     // for (i, x) in v.iter_mut().enumerate() {
@@ -222,8 +222,8 @@ pub fn train() -> Result<()> {
     // }
 
     // let an = (vec![((note + 33) as i32, 1.0)], v);
-    // let bla = center_cqt_and_generate_positive_and_negative_data_points(&an);
-    // println!("annotated_cqt {:?}", an);
+    // let bla = center_vqt_and_generate_positive_and_negative_data_points(&an);
+    // println!("annotated_vqt {:?}", an);
     // println!("positive samples:");
     // for x in &bla.0 {
     //     println!("{:?}", x);
@@ -239,9 +239,9 @@ pub fn train() -> Result<()> {
 fn synthesize_midi_to_wav(
     midi_path: &str,
     sound_font: Arc<SoundFont>,
-    cqt_delay_in_samples: usize,
+    vqt_delay_in_samples: usize,
     step_size_in_chunks: usize,
-    cqt: &pitchvis_analysis::cqt::Cqt,
+    vqt: &pitchvis_analysis::vqt::Vqt,
 ) -> Result<Vec<(HashMap<i32, f32>, Vec<f32>)>> {
     // Load the MIDI file.
     let mut mid = File::open(midi_path).unwrap();
@@ -263,11 +263,11 @@ fn synthesize_midi_to_wav(
     let mut ring_buffer = Vec::new();
     ring_buffer.resize(BUFSIZE, 0f32);
 
-    // chunk size is cqt delay so that we get a reading of active keys every cqt delay
-    let mut left: Vec<f32> = vec![0_f32; cqt_delay_in_samples];
-    let mut right: Vec<f32> = vec![0_f32; cqt_delay_in_samples];
+    // chunk size is vqt delay so that we get a reading of active keys every vqt delay
+    let mut left: Vec<f32> = vec![0_f32; vqt_delay_in_samples];
+    let mut right: Vec<f32> = vec![0_f32; vqt_delay_in_samples];
 
-    let mut annotated_cqt = Vec::new();
+    let mut annotated_vqt = Vec::new();
     let mut written = 0;
     let mut prev_active_keys;
     let mut active_keys = HashMap::new();
@@ -324,37 +324,37 @@ fn synthesize_midi_to_wav(
                 }
             });
 
-        // perform cqt analysis
-        let x_cqt =
-            cqt.calculate_cqt_instant_in_db(&ring_buffer[(ring_buffer.len() - cqt.n_fft)..]);
+        // perform vqt analysis
+        let x_vqt =
+            vqt.calculate_vqt_instant_in_db(&ring_buffer[(ring_buffer.len() - vqt.n_fft)..]);
 
-        // println!("Active keys: {:?}\ncqt:", prev_active_keys);
-        // x_cqt.chunks(BUCKETS_PER_OCTAVE).for_each(|x| {
+        // println!("Active keys: {:?}\nvqt:", prev_active_keys);
+        // x_vqt.chunks(BUCKETS_PER_OCTAVE).for_each(|x| {
         //     println!("{x:?}",);
         // });
-        annotated_cqt.push((prev_active_keys, x_cqt));
+        annotated_vqt.push((prev_active_keys, x_vqt));
     }
 
-    Ok(annotated_cqt)
+    Ok(annotated_vqt)
 }
 
-/// This function is used to generate positive and negative data points for a logistic regression model, based on the Constant Q Transform (CQT) of a segment of audio and its corresponding active MIDI keys.
+/// This function is used to generate positive and negative data points for a logistic regression model, based on the Variable Q Transform (VQT) of a segment of audio and its corresponding active MIDI keys.
 ///
 /// # Arguments
 ///
-/// * `annotated_cqt`: a tuple containing a vector of active MIDI keys and their intensities, and a vector of CQT transform values.
+/// * `annotated_vqt`: a tuple containing a vector of active MIDI keys and their intensities, and a vector of VQT transform values.
 ///
 /// # Returns
 ///
-/// * A tuple of two vectors, each containing vectors of CQT values:
-///     * The first vector contains the positive samples. For each active key, the CQT is shifted such that the active key is centered, and the CQT values are then truncated/padded to ensure a constant size of 85 semitones (* BUCKETS_PER_SEMITONE), with 40 semitones below and 45 semitones above the active key.
-///     * The second vector contains the negative samples. For each active key, several shifted versions of the CQT are generated. The shifts correspond to +/- 3, 4, 5, 6, 7, 8, 9, 12, 19, 24 semitones, but only if the shifted key does not come too close to another active key (i.e., the distance between the shifted key and any other active key is at least a semitones). Like the positive samples, these CQT values are then truncated/padded to ensure a constant size.
+/// * A tuple of two vectors, each containing vectors of VQT values:
+///     * The first vector contains the positive samples. For each active key, the VQT is shifted such that the active key is centered, and the VQT values are then truncated/padded to ensure a constant size of 85 semitones (* BUCKETS_PER_SEMITONE), with 40 semitones below and 45 semitones above the active key.
+///     * The second vector contains the negative samples. For each active key, several shifted versions of the VQT are generated. The shifts correspond to +/- 3, 4, 5, 6, 7, 8, 9, 12, 19, 24 semitones, but only if the shifted key does not come too close to another active key (i.e., the distance between the shifted key and any other active key is at least a semitones). Like the positive samples, these VQT values are then truncated/padded to ensure a constant size.
 ///
-/// This function is mainly used for preparing data for training a logistic regression model to predict the active MIDI keys from the CQT of a segment of audio.
-fn center_cqt_and_generate_positive_and_negative_data_points(
-    annotated_cqt: &(HashMap<i32, f32>, Vec<f32>),
+/// This function is mainly used for preparing data for training a logistic regression model to predict the active MIDI keys from the VQT of a segment of audio.
+fn center_vqt_and_generate_positive_and_negative_data_points(
+    annotated_vqt: &(HashMap<i32, f32>, Vec<f32>),
 ) -> (Vec<(Vec<f32>, f32)>, Vec<(Vec<f32>, f32)>) {
-    let (active_keys, cqt_transform) = annotated_cqt;
+    let (active_keys, vqt_transform) = annotated_vqt;
     let mut positive_samples = Vec::new();
     let mut negative_samples = Vec::new();
     let shift_values = vec![
@@ -371,23 +371,23 @@ fn center_cqt_and_generate_positive_and_negative_data_points(
             let start_overshoot = (40 * BUCKETS_PER_SEMITONE)
                 .checked_sub(key_index)
                 .unwrap_or(0);
-            let end = (key_index + 46 * BUCKETS_PER_SEMITONE).min(cqt_transform.len());
+            let end = (key_index + 46 * BUCKETS_PER_SEMITONE).min(vqt_transform.len());
             let end_overshoot = (key_index + 46 * BUCKETS_PER_SEMITONE)
-                .checked_sub(cqt_transform.len())
+                .checked_sub(vqt_transform.len())
                 .unwrap_or(0);
             (start, start_overshoot, end, end_overshoot)
         };
 
         // Positive sample
         if key < FREQ_A1_MIDI_KEY_ID || key >= FREQ_A1_MIDI_KEY_ID + OCTAVES as i32 * 12 {
-            // println!("midi Key {} is out of range of cqt", key);
+            // println!("midi Key {} is out of range of vqt", key);
             continue;
         }
         let (start, start_overshoot, end, end_overshoot) = dbg!(calc_boundaries(key_index));
         let mut sample = vec![0f32; 87 * BUCKETS_PER_SEMITONE];
         sample.splice(
             (start_overshoot)..(87 * BUCKETS_PER_SEMITONE - end_overshoot),
-            cqt_transform[start..end].iter().cloned(),
+            vqt_transform[start..end].iter().cloned(),
         );
         // dbg!(sample[40] / sample[arg_max(&sample)]);
         positive_samples.push((sample, attack));
@@ -399,7 +399,7 @@ fn center_cqt_and_generate_positive_and_negative_data_points(
                 || shifted_key >= FREQ_A1_MIDI_KEY_ID + OCTAVES as i32 * 12
             {
                 // println!(
-                //     "shifted midi Key {} + {} is out of range of cqt",
+                //     "shifted midi Key {} + {} is out of range of vqt",
                 //     key, shift
                 // );
                 continue;
@@ -418,7 +418,7 @@ fn center_cqt_and_generate_positive_and_negative_data_points(
                 let mut sample = vec![0f32; 87 * BUCKETS_PER_SEMITONE];
                 sample.splice(
                     (start_overshoot)..(87 * BUCKETS_PER_SEMITONE - end_overshoot),
-                    cqt_transform[start..end].iter().cloned(),
+                    vqt_transform[start..end].iter().cloned(),
                 );
                 negative_samples.push((sample, attack));
             }
@@ -429,15 +429,15 @@ fn center_cqt_and_generate_positive_and_negative_data_points(
 }
 
 fn generate_data(
-    annotated_cqt: &(HashMap<i32, f32>, Vec<f32>),
+    annotated_vqt: &(HashMap<i32, f32>, Vec<f32>),
 ) -> ([f32; OCTAVES * BUCKETS_PER_OCTAVE], [f32; 128]) {
-    let (active_keys, cqt_transform) = annotated_cqt;
+    let (active_keys, vqt_transform) = annotated_vqt;
     let mut samples = [0f32; OCTAVES * BUCKETS_PER_OCTAVE];
     let mut targets = [0f32; 128];
 
-    samples = cqt_transform[..].try_into().unwrap();
+    samples = vqt_transform[..].try_into().unwrap();
 
-    // TODO: generate some pitch wobble, e. g. out of tune instruments. ?Can we do this in the cqt domain ?or should we add random tunings to instruments during midi generation
+    // TODO: generate some pitch wobble, e. g. out of tune instruments. ?Can we do this in the vqt domain ?or should we add random tunings to instruments during midi generation
     // TODO: maybe also use different sound fonts
 
     for (&key, &attack) in active_keys.iter() {
@@ -452,18 +452,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_center_cqt_and_generate_positive_and_negative_data_points() {
+    fn test_center_vqt_and_generate_positive_and_negative_data_points() {
         for note in 30..31 {
             let active_keys = HashMap::from([((33 + note) as i32, 1.0)]); // MIDI id for FREQ_A1 is 33
-            let mut cqt_transform = vec![0f32; 86 * BUCKETS_PER_SEMITONE];
-            for (i, x) in cqt_transform.iter_mut().enumerate() {
+            let mut vqt_transform = vec![0f32; 86 * BUCKETS_PER_SEMITONE];
+            for (i, x) in vqt_transform.iter_mut().enumerate() {
                 *x = (1_000 - i.abs_diff(note * BUCKETS_PER_SEMITONE)) as f32;
             }
-            // dbgs!(&cqt_transform);
-            let annotated_cqt = (active_keys, cqt_transform);
+            // dbgs!(&vqt_transform);
+            let annotated_vqt = (active_keys, vqt_transform);
 
             let (positive_samples, negative_samples) =
-                center_cqt_and_generate_positive_and_negative_data_points(&annotated_cqt);
+                center_vqt_and_generate_positive_and_negative_data_points(&annotated_vqt);
 
             // Check that the positive samples are correctly centered
             for sample in positive_samples.iter() {

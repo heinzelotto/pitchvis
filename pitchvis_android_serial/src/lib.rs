@@ -51,15 +51,15 @@ pub const COLORS: [[f32; 3]; 12] = [
 const GRAY_LEVEL: f32 = 5.0;
 const EASING_POW: f32 = 2.3;
 
-struct CqtResult {
-    pub x_cqt: Vec<f32>,
+struct VqtResult {
+    pub x_vqt: Vec<f32>,
     pub gain: f32,
 }
 
-impl CqtResult {
+impl VqtResult {
     pub fn new(octaves: usize, buckets_per_octave: usize) -> Self {
         Self {
-            x_cqt: vec![0.0; octaves * buckets_per_octave],
+            x_vqt: vec![0.0; octaves * buckets_per_octave],
             gain: 1.0,
         }
     }
@@ -222,18 +222,18 @@ fn update_serial(
     analysis_state: &AnalysisState,
     serial_port: &mut SerialPortManager,
 ) {
-    let k_max = arg_max(&analysis_state.x_cqt_peakfiltered);
-    let max_size = analysis_state.x_cqt_peakfiltered[k_max];
+    let k_max = arg_max(&analysis_state.x_vqt_peakfiltered);
+    let max_size = analysis_state.x_vqt_peakfiltered[k_max];
 
     // special value to indicate begin of data
     let mut output: Vec<u8> = vec![0xFF];
     // 16 bit number of RGB triples to follow
-    let num_triples: u16 = analysis_state.x_cqt_peakfiltered.len().try_into().unwrap();
+    let num_triples: u16 = analysis_state.x_vqt_peakfiltered.len().try_into().unwrap();
     output.push((num_triples / 256) as u8);
     output.push((num_triples % 256) as u8);
     output.extend(
         analysis_state
-            .x_cqt_peakfiltered
+            .x_vqt_peakfiltered
             .iter()
             .enumerate()
             .flat_map(|(idx, size)| {
@@ -286,7 +286,7 @@ fn android_main(app: AndroidApp) {
     let mut serial_port = SerialPortManager::new(app.vm_as_ptr(), app.activity_as_ptr()).unwrap();
     serial_port.open_serial_port().unwrap();
 
-    let mut cqt = pitchvis_analysis::cqt::Cqt::new(
+    let mut vqt = pitchvis_analysis::vqt::Vqt::new(
         SR,
         N_FFT,
         FREQ_A1,
@@ -296,7 +296,7 @@ fn android_main(app: AndroidApp) {
         Q,
         GAMMA,
     );
-    let mut cqt_result = CqtResult::new(OCTAVES, BUCKETS_PER_OCTAVE);
+    let mut vqt_result = VqtResult::new(OCTAVES, BUCKETS_PER_OCTAVE);
     let mut analysis_state = AnalysisState::new(
         OCTAVES * BUCKETS_PER_OCTAVE,
         pitchvis_analysis::analysis::SPECTROGRAM_LENGTH,
@@ -361,14 +361,14 @@ fn android_main(app: AndroidApp) {
         let start_time = std::time::Instant::now();
 
         let (x, gain) = {
-            let mut x = vec![0.0_f32; cqt.n_fft];
+            let mut x = vec![0.0_f32; vqt.n_fft];
             let rb = ring_buffer.lock().unwrap();
-            x.copy_from_slice(&rb.buf[(BUFSIZE - cqt.n_fft)..]);
+            x.copy_from_slice(&rb.buf[(BUFSIZE - vqt.n_fft)..]);
             (x, rb.gain)
         };
-        cqt_result.x_cqt = cqt.calculate_cqt_instant_in_db(&x);
-        cqt_result.gain = gain;
-        analysis_state.preprocess(&cqt_result.x_cqt, OCTAVES, BUCKETS_PER_OCTAVE);
+        vqt_result.x_vqt = vqt.calculate_vqt_instant_in_db(&x);
+        vqt_result.gain = gain;
+        analysis_state.preprocess(&vqt_result.x_vqt, OCTAVES, BUCKETS_PER_OCTAVE);
         update_serial(BUCKETS_PER_OCTAVE, &analysis_state, &mut serial_port);
 
         let elapsed = start_time.elapsed();

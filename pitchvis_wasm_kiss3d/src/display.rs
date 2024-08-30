@@ -89,8 +89,8 @@ fn calculate_color(buckets_per_octave: usize, bucket: f32) -> (f32, f32, f32) {
 
 struct AnalysisState {
     history: Vec<Vec<f32>>,
-    x_cqt_smoothed: Vec<f32>,
-    x_cqt_afterglow: Vec<f32>,
+    x_vqt_smoothed: Vec<f32>,
+    x_vqt_afterglow: Vec<f32>,
     peaks: HashSet<usize>,
     peaks_continuous: Vec<(f32, f32)>,
 
@@ -104,8 +104,8 @@ impl AnalysisState {
 
         Self {
             history: Vec::new(),
-            x_cqt_smoothed: Vec::new(),
-            x_cqt_afterglow: Vec::new(),
+            x_vqt_smoothed: Vec::new(),
+            x_vqt_afterglow: Vec::new(),
             peaks: HashSet::new(),
             peaks_continuous: Vec::new(),
             spectrogram_buffer,
@@ -133,7 +133,7 @@ pub struct Display {
     buckets_per_octave: usize,
     analysis_state: AnalysisState,
     pause_state: PauseState,
-    //x_cqt_smoothed: Vec<f32>,
+    //x_vqt_smoothed: Vec<f32>,
 }
 
 impl Display {
@@ -183,7 +183,7 @@ impl Display {
         let mut analysis_state =
             AnalysisState::new(octaves * buckets_per_octave, SPECTROGRAM_LENGTH);
         analysis_state
-            .x_cqt_afterglow
+            .x_vqt_afterglow
             .resize_with(octaves * buckets_per_octave, || 0.0);
 
         let mut bg_quad = window.add_quad(24.0, 12.0, 1, 1);
@@ -218,7 +218,7 @@ impl Display {
             buckets_per_octave,
             analysis_state,
             pause_state: PauseState::Running,
-            //x_cqt_smoothed : vec![0.0; octaves * buckets_per_octave],
+            //x_vqt_smoothed : vec![0.0; octaves * buckets_per_octave],
         }
     }
 
@@ -254,10 +254,10 @@ impl Display {
         }
     }
 
-    pub fn render(&mut self, window: &mut Window, x_cqt: &[f32], gain: f32) {
+    pub fn render(&mut self, window: &mut Window, x_vqt: &[f32], gain: f32) {
         self.handle_key_events(window);
 
-        self.preprocess(x_cqt);
+        self.preprocess(x_vqt);
         self.update_spectrogram();
         self.draw_spectrum(window);
         self.draw_spider_net(window);
@@ -265,22 +265,22 @@ impl Display {
         self.update_cylinders(gain);
     }
 
-    fn preprocess(&mut self, x_cqt: &[f32]) {
+    fn preprocess(&mut self, x_vqt: &[f32]) {
         let num_buckets = self.octaves * self.buckets_per_octave;
 
-        assert!(num_buckets == x_cqt.len());
+        assert!(num_buckets == x_vqt.len());
 
-        let k_min = arg_min(&x_cqt);
-        let k_max = arg_max(&x_cqt);
-        let _min = x_cqt[k_min];
-        let _max = x_cqt[k_max];
-        // println!("x_cqt[{k_min}] = {min}, x_cqt[{k_max}] = {max}");
+        let k_min = arg_min(&x_vqt);
+        let k_max = arg_max(&x_vqt);
+        let _min = x_vqt[k_min];
+        let _max = x_vqt[k_max];
+        // println!("x_vqt[{k_min}] = {min}, x_vqt[{k_max}] = {max}");
 
         // smooth by averaging over the history
-        let mut x_cqt_smoothed = vec![0.0; num_buckets];
+        let mut x_vqt_smoothed = vec![0.0; num_buckets];
         // if a bin in the history was at peak magnitude at that time, it should be promoted
-        self.analysis_state.history.push(x_cqt.to_owned());
-        //self.history.push(x_cqt.iter().enumerate().map(|(i, x)| if peaks.contains(&i) {*x} else {0.0}).collect::<Vec<f32>>());
+        self.analysis_state.history.push(x_vqt.to_owned());
+        //self.history.push(x_vqt.iter().enumerate().map(|(i, x)| if peaks.contains(&i) {*x} else {0.0}).collect::<Vec<f32>>());
         if self.analysis_state.history.len() > SMOOTH_LENGTH {
             // TODO: once fps is implemented, make this dependent on time instead of frames
             // make smoothing range modifiable in-game
@@ -292,24 +292,24 @@ impl Display {
                 v.push(self.analysis_state.history[t][i]);
             }
             // arithmetic mean
-            x_cqt_smoothed[i] = v.iter().sum::<f32>() / SMOOTH_LENGTH as f32;
+            x_vqt_smoothed[i] = v.iter().sum::<f32>() / SMOOTH_LENGTH as f32;
         }
 
         // let conv_radius = (self.buckets_per_octave / 12) / 2;
-        // let x_cqt_smoothed_convoluted = (0..(self.octaves * self.buckets_per_octave))
+        // let x_vqt_smoothed_convoluted = (0..(self.octaves * self.buckets_per_octave))
         //     .map(|idx| {
         //         if idx < conv_radius || idx >= self.octaves * self.buckets_per_octave - conv_radius
         //         {
         //             0.0
         //         } else {
-        //             x_cqt_smoothed[(idx - conv_radius)..(idx + conv_radius + 1)]
+        //             x_vqt_smoothed[(idx - conv_radius)..(idx + conv_radius + 1)]
         //                 .iter()
         //                 .sum::<f32>()
         //         }
         //     })
         //     .collect::<Vec<f32>>();
 
-        // let mut pf2 = PeakFinder::new(&x_cqt_smoothed_convoluted);
+        // let mut pf2 = PeakFinder::new(&x_vqt_smoothed_convoluted);
         // pf2.with_min_prominence(PEAK_MIN_PROMINENCE + 5.0);
         // pf2.with_min_height(PEAK_MIN_HEIGHT + 5.0);
         // let peaks2 = pf2.find_peaks();
@@ -318,23 +318,23 @@ impl Display {
         //     .map(|p| p.middle_position())
         //     .collect::<HashSet<usize>>();
 
-        // let mut x_cqt_smoothed = x_cqt_smoothed_convoluted
+        // let mut x_vqt_smoothed = x_vqt_smoothed_convoluted
         //     .iter()
         //     .enumerate()
         //     .map(|(i, x)| {
         //         if peaks2.contains(&i) {
         //             *x / conv_radius as f32
         //         } else {
-        //             x_cqt_smoothed[i] / 10.0
+        //             x_vqt_smoothed[i] / 10.0
         //         }
         //     })
         //     .collect::<Vec<f32>>();
 
         // find peaks
         let padding_length = 1;
-        let mut x_cqt_padded_left = vec![0.0; padding_length];
-        x_cqt_padded_left.extend(x_cqt_smoothed.iter());
-        let mut fp = PeakFinder::new(&x_cqt_padded_left);
+        let mut x_vqt_padded_left = vec![0.0; padding_length];
+        x_vqt_padded_left.extend(x_vqt_smoothed.iter());
+        let mut fp = PeakFinder::new(&x_vqt_padded_left);
         fp.with_min_prominence(PEAK_MIN_PROMINENCE);
         fp.with_min_height(PEAK_MIN_HEIGHT);
         let peaks = fp.find_peaks();
@@ -354,14 +354,14 @@ impl Display {
                 continue;
             }
 
-            let x = x_cqt_smoothed[p] - x_cqt_smoothed[p - 1] + std::f32::EPSILON;
-            let y = x_cqt_smoothed[p] - x_cqt_smoothed[p + 1] + std::f32::EPSILON;
+            let x = x_vqt_smoothed[p] - x_vqt_smoothed[p - 1] + std::f32::EPSILON;
+            let y = x_vqt_smoothed[p] - x_vqt_smoothed[p + 1] + std::f32::EPSILON;
 
             let estimated_precise_center = p as f32 + 1.0 / (1.0 + y / x) - 0.5;
-            let estimated_precise_size = x_cqt_smoothed
+            let estimated_precise_size = x_vqt_smoothed
                 [estimated_precise_center.trunc() as usize + 1]
                 * estimated_precise_center.fract()
-                + x_cqt_smoothed[estimated_precise_center.trunc() as usize]
+                + x_vqt_smoothed[estimated_precise_center.trunc() as usize]
                     * (1.0 - estimated_precise_center.fract());
             peaks_continuous.push((estimated_precise_center, estimated_precise_size));
         }
@@ -376,34 +376,34 @@ impl Display {
         });
 
         if self.pause_state == PauseState::PauseRequested {
-            self.pause_state = PauseState::Paused(x_cqt_smoothed.clone())
+            self.pause_state = PauseState::Paused(x_vqt_smoothed.clone())
         }
         if let PauseState::Paused(v) = &self.pause_state {
-            x_cqt_smoothed = v.clone();
+            x_vqt_smoothed = v.clone();
         }
 
         // self.analysis_state
-        //     .x_cqt_afterglow
+        //     .x_vqt_afterglow
         //     .iter_mut()
         //     .enumerate()
         //     .for_each(|(i, x)| {
         //         *x *= 0.85 - 0.15 * (i as f32 / (self.octaves * self.buckets_per_octave) as f32);
-        //         if *x < x_cqt_smoothed[i] {
-        //             *x = x_cqt_smoothed[i];
+        //         if *x < x_vqt_smoothed[i] {
+        //             *x = x_vqt_smoothed[i];
         //         }
         //     });
 
         // TEST unmodified
-        //let x_cqt_smoothed = x_cqt.to_vec();
+        //let x_vqt_smoothed = x_vqt.to_vec();
 
         self.analysis_state.peaks = peaks;
-        self.analysis_state.x_cqt_smoothed = x_cqt_smoothed;
+        self.analysis_state.x_vqt_smoothed = x_vqt_smoothed;
         self.analysis_state.peaks_continuous = peaks_continuous;
     }
 
     fn update_spectrogram(&mut self) {
-        let k_max = arg_max(&self.analysis_state.x_cqt_smoothed);
-        let max_size = self.analysis_state.x_cqt_smoothed[k_max];
+        let k_max = arg_max(&self.analysis_state.x_vqt_smoothed);
+        let max_size = self.analysis_state.x_vqt_smoothed[k_max];
 
         let width = self.octaves * self.buckets_per_octave;
         self.analysis_state.spectrogram_buffer[(self.analysis_state.spectrogram_front_idx
@@ -411,9 +411,9 @@ impl Display {
             * 4)
             ..((self.analysis_state.spectrogram_front_idx + 1) * width * 4)]
             .fill(0);
-        //for (i, x) in self.analysis_state.x_cqt_smoothed.iter().enumerate() {
+        //for (i, x) in self.analysis_state.x_vqt_smoothed.iter().enumerate() {
         for i in self.analysis_state.peaks.iter() {
-            let x = self.analysis_state.x_cqt_smoothed[*i];
+            let x = self.analysis_state.x_vqt_smoothed[*i];
             let (r, g, b) = calculate_color(
                 self.buckets_per_octave,
                 (*i as f32 + (self.buckets_per_octave - 3 * (self.buckets_per_octave / 12)) as f32)
@@ -496,7 +496,7 @@ impl Display {
     }
 
     fn draw_spectrum(&mut self, window: &mut Window) {
-        let x_cqt = &self.analysis_state.x_cqt_smoothed;
+        let x_vqt = &self.analysis_state.x_vqt_smoothed;
 
         for i in 0..(self.buckets_per_octave * self.octaves - 1) {
             let x = i as f32 / (self.buckets_per_octave * self.octaves) as f32 * 7.0 - 13.5;
@@ -504,28 +504,28 @@ impl Display {
                 (i + 1) as f32 / (self.buckets_per_octave * self.octaves) as f32 * 7.0 - 13.5;
             let y_scale = 7.0;
             window.draw_line(
-                &Point3::new(x, x_cqt[i] / y_scale + 3.0, 0.0),
-                &Point3::new(x_next, x_cqt[i + 1] / y_scale + 3.0, 0.0),
-                //&Point3::new(x, x_cqt_smoothed[i] /* / y_scale */ + 3.0, 0.0),
-                //&Point3::new(x_next, x_cqt_smoothed[i + 1] /* / y_scale */ + 3.0, 0.0),
+                &Point3::new(x, x_vqt[i] / y_scale + 3.0, 0.0),
+                &Point3::new(x_next, x_vqt[i + 1] / y_scale + 3.0, 0.0),
+                //&Point3::new(x, x_vqt_smoothed[i] /* / y_scale */ + 3.0, 0.0),
+                //&Point3::new(x_next, x_vqt_smoothed[i + 1] /* / y_scale */ + 3.0, 0.0),
                 &Point3::new(0.7, 0.9, 0.0),
             );
             if self.analysis_state.peaks.contains(&i) {
                 window.draw_line(
-                    //&Point3::new(x, x_cqt_smoothed[i] /*/ y_scale*/ + 3.0 - 0.1, 0.0),
-                    //&Point3::new(x, x_cqt_smoothed[i] /*/ y_scale*/ + 3.0, 0.0),
-                    &Point3::new(x, x_cqt[i] / y_scale + 3.0 + 0.2, 0.0),
-                    &Point3::new(x, x_cqt[i] / y_scale + 3.0, 0.0),
+                    //&Point3::new(x, x_vqt_smoothed[i] /*/ y_scale*/ + 3.0 - 0.1, 0.0),
+                    //&Point3::new(x, x_vqt_smoothed[i] /*/ y_scale*/ + 3.0, 0.0),
+                    &Point3::new(x, x_vqt[i] / y_scale + 3.0 + 0.2, 0.0),
+                    &Point3::new(x, x_vqt[i] / y_scale + 3.0, 0.0),
                     &Point3::new(1.0, 0.2, 0.0),
                 );
             }
 
             if i % (self.buckets_per_octave / 12) == 0 {
                 window.draw_line(
-                    &Point3::new(x, x_cqt[i] / y_scale + 3.0 - 0.1, 0.0),
-                    &Point3::new(x, x_cqt[i] / y_scale + 3.0, 0.0),
-                    // &Point3::new(x, x_cqt_smoothed[i] /*/ y_scale*/ + 3.0 - 0.1, 0.0),
-                    // &Point3::new(x, x_cqt_smoothed[i] /*/ y_scale*/ + 3.0, 0.0),
+                    &Point3::new(x, x_vqt[i] / y_scale + 3.0 - 0.1, 0.0),
+                    &Point3::new(x, x_vqt[i] / y_scale + 3.0, 0.0),
+                    // &Point3::new(x, x_vqt_smoothed[i] /*/ y_scale*/ + 3.0 - 0.1, 0.0),
+                    // &Point3::new(x, x_vqt_smoothed[i] /*/ y_scale*/ + 3.0, 0.0),
                     &Point3::new(1.0, 0.0, 1.0),
                 );
             }
@@ -608,7 +608,7 @@ impl Display {
                 b * color_coefficient,
             );
 
-            //c.set_local_scale((x_cqt[i] / 10.0).max(0.1), (x_cqt[i] / 10.0).max(0.1), (x_cqt[i] / 10.0).max(0.1));
+            //c.set_local_scale((x_vqt[i] / 10.0).max(0.1), (x_vqt[i] / 10.0).max(0.1), (x_vqt[i] / 10.0).max(0.1));
 
             //let scale_factor = 1.0 / 30.0 * (0.7 + 0.3 * local_maximum as i32 as f32);
 

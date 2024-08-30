@@ -310,7 +310,7 @@ pub fn update_display_to_system(
     ResMut<Assets<NoisyColorMaterial>>,
     ResMut<Assets<Mesh>>,
     Res<crate::analysis_system::AnalysisStateResource>,
-    Res<crate::cqt_system::CqtResultResource>,
+    Res<crate::vqt_system::VqtResultResource>,
     Res<CylinderEntityListResource>,
     Res<SettingsState>,
 ) + Copy {
@@ -329,7 +329,7 @@ pub fn update_display_to_system(
           noisy_color_materials: ResMut<Assets<NoisyColorMaterial>>,
           meshes: ResMut<Assets<Mesh>>,
           analysis_state: Res<crate::analysis_system::AnalysisStateResource>,
-          cqt_result: Res<crate::cqt_system::CqtResultResource>,
+          vqt_result: Res<crate::vqt_system::VqtResultResource>,
           cylinder_entities: Res<CylinderEntityListResource>,
           settings_state: Res<SettingsState>| {
         update_display(
@@ -341,7 +341,7 @@ pub fn update_display_to_system(
             noisy_color_materials,
             meshes,
             analysis_state,
-            cqt_result,
+            vqt_result,
             cylinder_entities,
             settings_state,
         );
@@ -366,7 +366,7 @@ pub fn update_display(
     mut noisy_color_materials: ResMut<Assets<NoisyColorMaterial>>,
     mut meshes: ResMut<Assets<Mesh>>,
     analysis_state: Res<crate::analysis_system::AnalysisStateResource>,
-    cqt_result: Res<crate::cqt_system::CqtResultResource>,
+    vqt_result: Res<crate::vqt_system::VqtResultResource>,
     cylinder_entities: Res<CylinderEntityListResource>,
     settings_state: Res<SettingsState>,
 ) {
@@ -393,7 +393,7 @@ pub fn update_display(
                 *visibility = Visibility::Hidden;
             }
 
-            // FIXME: test how it looks when we only show the balls that are currently active in the cqt analysis
+            // FIXME: test how it looks when we only show the balls that are currently active in the vqt analysis
             // *visibility = Visibility::Hidden;
         }
     }
@@ -452,7 +452,7 @@ pub fn update_display(
                 color_mat.color = Color::rgba(r, g, b, color_coefficient);
 
                 #[cfg(feature = "ml")]
-                if let Some(midi_pitch) = cqt_bin_to_midi_pitch(buckets_per_octave, idx) {
+                if let Some(midi_pitch) = vqt_bin_to_midi_pitch(buckets_per_octave, idx) {
                     let inferred_midi_pitch_strength =
                         analysis_state.ml_midi_base_pitches[midi_pitch];
                     if inferred_midi_pitch_strength > 0.35 {
@@ -482,11 +482,11 @@ pub fn update_display(
         }
         // TODO: ?faster lookup through indexes
     } else {
-        // let cqt_base = &analysis_state.x_cqt_peakfiltered;
-        let cqt_base = &cqt_result.x_cqt;
+        // let vqt_base = &analysis_state.x_vqt_peakfiltered;
+        let vqt_base = &vqt_result.x_vqt;
         for (pitch_ball, mut visibility, mut transform, color) in &mut set.p0() {
             let idx = pitch_ball.0;
-            let size = cqt_base[idx];
+            let size = vqt_base[idx];
 
             let (r, g, b) = pitchvis_analysis::calculate_color(
                 buckets_per_octave,
@@ -528,8 +528,8 @@ pub fn update_display(
 
     for (_, line_strip) in &mut spectrum_linestrip {
         let spectrum_mesh = LineList {
-            lines: cqt_result
-                .x_cqt
+            lines: vqt_result
+                .x_vqt
                 .iter()
                 .enumerate()
                 .map(|(i, amp)| Vec3::new(i as f32 * 0.017, *amp / 10.0, 0.0))
@@ -632,7 +632,7 @@ impl From<LineList> for Mesh {
 //     octaves: usize,
 //     buckets_per_octave: usize,
 //     pause_state: PauseState,
-//     //x_cqt_smoothed: Vec<f32>,
+//     //x_vqt_smoothed: Vec<f32>,
 // }
 
 // impl DisplayPlugin {
@@ -646,7 +646,7 @@ impl From<LineList> for Mesh {
 // let mut analysis_state =
 //     AnalysisState::new(octaves * buckets_per_octave, SPECTROGRAM_LENGTH);
 // analysis_state
-//     .x_cqt_afterglow
+//     .x_vqt_afterglow
 //     .resize_with(octaves * buckets_per_octave, || 0.0);
 
 // let mut bg_quad = window.add_quad(24.0, 12.0, 1, 1);
@@ -681,7 +681,7 @@ impl From<LineList> for Mesh {
 //         buckets_per_octave,
 //         //analysis_state,
 //         pause_state: PauseState::Running,
-//         //x_cqt_smoothed : vec![0.0; octaves * buckets_per_octave],
+//         //x_vqt_smoothed : vec![0.0; octaves * buckets_per_octave],
 //     }
 // }
 
@@ -717,10 +717,10 @@ impl From<LineList> for Mesh {
 //     }
 // }
 
-// pub fn render(&mut self, window: &mut Window, x_cqt: &[f32], gain: f32) {
+// pub fn render(&mut self, window: &mut Window, x_vqt: &[f32], gain: f32) {
 //     self.handle_key_events(window);
 
-//     self.preprocess(x_cqt);
+//     self.preprocess(x_vqt);
 //     self.update_spectrogram();
 //     self.draw_spectrum(window);
 //     self.draw_spider_net(window);
@@ -729,8 +729,8 @@ impl From<LineList> for Mesh {
 // }
 
 // fn update_spectrogram(&mut self) {
-//     let k_max = arg_max(&self.analysis_state.x_cqt_smoothed);
-//     let max_size = self.analysis_state.x_cqt_smoothed[k_max];
+//     let k_max = arg_max(&self.analysis_state.x_vqt_smoothed);
+//     let max_size = self.analysis_state.x_vqt_smoothed[k_max];
 
 //     let width = self.octaves * self.buckets_per_octave;
 //     self.analysis_state.spectrogram_buffer[(self.analysis_state.spectrogram_front_idx
@@ -738,9 +738,9 @@ impl From<LineList> for Mesh {
 //         * 4)
 //         ..((self.analysis_state.spectrogram_front_idx + 1) * width * 4)]
 //         .fill(0);
-//     //for (i, x) in self.analysis_state.x_cqt_smoothed.iter().enumerate() {
+//     //for (i, x) in self.analysis_state.x_vqt_smoothed.iter().enumerate() {
 //     for i in self.analysis_state.peaks.iter() {
-//         let x = self.analysis_state.x_cqt_smoothed[*i];
+//         let x = self.analysis_state.x_vqt_smoothed[*i];
 //         let (r, g, b) = calculate_color(
 //             self.buckets_per_octave,
 //             (*i as f32 + (self.buckets_per_octave - 3 * (self.buckets_per_octave / 12)) as f32)
@@ -823,7 +823,7 @@ impl From<LineList> for Mesh {
 // }
 
 // fn draw_spectrum(&mut self, window: &mut Window) {
-//     let x_cqt = &self.analysis_state.x_cqt_smoothed;
+//     let x_vqt = &self.analysis_state.x_vqt_smoothed;
 
 //     for i in 0..(self.buckets_per_octave * self.octaves - 1) {
 //         let x = i as f32 / (self.buckets_per_octave * self.octaves) as f32 * 7.0 - 13.5;
@@ -831,28 +831,28 @@ impl From<LineList> for Mesh {
 //             (i + 1) as f32 / (self.buckets_per_octave * self.octaves) as f32 * 7.0 - 13.5;
 //         let y_scale = 7.0;
 //         window.draw_line(
-//             &Point3::new(x, x_cqt[i] / y_scale + 3.0, 0.0),
-//             &Point3::new(x_next, x_cqt[i + 1] / y_scale + 3.0, 0.0),
-//             //&Point3::new(x, x_cqt_smoothed[i] /* / y_scale */ + 3.0, 0.0),
-//             //&Point3::new(x_next, x_cqt_smoothed[i + 1] /* / y_scale */ + 3.0, 0.0),
+//             &Point3::new(x, x_vqt[i] / y_scale + 3.0, 0.0),
+//             &Point3::new(x_next, x_vqt[i + 1] / y_scale + 3.0, 0.0),
+//             //&Point3::new(x, x_vqt_smoothed[i] /* / y_scale */ + 3.0, 0.0),
+//             //&Point3::new(x_next, x_vqt_smoothed[i + 1] /* / y_scale */ + 3.0, 0.0),
 //             &Point3::new(0.7, 0.9, 0.0),
 //         );
 //         if self.analysis_state.peaks.contains(&i) {
 //             window.draw_line(
-//                 //&Point3::new(x, x_cqt_smoothed[i] /*/ y_scale*/ + 3.0 - 0.1, 0.0),
-//                 //&Point3::new(x, x_cqt_smoothed[i] /*/ y_scale*/ + 3.0, 0.0),
-//                 &Point3::new(x, x_cqt[i] / y_scale + 3.0 + 0.2, 0.0),
-//                 &Point3::new(x, x_cqt[i] / y_scale + 3.0, 0.0),
+//                 //&Point3::new(x, x_vqt_smoothed[i] /*/ y_scale*/ + 3.0 - 0.1, 0.0),
+//                 //&Point3::new(x, x_vqt_smoothed[i] /*/ y_scale*/ + 3.0, 0.0),
+//                 &Point3::new(x, x_vqt[i] / y_scale + 3.0 + 0.2, 0.0),
+//                 &Point3::new(x, x_vqt[i] / y_scale + 3.0, 0.0),
 //                 &Point3::new(1.0, 0.2, 0.0),
 //             );
 //         }
 
 //         if i % (self.buckets_per_octave / 12) == 0 {
 //             window.draw_line(
-//                 &Point3::new(x, x_cqt[i] / y_scale + 3.0 - 0.1, 0.0),
-//                 &Point3::new(x, x_cqt[i] / y_scale + 3.0, 0.0),
-//                 // &Point3::new(x, x_cqt_smoothed[i] /*/ y_scale*/ + 3.0 - 0.1, 0.0),
-//                 // &Point3::new(x, x_cqt_smoothed[i] /*/ y_scale*/ + 3.0, 0.0),
+//                 &Point3::new(x, x_vqt[i] / y_scale + 3.0 - 0.1, 0.0),
+//                 &Point3::new(x, x_vqt[i] / y_scale + 3.0, 0.0),
+//                 // &Point3::new(x, x_vqt_smoothed[i] /*/ y_scale*/ + 3.0 - 0.1, 0.0),
+//                 // &Point3::new(x, x_vqt_smoothed[i] /*/ y_scale*/ + 3.0, 0.0),
 //                 &Point3::new(1.0, 0.0, 1.0),
 //             );
 //         }
@@ -935,7 +935,7 @@ impl From<LineList> for Mesh {
 //             b * color_coefficient,
 //         );
 
-//         //c.set_local_scale((x_cqt[i] / 10.0).max(0.1), (x_cqt[i] / 10.0).max(0.1), (x_cqt[i] / 10.0).max(0.1));
+//         //c.set_local_scale((x_vqt[i] / 10.0).max(0.1), (x_vqt[i] / 10.0).max(0.1), (x_vqt[i] / 10.0).max(0.1));
 
 //         //let scale_factor = 1.0 / 30.0 * (0.7 + 0.3 * local_maximum as i32 as f32);
 
@@ -1025,7 +1025,7 @@ fn bin_to_spiral(buckets_per_octave: usize, x: f32) -> (f32, f32, f32) {
 }
 
 #[cfg(feature = "ml")]
-fn cqt_bin_to_midi_pitch(buckets_per_octave: usize, bin: usize) -> Option<usize> {
+fn vqt_bin_to_midi_pitch(buckets_per_octave: usize, bin: usize) -> Option<usize> {
     let midi_pitch = (bin as f32 / buckets_per_octave as f32 * 12.0).round() as usize
         + crate::FREQ_A1_MIDI_KEY_ID as usize;
     if midi_pitch > 127 {

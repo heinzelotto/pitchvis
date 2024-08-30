@@ -47,14 +47,14 @@ pub struct UnscaledWindow {
     window: (usize, usize),
 }
 
-/// The `CqtKernel` struct represents a Constant Q Transform (CQT) kernel,
+/// The `VqtKernel` struct represents a Variable Q Transform (VQT) kernel,
 /// consisting of a filter bank and corresponding windows.
-pub struct CqtKernel {
+pub struct VqtKernel {
     pub filter_bank: Vec<sprs::CsMat<Complex32>>,
-    pub windows: CqtWindows,
+    pub windows: VqtWindows,
 }
 
-/// Parameters used to create a single filter in the CQT filter bank.
+/// Parameters used to create a single filter in the VQT filter bank.
 #[derive(Debug, Clone, Copy)]
 struct FilterParams {
     freq: f32,
@@ -74,7 +74,7 @@ struct FilterGrouping {
     filters: Vec<FilterParams>,
 }
 
-pub struct CqtWindows {
+pub struct VqtWindows {
     window_center: f32,
     grouped_by_sr_scaling: Vec<FilterGrouping>,
 }
@@ -89,9 +89,14 @@ struct PrecomputedFft {
     inv_fft: Arc<dyn Fft<f32>>,
 }
 
-/// The `Cqt` struct represents a Constant Q Transform (CQT), a type of spectral transform.
-/// The CQT is a time-frequency representation where the frequency bins are geometrically spaced.
-pub struct Cqt {
+/// The `Vqt` struct represents a Variable Q Transform (VQT), a type of spectral transform.
+/// It is based on the Constant Q Transform (CQT), a time-frequency representation where the
+/// frequency bins are geometrically spaced. The variable Q Transform extends the CQT with an
+/// additional parameter γ. A higher value of this parameter increases the amount of frequency
+/// smearing in lower octaves but improves time resolution. Since the delay of the filter bank
+/// is mostly determined by the lowest octave, this thus gives more control over the total signal
+/// processing delay of the filter bank.
+pub struct Vqt {
     /// The sample rate (in Hz) of the input audio signal.
     _sr: usize,
 
@@ -99,35 +104,35 @@ pub struct Cqt {
     /// for higher octaves.
     pub n_fft: usize,
 
-    /// The minimum frequency (in Hz) of the lowest note analyzed in the Constant-Q Transform (CQT).
+    /// The minimum frequency (in Hz) of the lowest note analyzed in the variable-Q Transform (VQT).
     _min_freq: f32,
 
-    /// The resolution of the CQT, defined in terms of the number of frequency bins per octave.
+    /// The resolution of the VQT, defined in terms of the number of frequency bins per octave.
     /// This value must be a multiple of 12, reflecting the 12 semitones in a musical octave.
     buckets_per_octave: usize,
 
-    /// The total range, in octaves, over which the CQT is computed.
+    /// The total range, in octaves, over which the VQT is computed.
     octaves: usize,
 
-    /// A quantile value used to determine the sparsity of the CQT kernel. A higher value results
+    /// A quantile value used to determine the sparsity of the VQT kernel. A higher value results
     /// in a sparser representation, with only the most impactful frequency bins being used.
     _sparsity_quantile: f32,
 
-    /// A value that determines the quality of the CQT. A higher value results in a more accurate
+    /// A value that determines the quality of the VQT. A higher value results in a more accurate
     /// representation, at the cost of greater time smearing.
     _quality: f32,
 
-    /// A parameter used in the calculation of the CQT, which determines the amount of frequency
+    /// A parameter used in the calculation of the VQT, which determines the amount of frequency
     /// smearing in lower octaves. A higher value results in more smearing, which can be useful
     /// for analyzing signals with time-varying frequency content where more time resolution is
     /// desired.
     _gamma: f32,
 
-    /// The CQT kernel, which is a precomputed filter bank used in the computation of the CQT.
-    cqt_kernel: CqtKernel,
+    /// The VQT kernel, which is a precomputed filter bank used in the computation of the VQT.
+    vqt_kernel: VqtKernel,
 
     /// The delay introduced by the analysis process. This is the amount of time between when a
-    /// signal is input to the system and when its CQT is available.
+    /// signal is input to the system and when its VQT is available.
     pub delay: Duration,
 
     /// A map from FFT sizes to precomputed FFT objects. Each FFT object is used to resample the
@@ -139,23 +144,23 @@ pub struct Cqt {
     t_diff: f32,
 }
 
-/// Creates a new `Cqt` instance.
+/// Creates a new `Vqt` instance.
 ///
 /// # Arguments
 ///
 /// * `sr` - The sample rate of the input audio signal.
 /// * `n_fft` - The number of samples in the longest FFT.
-/// * `min_freq` - The minimum frequency of the lowest note analyzed in the CQT.
-/// * `buckets_per_octave` - The resolution of the CQT in bins per octave.
-/// * `octaves` - The total range in octaves of the CQT.
+/// * `min_freq` - The minimum frequency of the lowest note analyzed in the VQT.
+/// * `buckets_per_octave` - The resolution of the VQT in bins per octave.
+/// * `octaves` - The total range in octaves of the VQT.
 /// * `sparsity_quantile` - The sparsity quantile.
 /// * `quality` - The quality.
 /// * `gamma` - The gamma.
 ///
 /// # Returns
 ///
-/// * A new `Cqt` instance.
-impl Cqt {
+/// * A new `Vqt` instance.
+impl Vqt {
     //#green
 
     #[allow(dead_code)]
@@ -192,7 +197,7 @@ impl Cqt {
         quality: f32,
         gamma: f32,
     ) -> Self {
-        let (cqt_kernel, delay) = Self::cqt_kernel(
+        let (vqt_kernel, delay) = Self::vqt_kernel(
             sr,
             n_fft,
             min_freq,
@@ -203,9 +208,9 @@ impl Cqt {
             gamma,
         );
 
-        println!("CQT Analysis delay: {} ms.", delay.as_millis());
+        println!("VQT Analysis delay: {} ms.", delay.as_millis());
 
-        // TODO: get the info on which ffts are needed first, then create them, then also use them for creation of the cqt_kernel. Currently, the cqt_kernel creates its own ffts and only afterwards provides us with the info on which ffts are needed.
+        // TODO: get the info on which ffts are needed first, then create them, then also use them for creation of the vqt_kernel. Currently, the vqt_kernel creates its own ffts and only afterwards provides us with the info on which ffts are needed.
 
         // prepare resample ffts
         let mut resample_ffts = HashMap::new();
@@ -214,7 +219,7 @@ impl Cqt {
             sr_downscaling_factor,
             unscaled_window,
             ..
-        } in cqt_kernel.windows.grouped_by_sr_scaling.iter()
+        } in vqt_kernel.windows.grouped_by_sr_scaling.iter()
         {
             let cur_unscaled_fft_length = unscaled_window.sufficient_n_fft_size;
             resample_ffts
@@ -245,7 +250,7 @@ impl Cqt {
             _sparsity_quantile: sparsity_quantile,
             _quality: quality,
             _gamma: gamma,
-            cqt_kernel,
+            vqt_kernel,
             delay,
             resample_ffts,
             t_diff: 0.0,
@@ -264,7 +269,7 @@ impl Cqt {
         n_fft: usize,
         freqs: &[f32],
         window_lengths: &[f32],
-    ) -> CqtWindows {
+    ) -> VqtWindows {
         /// Annotated version of the filter parameters, containing computed constraints
         #[derive(Debug, Clone, Copy)]
         struct AnnontatedFilterParams {
@@ -381,7 +386,7 @@ impl Cqt {
             });
         }
 
-        CqtWindows {
+        VqtWindows {
             window_center,
             grouped_by_sr_scaling: grouped,
         }
@@ -470,23 +475,23 @@ impl Cqt {
 
     //#red
 
-    /// Calculates the CQT kernel.
+    /// Calculates the VQT kernel.
     ///
     /// # Arguments
     ///
     /// * `sr` - The sample rate of the input audio signal.
     /// * `n_fft` - The number of samples in the longest FFT.
-    /// * `min_freq` - The minimum frequency of the lowest note analyzed in the CQT.
-    /// * `buckets_per_octave` - The resolution of the CQT in bins per octave.
-    /// * `octaves` - The total range in octaves of the CQT.
+    /// * `min_freq` - The minimum frequency of the lowest note analyzed in the VQT.
+    /// * `buckets_per_octave` - The resolution of the VQT in bins per octave.
+    /// * `octaves` - The total range in octaves of the VQT.
     /// * `sparsity_quantile` - The sparsity quantile.
     /// * `quality` - The quality.
     /// * `gamma` - The gamma.
     ///
     /// # Returns
     ///
-    /// * A tuple consisting of the `CqtKernel` and the delay as `Duration`.
-    fn cqt_kernel(
+    /// * A tuple consisting of the `VqtKernel` and the delay as `Duration`.
+    fn vqt_kernel(
         sr: usize,
         n_fft: usize,
         min_freq: f32,
@@ -495,7 +500,7 @@ impl Cqt {
         sparsity_quantile: f32,
         quality: f32,
         gamma: f32,
-    ) -> (CqtKernel, Duration) {
+    ) -> (VqtKernel, Duration) {
         let freqs = (0..(buckets_per_octave * octaves))
             .map(|k| min_freq * 2.0_f32.powf(k as f32 / buckets_per_octave as f32))
             .collect::<Vec<f32>>();
@@ -504,7 +509,7 @@ impl Cqt {
         let nyquist_frequency = sr / 2;
         if highest_frequency > nyquist_frequency as f32 {
             panic!(
-                "The highest frequency of the CQT kernel is {} Hz, but the Nyquist frequency is {} Hz.",
+                "The highest frequency of the VQT kernel is {} Hz, but the Nyquist frequency is {} Hz.",
                 highest_frequency, nyquist_frequency
             );
         }
@@ -527,12 +532,12 @@ impl Cqt {
             );
         }
 
-        let cqt_windows = Self::group_window_sizes(sr, n_fft, &freqs, &window_lengths);
+        let vqt_windows = Self::group_window_sizes(sr, n_fft, &freqs, &window_lengths);
         for FilterGrouping {
             sr_downscaling_factor,
             unscaled_window,
             filters,
-        } in cqt_windows.grouped_by_sr_scaling.iter()
+        } in vqt_windows.grouped_by_sr_scaling.iter()
         {
             debug!(
                 "sr scaling {}, window: {:?}:",
@@ -549,7 +554,7 @@ impl Cqt {
         }
 
         let mut planner = FftPlanner::new();
-        let kernel_octaves = cqt_windows
+        let kernel_octaves = vqt_windows
             .grouped_by_sr_scaling
             .iter()
             .map(
@@ -572,7 +577,7 @@ impl Cqt {
                             *sr_downscaling_factor,
                             *filter_params,
                             *unscaled_window,
-                            cqt_windows.window_center,
+                            vqt_windows.window_center,
                             &fft,
                         );
                         // fill the kernel matrix
@@ -597,12 +602,12 @@ impl Cqt {
             .map(|m| m.to_csr())
             .collect::<Vec<sprs::CsMat<num_complex::Complex<f32>>>>();
 
-        let delay = Duration::from_secs_f32((n_fft as f32 - cqt_windows.window_center) / sr as f32);
+        let delay = Duration::from_secs_f32((n_fft as f32 - vqt_windows.window_center) / sr as f32);
 
         (
-            CqtKernel {
+            VqtKernel {
                 filter_bank: kernel,
-                windows: cqt_windows,
+                windows: vqt_windows,
             },
             delay,
         )
@@ -666,17 +671,17 @@ impl Cqt {
 
     //#pink
 
-    /// Calculates the Constant-Q Transform (CQT) of the given input signal at a specific time instant.
+    /// Calculates the variable-Q Transform (VQT) of the given input signal at a specific time instant.
     /// The result is given in dB scale. The function performs multiple FFTs on resampled versions of
-    /// the input signal and applies the precomputed CQT kernel to each FFT output to obtain the CQT.
+    /// the input signal and applies the precomputed VQT kernel to each FFT output to obtain the VQT.
     /// It then converts the results into the dB scale and combines them into a single output vector.
     ///
     /// # Arguments
-    /// * `x`: The input signal for which the CQT is to be calculated.
+    /// * `x`: The input signal for which the VQT is to be calculated.
     ///
     /// # Returns
-    /// A vector containing the CQT of the input signal in dB scale.
-    pub fn calculate_cqt_instant_in_db(&self, x: &[f32]) -> Vec<f32> {
+    /// A vector containing the VQT of the input signal in dB scale.
+    pub fn calculate_vqt_instant_in_db(&self, x: &[f32]) -> Vec<f32> {
         // TODO: we are doing a lot of unnecessary ffts here, just because the interface of the resampler
         // neither allows us to reuse the same frame for subsequent downsamplings, nor allows us to do the
         // fft ourselves.
@@ -686,7 +691,7 @@ impl Cqt {
 
         //dbg!(reduced_n_fft);
 
-        let mut x_cqt = vec![Complex32::zero(); self.buckets_per_octave * self.octaves];
+        let mut x_vqt = vec![Complex32::zero(); self.buckets_per_octave * self.octaves];
         let mut offset = 0;
         for (
             FilterGrouping {
@@ -696,11 +701,11 @@ impl Cqt {
             },
             filter_matrix,
         ) in self
-            .cqt_kernel
+            .vqt_kernel
             .windows
             .grouped_by_sr_scaling
             .iter()
-            .zip(self.cqt_kernel.filter_bank.iter())
+            .zip(self.vqt_kernel.filter_bank.iter())
         {
             assert_eq!(filters.len(), filter_matrix.shape().0);
 
@@ -740,12 +745,12 @@ impl Cqt {
             sprs::prod::mul_acc_mat_vec_csr(
                 filter_matrix.view(),
                 x_fft,
-                &mut x_cqt[offset..(offset + filter_matrix.shape().0)],
+                &mut x_vqt[offset..(offset + filter_matrix.shape().0)],
             );
             offset += filter_matrix.shape().0;
         }
 
-        let power: Vec<f32> = x_cqt
+        let power: Vec<f32> = x_vqt
             .iter()
             .map(|z| (z.abs() * z.abs()))
             .collect::<Vec<f32>>();

@@ -14,11 +14,11 @@ use bevy::window::ApplicationLifetime;
 use wasm_bindgen::prelude::*;
 mod analysis_system;
 mod audio_system;
-mod cqt_system;
 mod display_system;
 #[cfg(feature = "ml")]
 mod ml_system;
 mod util;
+mod vqt_system;
 
 #[cfg(target_os = "android")]
 use android_activity::AndroidApp;
@@ -62,7 +62,7 @@ pub async fn main_fun() -> Result<(), JsValue> {
         .await
         .unwrap();
 
-    let cqt = pitchvis_analysis::cqt::Cqt::new(
+    let vqt = pitchvis_analysis::vqt::Vqt::new(
         SR,
         N_FFT,
         FREQ_A1,
@@ -75,7 +75,7 @@ pub async fn main_fun() -> Result<(), JsValue> {
 
     audio_stream.play().unwrap();
 
-    let update_cqt_system = cqt_system::update_cqt_to_system(BUFSIZE);
+    let update_vqt_system = vqt_system::update_vqt_to_system(BUFSIZE);
     let update_analysis_state_system =
         analysis_system::update_analysis_state_to_system(OCTAVES, BUCKETS_PER_OCTAVE);
     let update_display_system =
@@ -86,8 +86,8 @@ pub async fn main_fun() -> Result<(), JsValue> {
         .add_plugin(LogDiagnosticsPlugin::default())
         .add_plugin(FrameTimeDiagnosticsPlugin::default())
         // .add_plugin(MaterialPlugin::<display_system::LineMaterial>::default())
-        .insert_resource(cqt_system::CqtResource(cqt))
-        .insert_resource(cqt_system::CqtResultResource::new(
+        .insert_resource(vqt_system::VqtResource(vqt))
+        .insert_resource(vqt_system::VqtResultResource::new(
             OCTAVES,
             BUCKETS_PER_OCTAVE,
         ))
@@ -105,8 +105,8 @@ pub async fn main_fun() -> Result<(), JsValue> {
             BUCKETS_PER_OCTAVE,
         ))
         .add_system(bevy::window::close_on_esc)
-        .add_system(update_cqt_system)
-        .add_system(update_analysis_state_system.after(update_cqt_system))
+        .add_system(update_vqt_system)
+        .add_system(update_analysis_state_system.after(update_vqt_system))
         .add_system(update_display_system.after(update_analysis_state_system))
         .run();
 
@@ -393,7 +393,7 @@ pub fn main_fun() -> Result<()> {
 
     let audio_stream = pitchvis_audio::audio::AudioStream::new(SR, BUFSIZE).unwrap();
 
-    let cqt = pitchvis_analysis::cqt::Cqt::new(
+    let vqt = pitchvis_analysis::vqt::Vqt::new(
         SR,
         N_FFT,
         FREQ_A1,
@@ -406,7 +406,7 @@ pub fn main_fun() -> Result<()> {
 
     audio_stream.play().unwrap();
 
-    let update_cqt_system = cqt_system::update_cqt_to_system(BUFSIZE);
+    let update_vqt_system = vqt_system::update_vqt_to_system(BUFSIZE);
     let update_analysis_state_system =
         analysis_system::update_analysis_state_to_system(OCTAVES, BUCKETS_PER_OCTAVE);
     #[cfg(feature = "ml")]
@@ -425,8 +425,8 @@ pub fn main_fun() -> Result<()> {
         .add_plugins(Material2dPlugin::<
             display_system::material::NoisyColorMaterial,
         >::default())
-        .insert_resource(cqt_system::CqtResource(cqt))
-        .insert_resource(cqt_system::CqtResultResource::new(
+        .insert_resource(vqt_system::VqtResource(vqt))
+        .insert_resource(vqt_system::VqtResultResource::new(
             OCTAVES,
             BUCKETS_PER_OCTAVE,
         ))
@@ -456,7 +456,7 @@ pub fn main_fun() -> Result<()> {
             (
                 bevy::window::close_on_esc,
                 frame_limiter_system,
-                update_cqt_system,
+                update_vqt_system,
                 user_input_system,
                 fps_text_update_system,
                 fps_counter_showhide,
@@ -464,7 +464,7 @@ pub fn main_fun() -> Result<()> {
         )
         .add_systems(
             Update,
-            update_analysis_state_system.after(update_cqt_system),
+            update_analysis_state_system.after(update_vqt_system),
         );
     #[cfg(feature = "ml")]
     app.add_systems(
@@ -501,7 +501,7 @@ fn main() {
 
     let audio_stream = pitchvis_audio::audio::AudioStream::new(SR, BUFSIZE).unwrap();
 
-    let cqt = pitchvis_analysis::cqt::Cqt::new(
+    let vqt = pitchvis_analysis::vqt::Vqt::new(
         SR,
         N_FFT,
         FREQ_A1,
@@ -514,7 +514,7 @@ fn main() {
 
     audio_stream.play().unwrap();
 
-    let update_cqt_system = cqt_system::update_cqt_to_system(BUFSIZE);
+    let update_vqt_system = vqt_system::update_vqt_to_system(BUFSIZE);
     let update_analysis_state_system =
         analysis_system::update_analysis_state_to_system(OCTAVES, BUCKETS_PER_OCTAVE);
     let update_display_system =
@@ -544,8 +544,8 @@ fn main() {
     .add_plugin(LogDiagnosticsPlugin::default())
     .add_plugin(FrameTimeDiagnosticsPlugin::default())
     //.add_plugin(MaterialPlugin::<display_system::LineMaterial>::default())
-    .insert_resource(cqt_system::CqtResource(cqt))
-    .insert_resource(cqt_system::CqtResultResource::new(
+    .insert_resource(vqt_system::VqtResource(vqt))
+    .insert_resource(vqt_system::VqtResultResource::new(
         OCTAVES,
         BUCKETS_PER_OCTAVE,
     ))
@@ -564,8 +564,8 @@ fn main() {
         ))
         .add_system(bevy::window::close_on_esc)
         .add_system(frame_limiter_system)
-        .add_system(update_cqt_system)
-        .add_system(update_analysis_state_system.after(update_cqt_system))
+        .add_system(update_vqt_system)
+        .add_system(update_analysis_state_system.after(update_vqt_system))
         .add_system(update_display_system.after(update_analysis_state_system));
 
     // MSAA makes some Android devices panic, this is under investigation
@@ -618,7 +618,7 @@ fn main() {
             android_activity::WindowManagerFlags::empty(),
         );
 
-    let cqt = pitchvis_analysis::cqt::Cqt::new(
+    let vqt = pitchvis_analysis::vqt::Vqt::new(
         SR,
         N_FFT,
         FREQ_A1,
@@ -681,7 +681,7 @@ fn main() {
 
     audio_stream.request_start().unwrap();
 
-    let update_cqt_system = cqt_system::update_cqt_to_system(BUFSIZE);
+    let update_vqt_system = vqt_system::update_vqt_to_system(BUFSIZE);
     let update_analysis_state_system =
         analysis_system::update_analysis_state_to_system(OCTAVES, BUCKETS_PER_OCTAVE);
     let update_display_system =
@@ -707,8 +707,8 @@ fn main() {
         FrameTimeDiagnosticsPlugin::default(),
         Material2dPlugin::<display_system::material::NoisyColorMaterial>::default(),
     ))
-    .insert_resource(cqt_system::CqtResource(cqt))
-    .insert_resource(cqt_system::CqtResultResource::new(
+    .insert_resource(vqt_system::VqtResource(vqt))
+    .insert_resource(vqt_system::VqtResultResource::new(
         OCTAVES,
         BUCKETS_PER_OCTAVE,
     ))
@@ -736,10 +736,10 @@ fn main() {
         (
             bevy::window::close_on_esc,
             frame_limiter_system,
-            update_cqt_system,
+            update_vqt_system,
             user_input_system,
             handle_lifetime_events_system,
-            update_analysis_state_system.after(update_cqt_system),
+            update_analysis_state_system.after(update_vqt_system),
             update_display_system.after(update_analysis_state_system),
             fps_text_update_system,
             fps_counter_showhide,

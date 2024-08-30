@@ -16,7 +16,7 @@ fn min(sl: &[f32]) -> f32 {
         .fold(f32::MAX, |cur, x| if *x < cur { *x } else { cur })
 }
 
-pub struct Cqt {
+pub struct Vqt {
     sr: usize,
     n_fft: usize,
     min_freq: f32,
@@ -25,12 +25,12 @@ pub struct Cqt {
     _sparsity_quantile: f32,
     _quality: f32,
     _gamma: f32,
-    cqt_kernel: Vec<sprs::CsMat<Complex32>>,
+    vqt_kernel: Vec<sprs::CsMat<Complex32>>,
     fft: std::sync::Arc<dyn rustfft::Fft<f32>>,
     _t_diff: f32,
 }
 
-impl Cqt {
+impl Vqt {
     #[allow(dead_code)]
     fn test_create_sines(&self, t_diff: f32) -> Vec<f32> {
         let mut wave = vec![0.0; self.n_fft];
@@ -65,7 +65,7 @@ impl Cqt {
         let mut planner = FftPlanner::new();
         let fft = planner.plan_fft_forward(reduced_n_fft as usize);
 
-        let cqt_kernel = Self::cqt_kernel(
+        let vqt_kernel = Self::vqt_kernel(
             sr,
             n_fft,
             min_freq,
@@ -85,13 +85,13 @@ impl Cqt {
             _sparsity_quantile: sparsity_quantile,
             _quality: quality,
             _gamma: gamma,
-            cqt_kernel,
+            vqt_kernel,
             fft,
             _t_diff: 0.0,
         }
     }
 
-    fn cqt_kernel(
+    fn vqt_kernel(
         sr: usize,
         n_fft: usize,
         min_freq: f32,
@@ -267,7 +267,7 @@ impl Cqt {
             .collect::<Vec<f32>>()
     }
 
-    pub fn calculate_cqt_instant_in_db(&mut self, x: &[f32]) -> Vec<f32> {
+    pub fn calculate_vqt_instant_in_db(&mut self, x: &[f32]) -> Vec<f32> {
         // TODO: we are doing a lot of unnecessary ffts here, just because the interface of the resampler
         // neither allows us to reuse the same frame for subsequent downsamplings, nor allows us to do the
         // fft ourselves.
@@ -277,7 +277,7 @@ impl Cqt {
 
         //dbg!(reduced_n_fft);
 
-        let mut x_cqt = vec![Complex32::zero(); self.buckets_per_octave * self.octaves];
+        let mut x_vqt = vec![Complex32::zero(); self.buckets_per_octave * self.octaves];
         for cur_octave in 0..self.octaves {
             let cur_resampling_factor = 1 << (self.octaves - 1 - cur_octave);
             let cur_fft_length = self.n_fft >> cur_octave;
@@ -296,11 +296,11 @@ impl Cqt {
             //dbg!(max(&std::iter::zip(x_selection.iter().copied(), vv.iter().copied()).map(|(a, b)| (a-b).abs()).collect::<Vec<f32>>()));
             //dbg!(std::iter::zip(x_selection.iter().copied(), vv.iter().copied()).take(10).collect::<Vec<(f32,f32)>>());
             self.fft.process(&mut x_fft);
-            //dbg!(self.cqt_kernel[cur_octave].shape(), x_fft.len());
+            //dbg!(self.vqt_kernel[cur_octave].shape(), x_fft.len());
             sprs::prod::mul_acc_mat_vec_csr(
-                self.cqt_kernel[cur_octave].view(),
+                self.vqt_kernel[cur_octave].view(),
                 x_fft,
-                &mut x_cqt[(cur_octave * self.buckets_per_octave)
+                &mut x_vqt[(cur_octave * self.buckets_per_octave)
                     ..((cur_octave + 1) * self.buckets_per_octave)],
             );
         }
@@ -314,12 +314,12 @@ impl Cqt {
         let a_min: f32 = 1e-6.powf(2.0);
         let top_db: f32 = 60.0;
 
-        let power: Vec<f32> = x_cqt
+        let power: Vec<f32> = x_vqt
             .iter()
             .map(|z| (z.abs() * z.abs()))
             .collect::<Vec<f32>>();
         #[allow(unused_variables)]
-        let abs: Vec<f32> = x_cqt.iter().map(|z| (z.abs())).collect::<Vec<f32>>();
+        let abs: Vec<f32> = x_vqt.iter().map(|z| (z.abs())).collect::<Vec<f32>>();
 
         let mut log_spec = power
             .iter()
@@ -348,7 +348,7 @@ impl Cqt {
             }
         });
 
-        // let x_cqt: Vec<f32> = x_cqt
+        // let x_vqt: Vec<f32> = x_vqt
         //     .iter()
         //     .map(|z| (z.abs() * z.abs()).log(10.0).max(-2.0) + 2.0)
         //     .collect();

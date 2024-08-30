@@ -26,7 +26,7 @@ const FPS: u64 = 30;
 
 struct AppState {
     audio_stream: pitchvis_audio::audio::AudioStream,
-    cqt: pitchvis_analysis::cqt::Cqt,
+    vqt: pitchvis_analysis::vqt::Vqt,
     display: display::Display,
 }
 
@@ -37,18 +37,18 @@ impl State for AppState {
 
         let t_loop = performance.now();
 
-        //let t_cqt = std::time::Instant::now();
+        //let t_vqt = std::time::Instant::now();
         let (x, gain) = {
             let mut x = vec![0.0_f32; N_FFT];
             let rb = &self.audio_stream.ring_buffer.lock().unwrap();
             x.copy_from_slice(&rb.buf[(BUFSIZE - N_FFT)..]);
             (x, rb.gain)
         };
-        let x_cqt = self.cqt.calculate_cqt_instant_in_db(&x);
-        // println!("CQT calculated in {}ms", t_cqt.elapsed().as_millis());
+        let x_vqt = self.vqt.calculate_vqt_instant_in_db(&x);
+        // println!("VQT calculated in {}ms", t_vqt.elapsed().as_millis());
 
         //let t_render = std::time::Instant::now();
-        self.display.render(window, &x_cqt, gain);
+        self.display.render(window, &x_vqt, gain);
         // println!("rendered in {}ms", t_render.elapsed().as_millis());
 
         let time_passed = performance.now() - t_loop;
@@ -80,7 +80,7 @@ pub async fn main_fun() -> Result<(), JsValue> {
         .await
         .unwrap();
 
-    let cqt = pitchvis_analysis::cqt::Cqt::new(
+    let vqt = pitchvis_analysis::vqt::Vqt::new(
         SR,
         N_FFT,
         FREQ_A1,
@@ -100,7 +100,7 @@ pub async fn main_fun() -> Result<(), JsValue> {
 
     let app_state = AppState {
         audio_stream,
-        cqt,
+        vqt,
         display,
     };
 
