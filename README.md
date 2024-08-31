@@ -5,6 +5,8 @@ Watch a demo video here:
 
 [![Pitchvis Demo Video](https://img.youtube.com/vi/zVvoLa5aYY0/0.jpg)](https://www.youtube.com/watch?v=zVvoLa5aYY0)
 
+Get the Android App here: https://play.google.com/store/apps/details?id=org.p1graph.pitchvis
+
 # instructions
 
 To run the viewer, run `cargo r --features bevy/dynamic_linking --bin pitchvis` from within `pitchvis_viewer/`.
