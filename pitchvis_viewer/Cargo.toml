@@ -35,11 +35,11 @@ path = "src/main.rs"
 anyhow = "1.0"
 itertools = "0.13.0"
 log = "0.4.17"
-bevy = "0.13.2"
+bevy = "0.14.1"
 nalgebra = "0.32.2"
 pitchvis_analysis = { path = "../pitchvis_analysis" }
 pitchvis_audio = { path = "../pitchvis_audio" }
-dagc = {version = "0.1.0", path = "../dagc_fork" } # TODO: fork and reference fork as patched dependency
+dagc = {version = "0.1.0", path = "../dagc_fork" } # FIXME: fork and reference fork as patched dependency
 
 [target.'cfg(target_os = "android")'.dependencies]
 android-activity = { version = "0.5", features = ["native-activity"] }

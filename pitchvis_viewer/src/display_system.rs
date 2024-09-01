@@ -98,7 +98,7 @@ pub fn setup_display(
     for (idx, (x, y, _z)) in spiral_points.iter().enumerate() {
         // spheres
         let noisy_color_material = NoisyColorMaterial {
-            color: Color::rgb(1.0, 0.7, 0.6),
+            color: Color::srgb(1.0, 0.7, 0.6).into(),
             noise_level: 0.0,
         };
         commands.spawn((
@@ -144,7 +144,7 @@ pub fn setup_display(
                     BassCylinder,
                     MaterialMesh2dBundle {
                         mesh: meshes.add(Rectangle::new(0.05, h + 0.01)).into(),
-                        material: color_materials.add(Color::rgb(0.8, 0.7, 0.6)),
+                        material: color_materials.add(Color::srgb(0.8, 0.7, 0.6)),
                         transform,
                         visibility: Visibility::Hidden,
                         ..default()
@@ -174,7 +174,7 @@ pub fn setup_display(
                 thickness: 0.05,
             }))
             .into(),
-        material: color_materials.add(Color::rgb(0.3, 0.3, 0.3)),
+        material: color_materials.add(Color::srgb(0.3, 0.3, 0.3)),
         transform: Transform::from_xyz(0.0, 0.0, -13.0),
         ..default()
     });
@@ -192,7 +192,7 @@ pub fn setup_display(
     };
     commands.spawn(MaterialMesh2dBundle {
         mesh: meshes.add(spiral_mesh).into(),
-        material: color_materials.add(Color::rgb(0.3, 0.3, 0.3)),
+        material: color_materials.add(Color::srgb(0.3, 0.3, 0.3)),
         transform: Transform::from_xyz(0.0, 0.0, -13.0),
         ..default()
     });
@@ -212,7 +212,7 @@ pub fn setup_display(
     //     Spectrum,
     //     MaterialMesh2dBundle {
     //         mesh: meshes.add(spectrum_mesh).into(),
-    //         material: materials.add(Color::rgb(0.25, 0.85, 0.20)),
+    //         material: materials.add(Color::srgb(0.25, 0.85, 0.20)),
     //         transform: Transform::from_xyz(-12.0, 3.0, -13.0),
     //         ..default()
     //     },
@@ -249,7 +249,7 @@ pub fn setup_display(
         camera: Camera {
             // renders after / on top of the main camera
             order: 1,
-            clear_color: ClearColorConfig::Custom(Color::rgb(0.23, 0.23, 0.25)),
+            clear_color: ClearColorConfig::Custom(Color::srgb(0.23, 0.23, 0.25)),
             ..default()
         },
         projection: OrthographicProjection {
@@ -276,7 +276,7 @@ pub fn setup_display(
                     PITCH_NAMES[pitch_idx],
                     TextStyle {
                         font_size: 40.0,
-                        color: Color::rgb(r, g, b),
+                        color: Color::srgb(r, g, b),
                         ..default()
                     },
                 )
@@ -384,7 +384,7 @@ pub fn update_display(
             let color_mat = noisy_color_materials
                 .get_mut(&*color)
                 .expect("ball color material");
-            color_mat.color.set_a(color_mat.color.a() * dropoff_factor);
+            color_mat.color = color_mat.color.with_alpha(color_mat.color.alpha() * dropoff_factor);
 
             // also shift shrinking circles slightly to the background so that they are not cluttering newly appearing larger circles
             transform.translation.z -= 0.001;
@@ -444,21 +444,21 @@ pub fn update_display(
                 let color_mat = noisy_color_materials
                     .get_mut(&*color)
                     .expect("ball color material");
-                // color_mat.color = Color::rgb(
+                // color_mat.color = Color::srgb(
                 //     r * color_coefficient,
                 //     g * color_coefficient,
                 //     b * color_coefficient,
                 // );
-                color_mat.color = Color::rgba(r, g, b, color_coefficient);
+                color_mat.color = Color::srgba(r, g, b, color_coefficient).into();
 
                 #[cfg(feature = "ml")]
                 if let Some(midi_pitch) = vqt_bin_to_midi_pitch(buckets_per_octave, idx) {
                     let inferred_midi_pitch_strength =
                         analysis_state.ml_midi_base_pitches[midi_pitch];
                     if inferred_midi_pitch_strength > 0.35 {
-                        color_mat.color = Color::rgba(r, g, b, 1.0);
+                        color_mat.color = Color::srgba(r, g, b, 1.0);
                     } else {
-                        color_mat.color = Color::rgba(r, g, b, color_coefficient * 0.1);
+                        color_mat.color = Color::srgba(r, g, b, color_coefficient * 0.1);
                     }
                 }
 
@@ -507,8 +507,8 @@ pub fn update_display(
             let color_mat = noisy_color_materials
                 .get_mut(&*color)
                 .expect("ball color material");
-            // color_mat.color = Color::rgba(r, g, b, 1.0);
-            color_mat.color = Color::rgba(r, g, b, color_coefficient);
+            // color_mat.color = Color::srgba(r, g, b, 1.0);
+            color_mat.color = Color::srgba(r, g, b, color_coefficient).into();
 
             transform.scale = Vec3::splat(size * scale_factor);
 
@@ -998,7 +998,7 @@ fn update_bass_spiral(
             materials
                 .get_mut(&*color)
                 .expect("cylinder color material")
-                .color = Color::rgba(r, g, b, color_coefficient);
+                .color = Color::srgba(r, g, b, color_coefficient);
 
             // let radius = 0.08;
             // c.set_local_scale(radius, *height, radius);

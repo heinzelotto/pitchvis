@@ -129,7 +129,7 @@ fn setup_fps_counter(mut commands: Commands) {
             FpsRoot,
             NodeBundle {
                 // give it a dark background for readability
-                background_color: BackgroundColor(Color::BLACK.with_a(0.5)),
+                background_color: BackgroundColor(Color::BLACK.with_alpha(0.5)),
                 // make it "always on top" by setting the Z index to maximum
                 // we want it to be displayed over all other UI
                 z_index: ZIndex::Global(i32::MAX),
@@ -209,16 +209,16 @@ fn fps_text_update_system(
             // text according to the FPS value:
             text.sections[1].style.color = if value >= 120.0 {
                 // Above 120 FPS, use green color
-                Color::rgb(0.0, 1.0, 0.0)
+                Color::srgb(0.0, 1.0, 0.0)
             } else if value >= 60.0 {
                 // Between 60-120 FPS, gradually transition from yellow to green
-                Color::rgb((1.0 - (value - 60.0) / (120.0 - 60.0)) as f32, 1.0, 0.0)
+                Color::srgb((1.0 - (value - 60.0) / (120.0 - 60.0)) as f32, 1.0, 0.0)
             } else if value >= 30.0 {
                 // Between 30-60 FPS, gradually transition from red to yellow
-                Color::rgb(1.0, ((value - 30.0) / (60.0 - 30.0)) as f32, 0.0)
+                Color::srgb(1.0, ((value - 30.0) / (60.0 - 30.0)) as f32, 0.0)
             } else {
                 // Below 30 FPS, use red color
-                Color::rgb(1.0, 0.0, 0.0)
+                Color::srgb(1.0, 0.0, 0.0)
             }
         } else {
             // display "N/A" if we can't get a FPS measurement
@@ -286,6 +286,22 @@ fn user_input_system(
                 }
                 _ => {}
             }
+        }
+    }
+}
+
+pub fn close_on_esc(
+    mut commands: Commands,
+    focused_windows: Query<(Entity, &Window)>,
+    input: Res<ButtonInput<KeyCode>>,
+) {
+    for (window, focus) in focused_windows.iter() {
+        if !focus.focused {
+            continue;
+        }
+
+        if input.just_pressed(KeyCode::Escape) {
+            commands.entity(window).despawn();
         }
     }
 }
@@ -454,7 +470,7 @@ pub fn main_fun() -> Result<()> {
         .add_systems(
             Update,
             (
-                bevy::window::close_on_esc,
+                close_on_esc,
                 frame_limiter_system,
                 update_vqt_system,
                 user_input_system,

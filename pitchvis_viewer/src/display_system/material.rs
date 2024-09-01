@@ -10,7 +10,7 @@ use bevy::{
 #[derive(Asset, TypePath, AsBindGroup, Debug, Clone)]
 pub struct NoisyColorMaterial {
     #[uniform(0)]
-    pub color: Color,
+    pub color: LinearRgba,
     #[uniform(1)]
     pub noise_level: f32,
 }
