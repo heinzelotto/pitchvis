@@ -352,7 +352,6 @@ fn handle_lifetime_events_system(
 
                 // This is a workaround to exit the app, but it's not clean.
                 std::process::exit(0);
-                panic!("App should have exited");
             }
             // On `Resumed``, audio can continue playing
             AppLifecycle::WillResume => {
