@@ -23,16 +23,33 @@ opt-level = 1
 [profile.dev.package."*"]
 opt-level = 3
 
+# bug in the winit version used in bevy 0.14, see https://github.com/bevyengine/bevy/issues/14291
+[profile.dev.package.wgpu-types]
+debug-assertions = false
+
+# We can't use the custom profile yet because wasm-pack doesn't support it
+# https://github.com/rustwasm/wasm-pack/pull/1428
+# so we use the default profile for this, even if the web version is not the main viewer...
+[profile.release]
+strip = true
+# codegen-units = 1
+lto = "thin"
+opt-level = 'z'
+panic = "abort"
+
+[profile.non-web-release]
+inherits = "release"
+strip = true
+#codegen-units = 1
+# lto = true
+lto = "thin" # TODO: could gain additional perfomance by changing to true, even if it's horribly slow
+opt-level = 2
+panic = "unwind"
+
 [profile.release.package.pitchvis_serial]
 strip = true  # Automatically strip symbols from the binary.
 opt-level = "z"  # Optimize for size.
 #panic = "abort"  # Abort on panic.
 
-[profile.release.package.pitchvis-wasm-kiss3d]
-strip = true
-
 [patch.crates-io]
 kiss3d = { git = "https://github.com/heinzelotto/kiss3d" }
-
-[profile.release]
-lto = true  # Enable link-time optimization.

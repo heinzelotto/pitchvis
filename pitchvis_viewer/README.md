@@ -27,4 +27,11 @@ Tap to cycle through view modes.
 
 # Webapp
 
-TODO: This is currently not building. You can check out https://www.p1graph.org/pitchvis/ for the hosted kiss3d version.
+You can check it out at https://www.p1graph.org/pitchvis/ 
+
+To build:
+
+```bash
+npm install
+npm run build # or `npm run serve` for a locally hosted
+```

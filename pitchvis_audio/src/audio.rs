@@ -102,7 +102,7 @@ where
 
     let target_sample_rate = config.sample_rate.0 as usize;
 
-    let n_channels = config.channels as usize;
+    let _n_channels = config.channels as usize;
 
     // let buffer_size_frames = match config.buffer_size {
     //     BufferSize::Fixed(v) => {
@@ -138,8 +138,8 @@ where
     };
 
     // Create the WebAudio stream.
-    let mut stream_opts = AudioContextOptions::new();
-    stream_opts.sample_rate(microphone_sample_rate);
+    let stream_opts = AudioContextOptions::new();
+    stream_opts.set_sample_rate(microphone_sample_rate);
     let ctx = Arc::new(
         AudioContext::new_with_context_options(&stream_opts).map_err(
             |err| -> BuildStreamError {
@@ -150,18 +150,18 @@ where
         )?,
     );
 
+    let media_stream_constraints = web_sys::MediaStreamConstraints::new();
+    media_stream_constraints.set_audio(&wasm_bindgen::JsValue::from_str(
+        "{sampleRate: 22050, channelCount: 1}",
+    ));
+    media_stream_constraints.set_video(&wasm_bindgen::JsValue::FALSE);
+
     let media_stream_js = JsFuture::from(
         window
             .navigator()
             .media_devices()
             .unwrap()
-            .get_user_media_with_constraints(
-                web_sys::MediaStreamConstraints::new()
-                    .audio(&wasm_bindgen::JsValue::from_str(
-                        "{sampleRate: 22050, channelCount: 1}",
-                    ))
-                    .video(&wasm_bindgen::JsValue::FALSE),
-            )
+            .get_user_media_with_constraints(&media_stream_constraints)
             .unwrap(),
     )
     .await
@@ -269,7 +269,7 @@ impl AudioStream {
 
         //panic!("{:?}", device_names);
 
-        let device = host.devices().unwrap().next().unwrap();
+        let _device = host.devices().unwrap().next().unwrap();
 
         //panic!("{}", device.supported_input_configs().unwrap().count());
 

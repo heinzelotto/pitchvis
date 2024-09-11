@@ -9,7 +9,7 @@ use bevy::input::touch::TouchPhase;
 use bevy::prelude::*;
 use bevy::sprite::Material2dPlugin;
 #[cfg(target_os = "android")]
-use bevy::window::ApplicationLifetime;
+use bevy::window::AppLifecycle;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 mod analysis_system;
@@ -52,11 +52,12 @@ pub const GAMMA: f32 = 5.3 * Q;
 const FPS: u64 = 33;
 #[cfg(not(target_os = "android"))]
 const FPS: u64 = 30;
+// TODO: make the animation speed/blurring windows/... independent of the frame rate
 
 use bevy::diagnostic::DiagnosticsStore;
 
-#[wasm_bindgen]
 #[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
 pub async fn main_fun() -> Result<(), JsValue> {
     let audio_stream = pitchvis_audio::audio::AudioStream::async_new(SR, BUFSIZE)
         .await
@@ -82,10 +83,13 @@ pub async fn main_fun() -> Result<(), JsValue> {
         display_system::update_display_to_system(BUCKETS_PER_OCTAVE, OCTAVES);
 
     App::new()
-        .add_plugins(DefaultPlugins)
-        .add_plugin(LogDiagnosticsPlugin::default())
-        .add_plugin(FrameTimeDiagnosticsPlugin::default())
-        // .add_plugin(MaterialPlugin::<display_system::LineMaterial>::default())
+        .add_plugins((
+            DefaultPlugins,
+            LogDiagnosticsPlugin::default(),
+            FrameTimeDiagnosticsPlugin::default(),
+            // .add_plugin(MaterialPlugin::<display_system::LineMaterial>::default())
+            Material2dPlugin::<display_system::material::NoisyColorMaterial>::default(),
+        ))
         .insert_resource(vqt_system::VqtResource(vqt))
         .insert_resource(vqt_system::VqtResultResource::new(
             OCTAVES,
@@ -100,14 +104,30 @@ pub async fn main_fun() -> Result<(), JsValue> {
                 pitchvis_analysis::analysis::SPECTROGRAM_LENGTH,
             ),
         ))
-        .add_startup_system(display_system::setup_display_to_system(
-            OCTAVES,
-            BUCKETS_PER_OCTAVE,
-        ))
-        .add_system(bevy::window::close_on_esc)
-        .add_system(update_vqt_system)
-        .add_system(update_analysis_state_system.after(update_vqt_system))
-        .add_system(update_display_system.after(update_analysis_state_system))
+        .insert_resource(display_system::CylinderEntityListResource(Vec::new()))
+        .insert_resource(display_system::SettingsState {
+            display_mode: display_system::DisplayMode::PitchnamesCalmness,
+        })
+        .add_systems(
+            Startup,
+            (
+                display_system::setup_display_to_system(OCTAVES, BUCKETS_PER_OCTAVE),
+                setup_fps_counter,
+            ),
+        )
+        .add_systems(
+            Update,
+            (
+                close_on_esc,
+                // frame_limiter_system, // FIXME: this is not working on wasm
+                update_vqt_system,
+                update_analysis_state_system.after(update_vqt_system),
+                update_display_system.after(update_analysis_state_system),
+                user_input_system,
+                fps_text_update_system,
+                fps_counter_showhide,
+            ),
+        )
         .run();
 
     Ok(())
@@ -308,15 +328,17 @@ pub fn close_on_esc(
 
 #[cfg(target_os = "android")]
 fn handle_lifetime_events_system(
-    mut lifetime_events: EventReader<ApplicationLifetime>,
+    mut lifetime_events: EventReader<AppLifecycle>,
     // audio_control_tx: ResMut<AudioControlChannelResource>,
-    // mut exit: EventWriter<AppExit>,
+    mut exit: EventWriter<AppExit>,
 ) {
+    use bevy::window::AppLifecycle;
+
     for event in lifetime_events.read() {
         match event {
             // Upon receiving the `Suspended` event, the application has 1 frame before it is paused
             // As audio happens in an independent thread, it needs to be stopped
-            ApplicationLifetime::Suspended => {
+            AppLifecycle::WillSuspend | AppLifecycle::Suspended => {
                 // FIXME: suspending audio does not seem to be good enough, we still get crashes
                 // that block the entire android UI and sometimes seem to require a reboot.
                 // audio_control_tx.0.send(AudioControl::Pause).unwrap();
@@ -326,13 +348,14 @@ fn handle_lifetime_events_system(
 
                 // For now, just quit.
                 // FIXME: also doesn't seem to work, the app is not exiting
-                //exit.send(AppExit);
+                exit.send(AppExit::Success);
 
                 // This is a workaround to exit the app, but it's not clean.
                 std::process::exit(0);
+                panic!("App should have exited");
             }
             // On `Resumed``, audio can continue playing
-            ApplicationLifetime::Resumed => {
+            AppLifecycle::WillResume => {
                 // audio_control_tx.0.send(AudioControl::Play).unwrap();
             }
             // `Started` is the only other event for now, more to come in the next Bevy version
@@ -405,7 +428,9 @@ pub fn request_microphone_permission(android_app: &AndroidApp, permission: &str)
 // desktop main function
 #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
 pub fn main_fun() -> Result<()> {
-    env_logger::init();
+    // env_logger::init();
+
+    use bevy::window::PresentMode;
 
     let audio_stream = pitchvis_audio::audio::AudioStream::new(SR, BUFSIZE).unwrap();
 
@@ -434,28 +459,33 @@ pub fn main_fun() -> Result<()> {
     let ml_model_resource = ml_system::MlModelResource(ml_system::MlModel::new("model.pt"));
 
     let mut app = App::new();
-    app.add_plugins(DefaultPlugins)
-        .add_plugins(LogDiagnosticsPlugin::default())
-        .add_plugins(FrameTimeDiagnosticsPlugin)
+    app.add_plugins((
+        DefaultPlugins, // .set(WindowPlugin {
+        // primary_window: Some(Window {
+        //     present_mode: PresentMode::AutoNoVsync,
+        //     ..default()
+        // }),
+        // ..default()})
+        LogDiagnosticsPlugin::default(),
+        FrameTimeDiagnosticsPlugin,
         //.add_plugin(MaterialPlugin::<display_system::LineMaterial>::default())
-        .add_plugins(Material2dPlugin::<
-            display_system::material::NoisyColorMaterial,
-        >::default())
-        .insert_resource(vqt_system::VqtResource(vqt))
-        .insert_resource(vqt_system::VqtResultResource::new(
-            OCTAVES,
-            BUCKETS_PER_OCTAVE,
-        ))
-        .insert_resource(audio_system::AudioBufferResource(audio_stream.ring_buffer))
-        .insert_resource(analysis_system::AnalysisStateResource(
-            pitchvis_analysis::analysis::AnalysisState::new(
-                OCTAVES * BUCKETS_PER_OCTAVE,
-                pitchvis_analysis::analysis::SPECTROGRAM_LENGTH,
-            ),
-        ))
-        .insert_resource(display_system::SettingsState {
-            display_mode: display_system::DisplayMode::PitchnamesCalmness,
-        });
+        Material2dPlugin::<display_system::material::NoisyColorMaterial>::default(),
+    ))
+    .insert_resource(vqt_system::VqtResource(vqt))
+    .insert_resource(vqt_system::VqtResultResource::new(
+        OCTAVES,
+        BUCKETS_PER_OCTAVE,
+    ))
+    .insert_resource(audio_system::AudioBufferResource(audio_stream.ring_buffer))
+    .insert_resource(analysis_system::AnalysisStateResource(
+        pitchvis_analysis::analysis::AnalysisState::new(
+            OCTAVES * BUCKETS_PER_OCTAVE,
+            pitchvis_analysis::analysis::SPECTROGRAM_LENGTH,
+        ),
+    ))
+    .insert_resource(display_system::SettingsState {
+        display_mode: display_system::DisplayMode::PitchnamesCalmness,
+    });
 
     #[cfg(feature = "ml")]
     app.insert_resource(ml_model_resource);
@@ -476,11 +506,8 @@ pub fn main_fun() -> Result<()> {
                 user_input_system,
                 fps_text_update_system,
                 fps_counter_showhide,
+                update_analysis_state_system.after(update_vqt_system),
             ),
-        )
-        .add_systems(
-            Update,
-            update_analysis_state_system.after(update_vqt_system),
         );
     #[cfg(feature = "ml")]
     app.add_systems(
@@ -501,101 +528,10 @@ pub fn main_fun() -> Result<()> {
     Ok(())
 }
 
-// webapp main function
-#[cfg(target_arch = "wasm32")]
-#[bevy_main]
-fn main() {
-    use bevy::{
-        log::LogPlugin,
-        render::{
-            settings::{WgpuFeatures, WgpuSettings},
-            RenderPlugin,
-        },
-    };
-
-    env_logger::init();
-
-    let audio_stream = pitchvis_audio::audio::AudioStream::new(SR, BUFSIZE).unwrap();
-
-    let vqt = pitchvis_analysis::vqt::Vqt::new(
-        SR,
-        N_FFT,
-        FREQ_A1,
-        BUCKETS_PER_OCTAVE,
-        OCTAVES,
-        SPARSITY_QUANTILE,
-        Q,
-        GAMMA,
-    );
-
-    audio_stream.play().unwrap();
-
-    let update_vqt_system = vqt_system::update_vqt_to_system(BUFSIZE);
-    let update_analysis_state_system =
-        analysis_system::update_analysis_state_to_system(OCTAVES, BUCKETS_PER_OCTAVE);
-    let update_display_system =
-        display_system::update_display_to_system(BUCKETS_PER_OCTAVE, OCTAVES);
-
-    let mut app = App::new();
-    app.add_plugins(
-        DefaultPlugins
-            .set(WindowPlugin {
-                primary_window: Some(Window {
-                    //resizable: false,
-                    mode: bevy::window::WindowMode::BorderlessFullscreen,
-                    ..default()
-                }),
-                ..default()
-            })
-            .set(LogPlugin {
-                filter: "debug".into(),
-                level: bevy::log::Level::DEBUG,
-                update_subscriber: None,
-            }), // .set(RenderPlugin {
-                //     wgpu_settings: WgpuSettings {
-                //         features: WgpuFeatures::POLYGON_MODE_LINE,
-                //         ..default()
-                //     },})
-    )
-    .add_plugin(LogDiagnosticsPlugin::default())
-    .add_plugin(FrameTimeDiagnosticsPlugin::default())
-    //.add_plugin(MaterialPlugin::<display_system::LineMaterial>::default())
-    .insert_resource(vqt_system::VqtResource(vqt))
-    .insert_resource(vqt_system::VqtResultResource::new(
-        OCTAVES,
-        BUCKETS_PER_OCTAVE,
-    ))
-    .insert_resource(audio_system::AudioBufferResource(ring_buffer))
-    .insert_resource(analysis_system::AnalysisStateResource(
-        pitchvis_analysis::analysis::AnalysisState::new(
-            OCTAVES * BUCKETS_PER_OCTAVE,
-            pitchvis_analysis::analysis::SPECTROGRAM_LENGTH,
-        ),
-    ));
-
-    app.insert_resource(display_system::CylinderEntityListResource(Vec::new()))
-        .add_startup_system(display_system::setup_display_to_system(
-            OCTAVES,
-            BUCKETS_PER_OCTAVE,
-        ))
-        .add_system(bevy::window::close_on_esc)
-        .add_system(frame_limiter_system)
-        .add_system(update_vqt_system)
-        .add_system(update_analysis_state_system.after(update_vqt_system))
-        .add_system(update_display_system.after(update_analysis_state_system));
-
-    // MSAA makes some Android devices panic, this is under investigation
-    // https://github.com/bevyengine/bevy/issues/8229
-    #[cfg(target_os = "android")]
-    app.insert_resource(Msaa::Off);
-
-    app.run();
-}
-
 // android main function
 #[cfg(target_os = "android")]
 #[bevy_main]
-fn main() {
+fn main() -> AppExit {
     std::env::set_var("RUST_BACKTRACE", "1");
 
     use std::{process::exit, sync::mpsc};
@@ -717,7 +653,7 @@ fn main() {
             .set(LogPlugin {
                 filter: "wgpu=debug,debug".to_string(),
                 level: bevy::log::Level::DEBUG,
-                update_subscriber: None,
+                ..default()
             }),
         LogDiagnosticsPlugin::default(),
         FrameTimeDiagnosticsPlugin::default(),
@@ -750,7 +686,7 @@ fn main() {
     .add_systems(
         Update,
         (
-            bevy::window::close_on_esc,
+            close_on_esc,
             frame_limiter_system,
             update_vqt_system,
             user_input_system,
@@ -767,5 +703,5 @@ fn main() {
     #[cfg(target_os = "android")]
     app.insert_resource(Msaa::Off);
 
-    app.run();
+    app.run()
 }
