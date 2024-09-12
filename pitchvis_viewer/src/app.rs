@@ -143,7 +143,7 @@ fn fps_counter_showhide(
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn frame_limiter_to_system(fps: u64) -> impl FnMut() {
+fn frame_limiter_to_system(fps: u64) -> impl FnMut() + Copy {
     move || {
         use std::{thread, time};
         thread::sleep(time::Duration::from_millis((1000 / fps).saturating_sub(5)));

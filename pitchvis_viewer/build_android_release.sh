@@ -11,7 +11,7 @@ cd android/
 cp $ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so app/src/main/jniLibs/arm64-v8a/
 
 mkdir -p app/src/main/assets/shaders
-cp assets/shaders/* app/src/main/assets/shaders
+cp ../assets/shaders/* app/src/main/assets/shaders
 
 cargo ndk -t arm64-v8a -o app/src/main/jniLibs/ --manifest-path ../Cargo.toml rustc --lib --crate-type cdylib --profile non-web-release && ./gradlew build && ./gradlew bundleRelease
 

@@ -86,6 +86,20 @@ pub async fn main_fun() -> Result<(), JsValue> {
         .insert_resource(display_system::SettingsState {
             display_mode: display_system::DisplayMode::PitchnamesCalmness,
         })
+        // .insert_resource(bevy::winit::WinitSettings {
+        //     focused_mode: bevy::winit::UpdateMode::Reactive {
+        //         wait: std::time::Duration::from_millis(1000/FPS/2),
+        //         react_to_device_events: false,
+        //         react_to_user_events: false,
+        //         react_to_window_events: false,
+        //     },
+        //     unfocused_mode: bevy::winit::UpdateMode::Reactive {
+        //         wait: std::time::Duration::from_millis(1000/FPS/2),
+        //         react_to_device_events: false,
+        //         react_to_user_events: false,
+        //         react_to_window_events: false,
+        //     },
+        // });
         .add_systems(
             Startup,
             (

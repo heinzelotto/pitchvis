@@ -68,6 +68,7 @@ fn handle_lifetime_events_system(
                 exit.send(AppExit::Success);
 
                 // This is a workaround to exit the app, but it's not clean.
+                // And it also doesn't work. This Event is only received when _reopening_ the app.
                 std::process::exit(0);
             }
             // On `Resumed``, audio can continue playing
@@ -261,7 +262,7 @@ fn main() -> AppExit {
                 ..default()
             })
             .set(LogPlugin {
-                filter: "wgpu=debug,debug".to_string(),
+                filter: "wgpu=error,warn".to_string(),
                 level: bevy::log::Level::DEBUG,
                 ..default()
             }),
