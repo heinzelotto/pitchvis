@@ -384,7 +384,9 @@ pub fn update_display(
             let color_mat = noisy_color_materials
                 .get_mut(&*color)
                 .expect("ball color material");
-            color_mat.color = color_mat.color.with_alpha(color_mat.color.alpha() * dropoff_factor);
+            color_mat.color = color_mat
+                .color
+                .with_alpha(color_mat.color.alpha() * dropoff_factor);
 
             // also shift shrinking circles slightly to the background so that they are not cluttering newly appearing larger circles
             transform.translation.z -= 0.001;
