@@ -185,8 +185,8 @@ impl AnalysisState {
                 continue;
             }
 
-            let x = x_vqt_smoothed[p] - x_vqt_smoothed[p - 1] + std::f32::EPSILON;
-            let y = x_vqt_smoothed[p] - x_vqt_smoothed[p + 1] + std::f32::EPSILON;
+            let x = x_vqt_smoothed[p] - x_vqt_smoothed[p - 1] + f32::EPSILON;
+            let y = x_vqt_smoothed[p] - x_vqt_smoothed[p + 1] + f32::EPSILON;
 
             let estimated_precise_center = p as f32 + 1.0 / (1.0 + y / x) - 0.5;
             let estimated_precise_size = x_vqt_smoothed
