@@ -99,7 +99,7 @@ pub fn setup_display(
         // spheres
         let noisy_color_material = NoisyColorMaterial {
             color: Color::srgb(1.0, 0.7, 0.6).into(),
-            noise_level: 0.0,
+            noise_level: Default::default(),
         };
         commands.spawn((
             PitchBall(idx),
@@ -470,9 +470,10 @@ pub fn update_display(
                     || settings_state.display_mode == DisplayMode::Calmness
                     || settings_state.display_mode == DisplayMode::Debugging
                 {
-                    color_mat.noise_level = (analysis_state.calmness[idx] - 0.27).clamp(0.0, 1.0);
+                    color_mat.noise_level.val =
+                        (analysis_state.calmness[idx] - 0.27).clamp(0.0, 1.0);
                 } else {
-                    color_mat.noise_level = 0.0;
+                    color_mat.noise_level.val = 0.0;
                 }
 
                 // scale and threshold to vanish

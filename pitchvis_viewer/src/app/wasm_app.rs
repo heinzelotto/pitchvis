@@ -5,7 +5,6 @@ use super::setup_fps_counter;
 use super::user_input_system;
 use crate::analysis_system;
 use crate::audio_system;
-use crate::audio_system::AudioBufferResource;
 use crate::display_system;
 use crate::vqt_system;
 use anyhow::Result;
@@ -32,7 +31,7 @@ pub const GAMMA: f32 = 5.3 * Q;
 
 // TODO: on wasm it's currently difficult to limit FPS without forking bevy.
 // Make the animation speed/blurring windows/... independent of the frame rate
-// const FPS: u64 = 30;
+const FPS: u64 = 30;
 
 // wasm main function
 #[wasm_bindgen]
@@ -65,7 +64,6 @@ pub async fn main_fun() -> Result<(), JsValue> {
             DefaultPlugins,
             LogDiagnosticsPlugin::default(),
             FrameTimeDiagnosticsPlugin::default(),
-            // .add_plugin(MaterialPlugin::<display_system::LineMaterial>::default())
             Material2dPlugin::<display_system::material::NoisyColorMaterial>::default(),
         ))
         .insert_resource(vqt_system::VqtResource(vqt))
@@ -86,20 +84,21 @@ pub async fn main_fun() -> Result<(), JsValue> {
         .insert_resource(display_system::SettingsState {
             display_mode: display_system::DisplayMode::PitchnamesCalmness,
         })
-        // .insert_resource(bevy::winit::WinitSettings {
-        //     focused_mode: bevy::winit::UpdateMode::Reactive {
-        //         wait: std::time::Duration::from_millis(1000/FPS/2),
-        //         react_to_device_events: false,
-        //         react_to_user_events: false,
-        //         react_to_window_events: false,
-        //     },
-        //     unfocused_mode: bevy::winit::UpdateMode::Reactive {
-        //         wait: std::time::Duration::from_millis(1000/FPS/2),
-        //         react_to_device_events: false,
-        //         react_to_user_events: false,
-        //         react_to_window_events: false,
-        //     },
-        // });
+        // hacky way to limit FPS. Don't know why we have to target 5x the FPS
+        .insert_resource(bevy::winit::WinitSettings {
+            focused_mode: bevy::winit::UpdateMode::Reactive {
+                wait: std::time::Duration::from_millis((1000 / 5) / FPS),
+                react_to_device_events: false,
+                react_to_user_events: false,
+                react_to_window_events: false,
+            },
+            unfocused_mode: bevy::winit::UpdateMode::Reactive {
+                wait: std::time::Duration::from_millis((1000 / 5) / FPS),
+                react_to_device_events: false,
+                react_to_user_events: false,
+                react_to_window_events: false,
+            },
+        })
         .add_systems(
             Startup,
             (

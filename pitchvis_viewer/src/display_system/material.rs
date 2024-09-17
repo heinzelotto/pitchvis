@@ -3,7 +3,7 @@
 use bevy::{
     prelude::*,
     reflect::TypePath,
-    render::render_resource::{AsBindGroup, ShaderRef},
+    render::render_resource::{AsBindGroup, ShaderRef, ShaderType},
     sprite::Material2d,
 };
 
@@ -12,18 +12,20 @@ pub struct NoisyColorMaterial {
     #[uniform(0)]
     pub color: LinearRgba,
     #[uniform(1)]
-    pub noise_level: f32,
+    pub noise_level: Noise, // Padding to ensure 16-Byte alignment
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, ShaderType)]
+// #[repr(C)]
+pub struct Noise {
+    /// The red channel. [0.0, 1.0]
+    pub val: f32,
+    pub _pad1: f32,
+    pub _pad2: f32,
+    pub _pad3: f32,
 }
 
 impl Material2d for NoisyColorMaterial {
-    // Caused by:
-    // In Device::create_render_pipeline
-    //   note: label = `transparent_mesh2d_pipeline`
-    // In the provided shader, the type given for group 2 binding 1 has a size of 4.
-    // As the device does not support `DownlevelFlags::BUFFER_BINDINGS_NOT_16_BYTE_ALIGNED`,
-    // the type must have a size that is a multiple of 16 bytes.
-    // FIXME: why is this custom material still so much slower than the default ColorMaterial?
-    #[cfg(not(target_arch = "wasm32"))]
     fn fragment_shader() -> ShaderRef {
         "shaders/noisy_color_2d.wgsl".into()
     }

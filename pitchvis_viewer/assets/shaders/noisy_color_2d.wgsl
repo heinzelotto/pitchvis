@@ -98,14 +98,14 @@ fn nois(p3: vec3<f32>) -> f32
 }
 
 @group(2) @binding(0) var<uniform> material_color: vec4<f32>;
-@group(2) @binding(1) var<uniform> noise_level: f32;
+@group(2) @binding(1) var<uniform> noise_level: vec4<f32>;
 
 @group(0) @binding(1) var<uniform> globals: Globals;
 
 @fragment
 fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
     // only perform the computation if the noise level is less than 0.03
-    if noise_level < 0.03 {
+    if noise_level.x < 0.03 {
         return material_color;
     }
 
@@ -115,7 +115,7 @@ fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
 
     let noise_color = vec4<f32>(1.0,1.0, 1.0, material_color.a);
 
-    let mixed = mix(material_color, noise_color, noise_level * f * 0.45);
+    let mixed = mix(material_color, noise_color, noise_level.x * f * 0.45);
 
     return mixed;
 }
