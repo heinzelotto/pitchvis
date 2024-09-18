@@ -97,6 +97,10 @@ fn nois(p3: vec3<f32>) -> f32
   return fract(sin(dot(q3, vec3f(12.9898, 78.233, 69.420))) * 43758.5453);
 }
 
+fn smooth_circle_boundary(color: vec4<f32>, uv: vec2<f32>) -> vec4<f32> {
+    return mix(color, vec4<f32>(color.rgb, 0.0), smoothstep(0.48, 0.5, length(uv - vec2<f32>(0.5, 0.5))));
+}
+
 @group(2) @binding(0) var<uniform> material_color: vec4<f32>;
 @group(2) @binding(1) var<uniform> noise_level: vec4<f32>;
 
@@ -104,9 +108,9 @@ fn nois(p3: vec3<f32>) -> f32
 
 @fragment
 fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
-    // only perform the computation if the noise level is less than 0.03
+    // only perform the computation if the noise level is less than 0.03. ?is this a useful optimization.
     if noise_level.x < 0.03 {
-        return material_color;
+        return smooth_circle_boundary(material_color, mesh.uv);
     }
 
     let f: f32 = simplexNoise3(vec3<f32>(mesh.uv * 5.0, globals.time*4.0));
@@ -117,5 +121,5 @@ fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
 
     let mixed = mix(material_color, noise_color, noise_level.x * f * 0.45);
 
-    return mixed;
+    return smooth_circle_boundary(mixed, mesh.uv);
 }

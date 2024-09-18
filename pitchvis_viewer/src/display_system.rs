@@ -101,10 +101,13 @@ pub fn setup_display(
             color: Color::srgb(1.0, 0.7, 0.6).into(),
             noise_level: Default::default(),
         };
+
         commands.spawn((
             PitchBall(idx),
             MaterialMesh2dBundle {
-                mesh: meshes.add(Circle::new(10.0)).into(),
+                mesh: meshes
+                    .add(Circle::new(10.0).mesh().resolution(48).build())
+                    .into(),
                 material: noisy_color_materials.add(noisy_color_material),
                 transform: Transform::from_xyz(*x * 1.0, *y * 1.0, -0.01), // needs to be slightly behind the 2d camera
                 visibility: if idx % 7 == 0 {
