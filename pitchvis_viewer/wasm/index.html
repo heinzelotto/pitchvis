@@ -1,62 +1,63 @@
 <!doctype html>
 <html lang="en">
-	<head>
-		<meta charset="utf-8">
-		<title>pitchvis: music visualization</title>
-		<script>
-    function goFullscreen(id) {
-        // Get the element that we want to take into fullscreen mode
-        var element = document.getElementById(id);
 
-        // These function will not exist in the browsers that don't support fullscreen mode yet,
-        // so we'll have to check to see if they're available before calling them.
+<head>
+	<meta charset="utf-8">
+	<title>pitchvis: music visualization</title>
+	<script>
+		function goFullscreen(id) {
+			// Get the element that we want to take into fullscreen mode
+			var element = document.getElementsByTagName(id)[0];
 
-        if (element.mozRequestFullScreen) {
-            // This is how to go into fullscren mode in Firefox
-            // Note the "moz" prefix, which is short for Mozilla.
-            element.mozRequestFullScreen();
-        } else if (element.webkitRequestFullScreen) {
-            // This is how to go into fullscreen mode in Chrome and Safari
-            // Both of those browsers are based on the Webkit project, hence the same prefix.
-            element.webkitRequestFullScreen();
-        }
-        // Hooray, now we're in fullscreen mode!
-    }
-		</script>
-		<style>
-			html, body, canvas {
-				margin: 0px;
-				padding: 0px;
-				width: 100%;
-				height: 100%;
-				overflow: hidden;
+			// These function will not exist in the browsers that don't support fullscreen mode yet,
+			// so we'll have to check to see if they're available before calling them.
+
+			if (element.mozRequestFullScreen) {
+				// This is how to go into fullscren mode in Firefox
+				// Note the "moz" prefix, which is short for Mozilla.
+				element.mozRequestFullScreen();
+			} else if (element.webkitRequestFullScreen) {
+				// This is how to go into fullscreen mode in Chrome and Safari
+				// Both of those browsers are based on the Webkit project, hence the same prefix.
+				element.webkitRequestFullScreen();
 			}
+			// Hooray, now we're in fullscreen mode!
+		}
+	</script>
+	<style>
+		html,
+		body,
+		canvas {
+			margin: 0px;
+			padding: 0px;
+			width: 100%;
+			height: 100%;
+			overflow: hidden;
+		}
 
-			.button {
-				padding: 15px;
-				margin:20px 0;
-				border: none;
-				cursor:pointer;
-				border-radius: 20px;
-				color:white;
-				background-color: #04AA6D;
-				box-shadow:0 0 15px 4px rgba(0,0,0,0.06);
-				font-family: inherit;
-				font-size: large;
-			}
-		</style>
-	</head>
-	<body>
-		<div id="instructions">
-			<h2>Browser policy only permits microphone capture after user trigger, e. g. button click:</h2><br>
-			<button class="button" onclick="youClicked()">😬 clickme 😁</button><br />
-			P: toggle pause (currently broken)<br/>
-			I: toggle background image<br/>
-			Image © NASA
-			<a href="/pitchvis-old">Click here for old version (non-continuous peaks)</a>
-		</div>
-		<button onclick="goFullscreen('canvas')">Enter Fullscreen</button>
-		<canvas oncontextmenu="return false;" id="canvas"></canvas>
-	</body>
-	
+		.button {
+			padding: 15px;
+			margin: 20px 0;
+			border: none;
+			cursor: pointer;
+			border-radius: 20px;
+			color: white;
+			background-color: #04AA6D;
+			box-shadow: 0 0 15px 4px rgba(0, 0, 0, 0.06);
+			font-family: inherit;
+			font-size: large;
+		}
+	</style>
+</head>
+
+<body>
+	<div id="instructions">
+		<h2>Browser policy only permits microphone capture after user trigger, e. g. button click:</h2><br>
+		<button class="button" onclick="youClicked()">😬 clickme 😁</button><br />
+
+		<a href="/pitchvis-old">Click here for old version (non-continuous peaks)</a>
+	</div>
+	<button onclick="goFullscreen('canvas')">Enter Fullscreen</button>
+</body>
+
 </html>

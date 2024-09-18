@@ -84,19 +84,20 @@ pub async fn main_fun() -> Result<(), JsValue> {
         .insert_resource(display_system::SettingsState {
             display_mode: display_system::DisplayMode::PitchnamesCalmness,
         })
-        // hacky way to limit FPS. Don't know why we have to target 5x the FPS
+        // hacky way to limit FPS. Only works when the user is not moving the mouse.
+        // And if we set the react_ arguments to false, the FPS limit is all wonky.
         .insert_resource(bevy::winit::WinitSettings {
             focused_mode: bevy::winit::UpdateMode::Reactive {
-                wait: std::time::Duration::from_millis((1000 / 5) / FPS),
-                react_to_device_events: false,
-                react_to_user_events: false,
-                react_to_window_events: false,
+                wait: std::time::Duration::from_millis(1000 / FPS),
+                react_to_device_events: true,
+                react_to_user_events: true,
+                react_to_window_events: true,
             },
             unfocused_mode: bevy::winit::UpdateMode::Reactive {
-                wait: std::time::Duration::from_millis((1000 / 5) / FPS),
-                react_to_device_events: false,
-                react_to_user_events: false,
-                react_to_window_events: false,
+                wait: std::time::Duration::from_millis(1000 / FPS),
+                react_to_device_events: true,
+                react_to_user_events: true,
+                react_to_window_events: true,
             },
         })
         .add_systems(

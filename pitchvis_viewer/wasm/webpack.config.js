@@ -17,7 +17,7 @@ module.exports = {
         }),
         new CopyPlugin({
             patterns: [
-                { from: '../assets', to: 'static_js/assets' },
+                { from: '../assets', to: 'assets' },
             ]
         }),
         new WasmPackPlugin({
