@@ -113,7 +113,7 @@ fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
         return smooth_circle_boundary(material_color, mesh.uv);
     }
 
-    let f: f32 = simplexNoise3(vec3<f32>(mesh.uv * 5.0, globals.time*4.0));
+    let f: f32 = clamp(simplexNoise3(vec3<f32>(mesh.uv * 2.8, globals.time*2.0))-0.15, -0.0, 1.0);
     // let f: f32 = hash13(vec3<f32>(mesh.uv * 5.0, globals.time));
     // let f: f32 = nois(vec3<f32>(mesh.uv * 10.0, globals.time*10.0));
 
