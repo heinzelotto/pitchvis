@@ -41,6 +41,10 @@ const FPS: u64 = 30;
 // #[derive(Resource)]
 // struct AudioControlChannelResource(std::sync::mpsc::Sender<AudioControl>);
 
+// fn load_shader_system(mut commands: Commands, asset_server: Res<AssetServer>) {
+//     let _scene_handle = asset_server.load("shaders/noisy_color_2d.wgsl");
+// }
+
 // desktop main function
 pub fn main_fun() -> Result<()> {
     // env_logger::init();

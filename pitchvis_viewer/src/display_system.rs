@@ -25,10 +25,14 @@ use std::f32::consts::PI;
 use crate::display_system::material::NoisyColorMaterial;
 
 const HIGHEST_BASSNOTE: usize = 12 * 2 + 4;
+const BASS_SPIRAL_SEGMENTS_PER_SEMITONE: usize = 6;
 const CONTINUOUS_PEAKS_MODE: bool = true;
 
 #[derive(Component)]
 pub struct PitchBall(usize);
+
+#[derive(Component)]
+pub struct PB2;
 
 #[derive(Component)]
 pub struct BassCylinder;
@@ -95,19 +99,34 @@ pub fn setup_display(
 
     let spiral_points = calculate_spiral_points(octaves, buckets_per_octave);
 
+    // let noisy_color_material = NoisyColorMaterial {
+    //     color: Color::srgb(1.0, 0.7, 0.6).into(),
+    //     noise_level: material::Noise{ val: 0.75 ,..Default::default()},
+    // };
+
+    // commands.spawn((
+    //     PB2,
+    //     MaterialMesh2dBundle {
+    //         mesh: meshes
+    //             .add(Rectangle::new(10.0,10.0))
+    //             .into(),
+    //         material: noisy_color_materials.add(noisy_color_material),
+    //         transform: Transform::from_xyz(0.0, 0.0, -0.01), // needs to be slightly behind the 2d camera
+    //         ..default()
+    //     },
+    // ));
+
     for (idx, (x, y, _z)) in spiral_points.iter().enumerate() {
         // spheres
         let noisy_color_material = NoisyColorMaterial {
             color: Color::srgb(1.0, 0.7, 0.6).into(),
-            noise_level: Default::default(),
+            params: Default::default(),
         };
 
         commands.spawn((
             PitchBall(idx),
             MaterialMesh2dBundle {
-                mesh: meshes
-                    .add(Circle::new(10.0).mesh().resolution(48).build())
-                    .into(),
+                mesh: meshes.add(Rectangle::new(20.0, 20.0)).into(),
                 material: noisy_color_materials.add(noisy_color_material),
                 transform: Transform::from_xyz(*x * 1.0, *y * 1.0, -0.01), // needs to be slightly behind the 2d camera
                 visibility: if idx % 7 == 0 {
@@ -120,9 +139,12 @@ pub fn setup_display(
         ));
     }
 
-    for (prev, cur) in spiral_points
+    let bass_spiral_points =
+        calculate_spiral_points(octaves, 12 * BASS_SPIRAL_SEGMENTS_PER_SEMITONE);
+
+    for (prev, cur) in bass_spiral_points
         .iter()
-        .take(HIGHEST_BASSNOTE * buckets_per_octave / 12)
+        .take(HIGHEST_BASSNOTE * buckets_per_octave * 2 / 12)
         .tuple_windows()
     {
         use std::ops::Sub;
@@ -185,7 +207,7 @@ pub fn setup_display(
     // draw spiral
     // TODO: consider a higher resolution, it's a bit choppy with buckets_per_semitone = 3
     let spiral_mesh = LineList {
-        lines: spiral_points
+        lines: bass_spiral_points
             .iter()
             .map(|(x, y, z)| Vec3::new(*x, *y, *z))
             .tuple_windows()
@@ -316,6 +338,7 @@ pub fn update_display_to_system(
     Res<crate::vqt_system::VqtResultResource>,
     Res<CylinderEntityListResource>,
     Res<SettingsState>,
+    Res<Time>,
 ) + Copy {
     move |set: ParamSet<(
         Query<(
@@ -334,7 +357,8 @@ pub fn update_display_to_system(
           analysis_state: Res<crate::analysis_system::AnalysisStateResource>,
           vqt_result: Res<crate::vqt_system::VqtResultResource>,
           cylinder_entities: Res<CylinderEntityListResource>,
-          settings_state: Res<SettingsState>| {
+          settings_state: Res<SettingsState>,
+          time: Res<Time>| {
         update_display(
             buckets_per_octave,
             octaves,
@@ -347,6 +371,7 @@ pub fn update_display_to_system(
             vqt_result,
             cylinder_entities,
             settings_state,
+            time,
         );
     }
 }
@@ -372,6 +397,7 @@ pub fn update_display(
     vqt_result: Res<crate::vqt_system::VqtResultResource>,
     cylinder_entities: Res<CylinderEntityListResource>,
     settings_state: Res<SettingsState>,
+    ongoing_time: Res<Time>,
 ) {
     let scale_factor = 1.0 / 305.0;
 
@@ -449,6 +475,7 @@ pub fn update_display(
                 let color_mat = noisy_color_materials
                     .get_mut(&*color)
                     .expect("ball color material");
+                color_mat.params.time = ongoing_time.elapsed_seconds() as f32;
                 // color_mat.color = Color::srgb(
                 //     r * color_coefficient,
                 //     g * color_coefficient,
@@ -473,14 +500,19 @@ pub fn update_display(
                     || settings_state.display_mode == DisplayMode::Calmness
                     || settings_state.display_mode == DisplayMode::Debugging
                 {
-                    color_mat.noise_level.val =
+                    color_mat.params.calmness =
                         (analysis_state.calmness[idx] - 0.27).clamp(0.0, 1.0);
                 } else {
-                    color_mat.noise_level.val = 0.0;
+                    color_mat.params.calmness = 0.0;
                 }
 
+                // scale calm ones even more
+                let calmness_scale = 1.0 + 0.2 * color_mat.params.calmness;
+
+                // TODO: scale up new notes to make them more prominent
+
                 // scale and threshold to vanish
-                transform.scale = Vec3::splat(size * scale_factor);
+                transform.scale = Vec3::splat(size * scale_factor * calmness_scale);
                 if transform.scale.x >= 0.002 {
                     *visibility = Visibility::Visible;
                 }
@@ -975,21 +1007,23 @@ fn update_bass_spiral(
     //     return;
     // }
     if let Some((center, size)) = peaks_continuous.first() {
-        if center.trunc() as usize >= cylinder_entities.0.len() {
+        let center = center / buckets_per_octave as f32 * 12.0;
+        if center.round() as usize * BASS_SPIRAL_SEGMENTS_PER_SEMITONE >= cylinder_entities.0.len()
+        {
             return;
         }
 
         // color up to lowest note
-        for idx in 0..(center.trunc() as usize) {
+        for idx in 0..((center.round() * BASS_SPIRAL_SEGMENTS_PER_SEMITONE as f32) as usize) {
             let (_, ref mut visibility, color) = bass_cylinders
                 .get_mut(cylinder_entities.0[idx])
                 .expect("cylinder entity");
             **visibility = Visibility::Visible;
 
-            let color_map_ref = center.trunc() as usize;
+            let color_map_ref = center.round() * buckets_per_octave as f32 / 12.0;
             let (r, g, b) = pitchvis_analysis::color_mapping::calculate_color(
                 buckets_per_octave,
-                (color_map_ref + buckets_per_octave - 3 * (buckets_per_octave / 12)) as f32
+                (color_map_ref + (buckets_per_octave - 3 * (buckets_per_octave / 12)) as f32)
                     % buckets_per_octave as f32,
                 COLORS,
                 GRAY_LEVEL,

@@ -12,15 +12,15 @@ pub struct NoisyColorMaterial {
     #[uniform(0)]
     pub color: LinearRgba,
     #[uniform(1)]
-    pub noise_level: Noise, // Padding to ensure 16-Byte alignment
+    pub params: Params, // Padding to ensure 16-Byte alignment
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, ShaderType)]
-// #[repr(C)]
-pub struct Noise {
+#[repr(C)]
+pub struct Params {
     /// The red channel. [0.0, 1.0]
-    pub val: f32,
-    pub _pad1: f32,
+    pub calmness: f32,
+    pub time: f32,
     pub _pad2: f32,
     pub _pad3: f32,
 }
