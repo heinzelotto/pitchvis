@@ -13,6 +13,6 @@ cp $ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch
 mkdir -p app/src/main/assets/shaders
 cp ../assets/shaders/* app/src/main/assets/shaders
 
-cargo ndk -t arm64-v8a -o app/src/main/jniLibs/ --manifest-path ../Cargo.toml rustc --lib --crate-type cdylib --profile non-web-release && ./gradlew build && ./gradlew bundleRelease
+cargo ndk -t arm64-v8a -o app/src/main/jniLibs/ --manifest-path ../Cargo.toml rustc --lib --crate-type cdylib --profile non-web-release --features bevy/tonemapping_luts && ./gradlew build && ./gradlew bundleRelease
 
 # assembleRelease würde ein APK erzeugen, bundleRelease erzeugt ein AAB (?und apk)

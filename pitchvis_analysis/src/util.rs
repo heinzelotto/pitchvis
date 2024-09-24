@@ -19,3 +19,23 @@ pub fn arg_max(sl: &[f32]) -> usize {
         )
         .0
 }
+
+/// Exponential moving average helper
+pub struct EmaMeasurement {
+    alpha: f32,
+    value: f32,
+}
+
+impl EmaMeasurement {
+    pub fn new(alpha: f32, value: f32) -> Self {
+        Self { alpha, value }
+    }
+
+    pub fn update(&mut self, new_value: f32) {
+        self.value = self.alpha * new_value + (1.0 - self.alpha) * self.value;
+    }
+
+    pub fn get(&self) -> f32 {
+        self.value
+    }
+}

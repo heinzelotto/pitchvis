@@ -143,7 +143,8 @@ fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
     let time_periodic = 250.0 + time - floor(time/100.0)*100.0;
 
     // time stretched by calmness, high calmness => slow time
-    let t = time_periodic * clamp(0.33-abs(calmness - 0.33), 0.0, 1.0) / 4.0;
+    let transition_slow_fast_slow = clamp((0.33-abs(calmness - 0.33))*(0.33-abs(calmness - 0.33)), 0.0, 1.0);
+    let t = time_periodic * transition_slow_fast_slow / 2.0;
     let rot_t = mat2x2<f32>(cos(t), -sin(t), sin(t), cos(t));
     let uv = rot_t * (mesh.uv * 2.0 - 1.0);
 

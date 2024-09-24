@@ -57,6 +57,9 @@ pub struct AnalysisState {
 
     /// A buffer for storing a calmness value for each bin in the spectrum.
     pub calmness: Vec<f32>,
+
+    /// the smoothed average calmness of all active bins
+    pub smoothed_scene_calmness: EmaMeasurement,
 }
 
 impl AnalysisState {
@@ -98,6 +101,7 @@ impl AnalysisState {
             spectrogram_front_idx: 0,
             ml_midi_base_pitches: vec![0.0; 128],
             calmness: vec![0.0; spectrum_size],
+            smoothed_scene_calmness: EmaMeasurement::new(0.3, 0.0),
         }
     }
 
@@ -244,12 +248,20 @@ impl AnalysisState {
             }
         }
 
+        let mut calmness_sum = 0.0;
+        let mut calmness_count = 0;
         for i in 0..octaves * buckets_per_octave {
             if peaks_around[i] {
                 self.calmness[i] += 1.0 / CALMNESS_HISTORY_LENGTH as f32;
+                calmness_sum += self.calmness[i];
+                calmness_count += 1;
             }
 
             self.calmness[i] -= self.calmness[i] / CALMNESS_HISTORY_LENGTH as f32;
+        }
+        if calmness_count > 0 {
+            self.smoothed_scene_calmness
+                .update(calmness_sum / calmness_count as f32);
         }
     }
 }

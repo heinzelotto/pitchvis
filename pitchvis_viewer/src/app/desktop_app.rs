@@ -1,17 +1,20 @@
+use anyhow::Result;
+use bevy::diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin};
+use bevy::prelude::*;
+use bevy::sprite::Material2dPlugin;
+
 use super::close_on_esc;
 use super::fps_counter_showhide;
 use super::fps_text_update_system;
 use super::frame_limiter_to_system;
+use super::setup_bloom_ui;
 use super::setup_fps_counter;
+use super::update_bloom_settings;
 use super::user_input_system;
 use crate::analysis_system;
 use crate::audio_system;
 use crate::display_system;
 use crate::vqt_system;
-use anyhow::Result;
-use bevy::diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin};
-use bevy::prelude::*;
-use bevy::sprite::Material2dPlugin;
 
 // increasing BUCKETS_PER_SEMITONE or Q will improve frequency resolution at cost of time resolution,
 // increasing GAMMA will improve time resolution at lower frequencies.
@@ -40,10 +43,6 @@ const FPS: u64 = 30;
 
 // #[derive(Resource)]
 // struct AudioControlChannelResource(std::sync::mpsc::Sender<AudioControl>);
-
-// fn load_shader_system(mut commands: Commands, asset_server: Res<AssetServer>) {
-//     let _scene_handle = asset_server.load("shaders/noisy_color_2d.wgsl");
-// }
 
 // desktop main function
 pub fn main_fun() -> Result<()> {
@@ -77,12 +76,17 @@ pub fn main_fun() -> Result<()> {
 
     let mut app = App::new();
     app.add_plugins((
-        DefaultPlugins, // .set(WindowPlugin {
-        // primary_window: Some(Window {
-        //     present_mode: PresentMode::AutoNoVsync,
-        //     ..default()
-        // }),
-        // ..default()})
+        DefaultPlugins.set(WindowPlugin {
+            // primary_window: Some(Window {
+            //     present_mode: PresentMode::AutoNoVsync,
+            //     ..default()
+            // }),
+            primary_window: Some(Window {
+                title: "Pitchvis".to_string(),
+                ..default()
+            }),
+            ..default()
+        }),
         LogDiagnosticsPlugin::default(),
         FrameTimeDiagnosticsPlugin,
         //.add_plugin(MaterialPlugin::<display_system::LineMaterial>::default())
@@ -112,6 +116,7 @@ pub fn main_fun() -> Result<()> {
             (
                 display_system::setup_display_to_system(OCTAVES, BUCKETS_PER_OCTAVE),
                 setup_fps_counter,
+                setup_bloom_ui,
             ),
         )
         .add_systems(
@@ -124,6 +129,7 @@ pub fn main_fun() -> Result<()> {
                 fps_text_update_system,
                 fps_counter_showhide,
                 update_analysis_state_system.after(update_vqt_system),
+                update_bloom_settings,
             ),
         );
     #[cfg(feature = "ml")]

@@ -143,11 +143,12 @@ fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
     let time_periodic = 250.0 + time - floor(time/100.0)*100.0;
 
     // time stretched by calmness, high calmness => slow time
-    let t = time_periodic * clamp(0.33-abs(calmness - 0.33), 0.0, 1.0) / 4.0;
+    let transition_slow_fast_slow = clamp((0.33-abs(calmness - 0.33))*(0.33-abs(calmness - 0.33)), 0.0, 1.0);
+    let t = time_periodic * transition_slow_fast_slow / 2.0;
     let rot_t = mat2x2<f32>(cos(t), -sin(t), sin(t), cos(t));
     let uv = rot_t * (mesh.uv * 2.0 - 1.0);
 
-    let f_noise_raw: f32 = simplexNoise3(vec3<f32>(mesh.uv *3.3, time*0.4 + t));
+    let f_noise_raw: f32 = simplexNoise3(vec3<f32>(mesh.uv *3.3, time*0.8));
     let f_noise: f32 = clamp(f_noise_raw-0.15, 0.0, 1.0);
     let white = vec3<f32>(1.0, 1.0, 1.0);
 

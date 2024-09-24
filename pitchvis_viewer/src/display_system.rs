@@ -3,6 +3,10 @@
 pub(crate) mod material;
 
 use bevy::{
+    core_pipeline::{
+        bloom::{BloomCompositeMode, BloomPrefilterSettings, BloomSettings},
+        tonemapping::Tonemapping,
+    },
     math::vec3,
     prelude::*,
     render::{
@@ -270,20 +274,36 @@ pub fn setup_display(
     });
 
     // spawn a camera2dbundle with coordinates that match those of the 3d camera at the z=0 plane
-    commands.spawn(Camera2dBundle {
-        camera: Camera {
-            // renders after / on top of the main camera
-            order: 1,
-            clear_color: ClearColorConfig::Custom(Color::srgb(0.23, 0.23, 0.25)),
+    commands.spawn((
+        Camera2dBundle {
+            camera: Camera {
+                // needed for bloom
+                hdr: true,
+                // renders after / on top of the main camera
+                order: 1,
+                clear_color: ClearColorConfig::Custom(Color::srgb(0.23, 0.23, 0.25)),
+                ..default()
+            },
+            tonemapping: Tonemapping::SomewhatBoringDisplayTransform,
+            projection: OrthographicProjection {
+                scaling_mode: bevy::render::camera::ScalingMode::FixedVertical(38.0 * 0.414_213_57),
+                scale: 1.00,
+                ..default()
+            },
             ..default()
         },
-        projection: OrthographicProjection {
-            scaling_mode: bevy::render::camera::ScalingMode::FixedVertical(38.0 * 0.414_213_57),
-            scale: 1.00,
-            ..default()
+        BloomSettings {
+            intensity: 0.0,
+            low_frequency_boost: 1.0,
+            low_frequency_boost_curvature: 1.0,
+            high_pass_frequency: 0.52,
+            prefilter_settings: BloomPrefilterSettings {
+                threshold: 0.17,
+                threshold_softness: 0.82,
+            },
+            composite_mode: BloomCompositeMode::Additive,
         },
-        ..default()
-    });
+    ));
 
     // text
     let text_spiral_points = calculate_spiral_points(octaves, 12);
@@ -339,6 +359,7 @@ pub fn update_display_to_system(
     Res<CylinderEntityListResource>,
     Res<SettingsState>,
     Res<Time>,
+    Query<(Entity, Option<&mut BloomSettings>), With<Camera>>,
 ) + Copy {
     move |set: ParamSet<(
         Query<(
@@ -358,7 +379,8 @@ pub fn update_display_to_system(
           vqt_result: Res<crate::vqt_system::VqtResultResource>,
           cylinder_entities: Res<CylinderEntityListResource>,
           settings_state: Res<SettingsState>,
-          time: Res<Time>| {
+          run_time: Res<Time>,
+          camera: Query<(Entity, Option<&mut BloomSettings>), With<Camera>>| {
         update_display(
             buckets_per_octave,
             octaves,
@@ -371,7 +393,8 @@ pub fn update_display_to_system(
             vqt_result,
             cylinder_entities,
             settings_state,
-            time,
+            run_time,
+            camera,
         );
     }
 }
@@ -389,6 +412,7 @@ pub fn update_display(
         Query<(&BassCylinder, &mut Visibility, &mut Handle<ColorMaterial>)>,
         Query<(&PitchNameText, &mut Visibility)>,
     )>,
+
     mut spectrum_linestrip: Query<(&Spectrum, &mut Mesh2dHandle)>,
     color_materials: ResMut<Assets<ColorMaterial>>,
     mut noisy_color_materials: ResMut<Assets<NoisyColorMaterial>>,
@@ -397,7 +421,8 @@ pub fn update_display(
     vqt_result: Res<crate::vqt_system::VqtResultResource>,
     cylinder_entities: Res<CylinderEntityListResource>,
     settings_state: Res<SettingsState>,
-    ongoing_time: Res<Time>,
+    run_time: Res<Time>,
+    mut camera: Query<(Entity, Option<&mut BloomSettings>), With<Camera>>,
 ) {
     let scale_factor = 1.0 / 305.0;
 
@@ -475,7 +500,7 @@ pub fn update_display(
                 let color_mat = noisy_color_materials
                     .get_mut(&*color)
                     .expect("ball color material");
-                color_mat.params.time = ongoing_time.elapsed_seconds() as f32;
+                color_mat.params.time = run_time.elapsed_seconds() as f32;
                 // color_mat.color = Color::srgb(
                 //     r * color_coefficient,
                 //     g * color_coefficient,
@@ -517,6 +542,13 @@ pub fn update_display(
                     *visibility = Visibility::Visible;
                 }
             }
+        }
+        match camera.single_mut() {
+            (_, Some(mut bloom_settings)) => {
+                bloom_settings.intensity =
+                    (analysis_state.smoothed_scene_calmness.get() * 1.3).clamp(0.0, 1.0);
+            }
+            _ => (),
         }
         // TODO: ?faster lookup through indexes
     } else {

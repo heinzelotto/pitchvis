@@ -1,10 +1,9 @@
+use android_activity::AndroidApp;
 use bevy::diagnostic::FrameTimeDiagnosticsPlugin;
 use bevy::diagnostic::LogDiagnosticsPlugin;
 use bevy::prelude::*;
 use bevy::sprite::Material2dPlugin;
 use bevy::window::AppLifecycle;
-
-use android_activity::AndroidApp;
 use jni::{
     objects::{JObject, JValue},
     sys::{jobject, jstring},
@@ -15,7 +14,9 @@ use super::close_on_esc;
 use super::fps_counter_showhide;
 use super::fps_text_update_system;
 use super::frame_limiter_to_system;
+use super::setup_bloom_ui;
 use super::setup_fps_counter;
+use super::update_bloom_settings;
 use super::user_input_system;
 use crate::analysis_system;
 use crate::audio_system;
@@ -292,6 +293,7 @@ fn main() -> AppExit {
         (
             display_system::setup_display_to_system(OCTAVES, BUCKETS_PER_OCTAVE),
             setup_fps_counter,
+            setup_bloom_ui,
         ),
     )
     .add_systems(
@@ -306,6 +308,7 @@ fn main() -> AppExit {
             update_display_system.after(update_analysis_state_system),
             fps_text_update_system,
             fps_counter_showhide,
+            update_bloom_settings,
         ),
     );
 
