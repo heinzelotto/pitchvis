@@ -354,7 +354,26 @@ impl AudioStream {
 
         let device = host.devices().unwrap().next().unwrap();
 
-        //panic!("{}", device.supported_input_configs().unwrap().count());
+        const PREFERRED_BUFFER_SIZE: usize = 256;
+        let minimum_supported_buffer_size = device
+            .supported_input_configs()
+            .unwrap()
+            .filter_map(|ref sc| {
+                if sc.min_sample_rate() <= cpal::SampleRate(sr as u32)
+                    && sc.max_sample_rate() >= cpal::SampleRate(sr as u32)
+                {
+                    match sc.buffer_size() {
+                        cpal::SupportedBufferSize::Range { min, .. } => Some(*min),
+                        _ => None,
+                    }
+                } else {
+                    None
+                }
+            })
+            .min()
+            .expect("no supported minimum buffer size");
+        let buffer_size =
+            std::cmp::max(minimum_supported_buffer_size, PREFERRED_BUFFER_SIZE as u32);
 
         //let device = host.default_input_device().expect("no default input device");
 
@@ -363,7 +382,7 @@ impl AudioStream {
         let stream_config = cpal::StreamConfig {
             channels: 1u16,
             sample_rate: cpal::SampleRate(sr as u32),
-            buffer_size: cpal::BufferSize::Default,
+            buffer_size: cpal::BufferSize::Fixed(buffer_size),
         };
 
         let mut ring_buffer = RingBuffer {
@@ -387,6 +406,7 @@ impl AudioStream {
                 }
                 let sample_sq_sum = data.iter().map(|x| x.powi(2)).sum::<f32>();
                 agc.freeze_gain(sample_sq_sum < 1e-6);
+                // println!("data len: {}", data.len());
 
                 let mut rb = ring_buffer_input_thread_clone
                     .lock()
