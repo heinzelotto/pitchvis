@@ -30,7 +30,6 @@ use crate::display_system::material::NoisyColorMaterial;
 
 const HIGHEST_BASSNOTE: usize = 12 * 2 + 4;
 const BASS_SPIRAL_SEGMENTS_PER_SEMITONE: usize = 6;
-const CONTINUOUS_PEAKS_MODE: bool = true;
 
 #[derive(Component)]
 pub struct PitchBall(usize);
@@ -469,98 +468,20 @@ pub fn update_display(
     );
     let max_size = analysis_state.peaks_continuous[k_max].1;
 
-    if CONTINUOUS_PEAKS_MODE {
-        let peaks_rounded = analysis_state
-            .peaks_continuous
-            .iter()
-            .map(|p| (p.0.trunc() as usize, *p))
-            .collect::<HashMap<usize, (f32, f32)>>();
+    let peaks_rounded = analysis_state
+        .peaks_continuous
+        .iter()
+        .map(|p| (p.0.trunc() as usize, *p))
+        .collect::<HashMap<usize, (f32, f32)>>();
 
-        for (pitch_ball, mut visibility, mut transform, color) in &mut set.p0() {
-            let idx = pitch_ball.0;
-            if peaks_rounded.contains_key(&idx) {
-                let (center, size) = peaks_rounded[&idx];
-
-                let (r, g, b) = pitchvis_analysis::calculate_color(
-                    buckets_per_octave,
-                    (center + (buckets_per_octave - 3 * (buckets_per_octave / 12)) as f32)
-                        % buckets_per_octave as f32,
-                    COLORS,
-                    GRAY_LEVEL,
-                    EASING_POW,
-                );
-
-                let color_coefficient = 1.0 - (1.0 - size / max_size).powf(2.0);
-
-                let (x, y, _) = bin_to_spiral(buckets_per_octave, center);
-                // make sure larger circles are drawn on top by adding a small offset proportional to the size
-                let z_ordering_offset = (size / max_size - 1.01) * 12.5;
-                transform.translation = Vec3::new(x, y, z_ordering_offset);
-
-                let color_mat = noisy_color_materials
-                    .get_mut(&*color)
-                    .expect("ball color material");
-                color_mat.params.time = run_time.elapsed_seconds() as f32;
-                // color_mat.color = Color::srgb(
-                //     r * color_coefficient,
-                //     g * color_coefficient,
-                //     b * color_coefficient,
-                // );
-                color_mat.color = Color::srgba(r, g, b, color_coefficient).into();
-
-                #[cfg(feature = "ml")]
-                if let Some(midi_pitch) = vqt_bin_to_midi_pitch(buckets_per_octave, idx) {
-                    let inferred_midi_pitch_strength =
-                        analysis_state.ml_midi_base_pitches[midi_pitch];
-                    if inferred_midi_pitch_strength > 0.35 {
-                        color_mat.color = Color::srgba(r, g, b, 1.0);
-                    } else {
-                        color_mat.color = Color::srgba(r, g, b, color_coefficient * 0.1);
-                    }
-                }
-
-                // set calmness visual effect.
-                // FIXME: Usually we see values of 0.75 for very calm notes... Fix this to be more intuitive.
-                if settings_state.display_mode == DisplayMode::PitchnamesCalmness
-                    || settings_state.display_mode == DisplayMode::Calmness
-                    || settings_state.display_mode == DisplayMode::Debugging
-                {
-                    color_mat.params.calmness =
-                        (analysis_state.calmness[idx] - 0.27).clamp(0.0, 1.0);
-                } else {
-                    color_mat.params.calmness = 0.0;
-                }
-
-                // scale calm ones even more
-                let calmness_scale = 1.0 + 0.2 * color_mat.params.calmness;
-
-                // TODO: scale up new notes to make them more prominent
-
-                // scale and threshold to vanish
-                transform.scale = Vec3::splat(size * scale_factor * calmness_scale);
-                if transform.scale.x >= 0.002 {
-                    *visibility = Visibility::Visible;
-                }
-            }
-        }
-        match camera.single_mut() {
-            (_, Some(mut bloom_settings)) => {
-                bloom_settings.intensity =
-                    (analysis_state.smoothed_scene_calmness.get() * 1.3).clamp(0.0, 1.0);
-            }
-            _ => (),
-        }
-        // TODO: ?faster lookup through indexes
-    } else {
-        // let vqt_base = &analysis_state.x_vqt_peakfiltered;
-        let vqt_base = &vqt_result.x_vqt;
-        for (pitch_ball, mut visibility, mut transform, color) in &mut set.p0() {
-            let idx = pitch_ball.0;
-            let size = vqt_base[idx];
+    for (pitch_ball, mut visibility, mut transform, color) in &mut set.p0() {
+        let idx = pitch_ball.0;
+        if peaks_rounded.contains_key(&idx) {
+            let (center, size) = peaks_rounded[&idx];
 
             let (r, g, b) = pitchvis_analysis::calculate_color(
                 buckets_per_octave,
-                (idx as f32 + (buckets_per_octave - 3 * (buckets_per_octave / 12)) as f32)
+                (center + (buckets_per_octave - 3 * (buckets_per_octave / 12)) as f32)
                     % buckets_per_octave as f32,
                 COLORS,
                 GRAY_LEVEL,
@@ -569,7 +490,7 @@ pub fn update_display(
 
             let color_coefficient = 1.0 - (1.0 - size / max_size).powf(2.0);
 
-            let (x, y, _) = bin_to_spiral(buckets_per_octave, idx as f32);
+            let (x, y, _) = bin_to_spiral(buckets_per_octave, center);
             // make sure larger circles are drawn on top by adding a small offset proportional to the size
             let z_ordering_offset = (size / max_size - 1.01) * 12.5;
             transform.translation = Vec3::new(x, y, z_ordering_offset);
@@ -577,16 +498,55 @@ pub fn update_display(
             let color_mat = noisy_color_materials
                 .get_mut(&*color)
                 .expect("ball color material");
-            // color_mat.color = Color::srgba(r, g, b, 1.0);
+            color_mat.params.time = run_time.elapsed_seconds() as f32;
+            // color_mat.color = Color::srgb(
+            //     r * color_coefficient,
+            //     g * color_coefficient,
+            //     b * color_coefficient,
+            // );
             color_mat.color = Color::srgba(r, g, b, color_coefficient).into();
 
-            transform.scale = Vec3::splat(size * scale_factor);
+            #[cfg(feature = "ml")]
+            if let Some(midi_pitch) = vqt_bin_to_midi_pitch(buckets_per_octave, idx) {
+                let inferred_midi_pitch_strength = analysis_state.ml_midi_base_pitches[midi_pitch];
+                if inferred_midi_pitch_strength > 0.35 {
+                    color_mat.color = Color::srgba(r, g, b, 1.0);
+                } else {
+                    color_mat.color = Color::srgba(r, g, b, color_coefficient * 0.1);
+                }
+            }
 
-            // if transform.scale.x >= 0.005 {
-            *visibility = Visibility::Visible;
-            // }
+            // set calmness visual effect.
+            // FIXME: Usually we see values of 0.75 for very calm notes... Fix this to be more intuitive.
+            if settings_state.display_mode == DisplayMode::PitchnamesCalmness
+                || settings_state.display_mode == DisplayMode::Calmness
+                || settings_state.display_mode == DisplayMode::Debugging
+            {
+                color_mat.params.calmness = (analysis_state.calmness[idx] - 0.27).clamp(0.0, 1.0);
+            } else {
+                color_mat.params.calmness = 0.0;
+            }
+
+            // scale calm ones even more
+            let calmness_scale = 1.0 + 0.2 * color_mat.params.calmness;
+
+            // TODO: scale up new notes to make them more prominent
+
+            // scale and threshold to vanish
+            transform.scale = Vec3::splat(size * scale_factor * calmness_scale);
+            if transform.scale.x >= 0.002 {
+                *visibility = Visibility::Visible;
+            }
         }
     }
+    match camera.single_mut() {
+        (_, Some(mut bloom_settings)) => {
+            bloom_settings.intensity =
+                (analysis_state.smoothed_scene_calmness.get() * 1.3).clamp(0.0, 1.0);
+        }
+        _ => (),
+    }
+    // TODO: ?faster lookup through indexes
 
     update_bass_spiral(
         buckets_per_octave,
