@@ -1,3 +1,11 @@
+use anyhow::Result;
+use bevy::diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin};
+use bevy::prelude::*;
+use bevy::sprite::Material2dPlugin;
+use wasm_bindgen::prelude::*;
+
+use pitchvis_audio::audio::AudioStream;
+
 use super::close_on_esc;
 use super::fps_counter_showhide;
 use super::fps_text_update_system;
@@ -7,11 +15,6 @@ use crate::analysis_system;
 use crate::audio_system;
 use crate::display_system;
 use crate::vqt_system;
-use anyhow::Result;
-use bevy::diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin};
-use bevy::prelude::*;
-use bevy::sprite::Material2dPlugin;
-use wasm_bindgen::prelude::*;
 
 // increasing BUCKETS_PER_SEMITONE or Q will improve frequency resolution at cost of time resolution,
 // increasing GAMMA will improve time resolution at lower frequencies.
@@ -36,7 +39,7 @@ const FPS: u64 = 30;
 // wasm main function
 #[wasm_bindgen]
 pub async fn main_fun() -> Result<(), JsValue> {
-    let audio_stream = pitchvis_audio::audio::AudioStream::async_new(SR, BUFSIZE)
+    let audio_stream = pitchvis_audio::audio::async_new_audio_stream(SR, BUFSIZE)
         .await
         .unwrap();
 

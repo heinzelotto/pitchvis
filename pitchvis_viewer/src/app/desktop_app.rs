@@ -3,6 +3,8 @@ use bevy::diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin};
 use bevy::prelude::*;
 use bevy::sprite::Material2dPlugin;
 
+use pitchvis_audio::audio::AudioStream;
+
 use super::close_on_esc;
 use super::fps_counter_showhide;
 use super::fps_text_update_system;
@@ -48,7 +50,7 @@ const FPS: u64 = 30;
 pub fn main_fun() -> Result<()> {
     // env_logger::init();
 
-    let audio_stream = pitchvis_audio::audio::AudioStream::new(SR, BUFSIZE).unwrap();
+    let audio_stream = pitchvis_audio::audio::new_audio_stream(SR, BUFSIZE).unwrap();
 
     let vqt = pitchvis_analysis::vqt::Vqt::new(
         SR,
