@@ -16,6 +16,7 @@ use bevy::{
     sprite::{MaterialMesh2dBundle, Mesh2dHandle},
 };
 use pitchvis_analysis::{
+    analysis::ContinuousPeak,
     color_mapping::{COLORS, EASING_POW, GRAY_LEVEL, PITCH_NAMES},
     util::*,
 };
@@ -425,6 +426,7 @@ pub fn update_display(
 ) {
     let scale_factor = 1.0 / 305.0;
 
+    // FIXME: make all this independent of the framerate
     for (pitch_ball, mut visibility, mut transform, color) in &mut set.p0() {
         if *visibility == Visibility::Visible {
             let idx = pitch_ball.0;
@@ -463,21 +465,21 @@ pub fn update_display(
         &analysis_state
             .peaks_continuous
             .iter()
-            .map(|p| p.1)
+            .map(|p| p.size)
             .collect::<Vec<f32>>(),
     );
-    let max_size = analysis_state.peaks_continuous[k_max].1;
+    let max_size = analysis_state.peaks_continuous[k_max].size;
 
     let peaks_rounded = analysis_state
         .peaks_continuous
         .iter()
-        .map(|p| (p.0.trunc() as usize, *p))
-        .collect::<HashMap<usize, (f32, f32)>>();
+        .map(|p| (p.center.trunc() as usize, *p))
+        .collect::<HashMap<usize, ContinuousPeak>>();
 
     for (pitch_ball, mut visibility, mut transform, color) in &mut set.p0() {
         let idx = pitch_ball.0;
         if peaks_rounded.contains_key(&idx) {
-            let (center, size) = peaks_rounded[&idx];
+            let ContinuousPeak { center, size } = peaks_rounded[&idx];
 
             let (r, g, b) = pitchvis_analysis::calculate_color(
                 buckets_per_octave,
@@ -986,7 +988,7 @@ fn update_bass_spiral(
     cylinder_entities: Res<CylinderEntityListResource>,
     mut materials: ResMut<Assets<ColorMaterial>>,
     mut bass_cylinders: Query<(&BassCylinder, &mut Visibility, &mut Handle<ColorMaterial>)>,
-    peaks_continuous: &[(f32, f32)],
+    peaks_continuous: &[ContinuousPeak],
 ) {
     //let mut color_map: Vec<i32> = vec![-1; self.buckets_per_octave * self.octaves];
     // for (prev, cur) in peaks.iter().tuple_windows() {
@@ -998,7 +1000,7 @@ fn update_bass_spiral(
     // if gain > 1000.0 {
     //     return;
     // }
-    if let Some((center, size)) = peaks_continuous.first() {
+    if let Some(ContinuousPeak { center, size }) = peaks_continuous.first() {
         let center = center / buckets_per_octave as f32 * 12.0;
         if center.round() as usize * BASS_SPIRAL_SEGMENTS_PER_SEMITONE >= cylinder_entities.0.len()
         {
@@ -1022,8 +1024,13 @@ fn update_bass_spiral(
                 EASING_POW,
             );
 
-            let k_max = arg_max(&peaks_continuous.iter().map(|p| p.1).collect::<Vec<f32>>());
-            let max_size = peaks_continuous[k_max].1;
+            let k_max = arg_max(
+                &peaks_continuous
+                    .iter()
+                    .map(|p| p.size)
+                    .collect::<Vec<f32>>(),
+            );
+            let max_size = peaks_continuous[k_max].size;
 
             let color_coefficient = 1.0 - (1.0 - size / max_size).powf(2.0);
 

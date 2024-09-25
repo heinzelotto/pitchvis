@@ -1,4 +1,4 @@
-use log::debug;
+use log::{debug, error, warn};
 use num_complex::{Complex32, ComplexFloat};
 use rustfft::num_traits::Zero;
 use rustfft::{Fft, FftPlanner};
@@ -7,6 +7,8 @@ use std::f32::consts::PI;
 use std::ops::DivAssign;
 use std::sync::Arc;
 use std::time::Duration;
+
+use crate::util::arg_max;
 
 /// Returns the maximum value in a slice of floats.
 /// This function is necessary because floats do not implement the Ord trait.
@@ -77,6 +79,11 @@ struct FilterGrouping {
 pub struct VqtWindows {
     window_center: f32,
     grouped_by_sr_scaling: Vec<FilterGrouping>,
+}
+
+struct Filter {
+    v_frequency_domain: Vec<Complex32>,
+    bandwidth_3db_in_hz: (f32, f32),
 }
 
 /// A pair of precomputed FFTs for a given size:
@@ -394,6 +401,12 @@ impl Vqt {
     //#
 
     //#blue
+    /// Calculates a single filter in the VQT filter bank.
+    ///
+    /// # Arguments
+    ///
+    /// * `window_center` - The center of the window in the time domain. We arrange the filters in the time domain
+    /// such that all filters are centered around the same time instant.
     fn calculate_filter(
         sr: usize,
         sparsity_quantile: f32,
@@ -402,7 +415,7 @@ impl Vqt {
         fft_window: UnscaledWindow,
         window_center: f32,
         fft: &Arc<dyn Fft<f32>>,
-    ) -> Vec<num_complex::Complex32> {
+    ) -> Filter {
         let scaled_freq = filter_params.freq * sr_scaling as f32;
         let scaled_window_length = filter_params.window_length / sr_scaling as f32;
         let scaled_window_length_rounded = scaled_window_length.round() as usize;
@@ -412,11 +425,16 @@ impl Vqt {
 
         assert!(scaled_window_length_rounded <= scaled_n_fft);
 
-        let window = apodize::hanning_iter(scaled_window_length_rounded).collect::<Vec<f64>>();
-
-        let mut v = vec![Complex32::zero(); scaled_n_fft];
+        // create windowed wavelet. This is calculated as:
+        // f(x) = 1 / window_length * window(x) * e^(2 * pi * i * f * x)
+        // and it is centered around the center of the window. Everything is scaled by the sr_scaling factor.
+        let window = apodize::hanning_iter(scaled_window_length_rounded)
+            .map(|x| x as f32)
+            .collect::<Vec<f32>>();
+        let mut v_frequency_domain = vec![Complex32::zero(); scaled_n_fft];
         for i in 0..scaled_window_length_rounded {
-            v[scaled_window_center_rounded - scaled_window_length_rounded / 2 + i] = 1.0
+            v_frequency_domain
+                [scaled_window_center_rounded - scaled_window_length_rounded / 2 + i] = 1.0
                 / scaled_window_length_rounded as f32
                 * (window[i] as f32)
                 * (num_complex::Complex32::i()
@@ -429,37 +447,39 @@ impl Vqt {
         }
 
         // normalize windowed wavelet in time space
-        let norm_1: f32 = v.iter().map(|z| z.abs()).sum();
-        v.iter_mut().for_each(|z| z.div_assign(norm_1));
+        let norm_1: f32 = v_frequency_domain.iter().map(|z| z.norm()).sum();
+        v_frequency_domain
+            .iter_mut()
+            .for_each(|z| z.div_assign(norm_1));
 
         // transform wavelets into frequency space
-        fft.process(&mut v);
+        fft.process(&mut v_frequency_domain);
 
         // the complex conjugate is what we later need
-        v = v.iter_mut().map(|z| z.conj()).collect();
+        v_frequency_domain = v_frequency_domain.iter_mut().map(|z| z.conj()).collect();
+
+        let mut v_frequency_response = v_frequency_domain
+            .iter()
+            .map(|z| z.norm())
+            .collect::<Vec<f32>>();
+
+        let bandwidth_3db_in_hz =
+            calculate_bandwidth(&v_frequency_response, sr as f32 / sr_scaling as f32);
+        // dbg!(filter_params.freq, bandwidth);
 
         // filter all values smaller than some value and use sparse arrays
-        let mut v_abs = v.iter().map(|z| z.abs()).collect::<Vec<f32>>();
-        v_abs.sort_by(|a, b| {
-            if a == b {
-                std::cmp::Ordering::Equal
-            } else if a < b {
-                std::cmp::Ordering::Less
-            } else {
-                std::cmp::Ordering::Greater
-            }
-        });
-        let v_abs_sum = v_abs.iter().sum::<f32>();
+        v_frequency_response.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let v_abs_sum = v_frequency_response.iter().sum::<f32>();
         let mut accum = 0.0;
         let mut cutoff_idx = 0;
         while accum < (1.0 - sparsity_quantile) * v_abs_sum {
-            accum += v_abs[cutoff_idx];
+            accum += v_frequency_response[cutoff_idx];
             cutoff_idx += 1;
         }
-        let cutoff_value = v_abs[cutoff_idx - 1];
+        let cutoff_value = v_frequency_response[cutoff_idx - 1];
         //let cutoff_value = v_abs[(reduced_n_fft as f32 * sparsity_quantile) as usize];
         let mut cnt = 0;
-        v.iter_mut().for_each(|z| {
+        v_frequency_domain.iter_mut().for_each(|z| {
             if z.abs() < cutoff_value {
                 *z = Complex32::zero();
                 cnt += 1;
@@ -467,9 +487,15 @@ impl Vqt {
         });
         debug!("for freq {} erased {cnt} points below {cutoff_value} with sum {accum} out of total {v_abs_sum}", filter_params.freq);
 
-        assert_eq!(v.len(), fft_window.sufficient_n_fft_size / sr_scaling);
+        assert_eq!(
+            v_frequency_domain.len(),
+            fft_window.sufficient_n_fft_size / sr_scaling
+        );
 
-        v
+        Filter {
+            v_frequency_domain,
+            bandwidth_3db_in_hz,
+        }
     }
     //#
 
@@ -491,6 +517,10 @@ impl Vqt {
     /// # Returns
     ///
     /// * A tuple consisting of the `VqtKernel` and the delay as `Duration`.
+    ///
+    /// Note: it is checked that at high frequencies the filters cover the entire band of a
+    /// semitone. If this is not satisfied, errors are logged.
+    ///
     fn vqt_kernel(
         sr: usize,
         n_fft: usize,
@@ -570,6 +600,7 @@ impl Vqt {
                     let fft = planner.plan_fft_forward(scaled_n_fft);
                     debug!("planning fft of size {}", scaled_n_fft);
 
+                    let mut last_upper_bandwidth = 0.0;
                     for (idx, filter_params) in filters.iter().enumerate() {
                         let filter = Self::calculate_filter(
                             sr,
@@ -580,8 +611,25 @@ impl Vqt {
                             vqt_windows.window_center,
                             &fft,
                         );
+                        if last_upper_bandwidth != 0.0
+                            && filter.bandwidth_3db_in_hz.0 > last_upper_bandwidth
+                        {
+                            error!(
+                                "The bandwidth of the filter at index {} is ({:.2}, {:.2}) Hz, but \
+                                the last filter's bandwidth ended at {:.2} Hz. This gap equates to \
+                                {:.2}% of the current filter's bandwidth.",
+                                idx,
+                                filter.bandwidth_3db_in_hz.0,
+                                filter.bandwidth_3db_in_hz.1,
+                                last_upper_bandwidth,
+                                100.0 * (filter.bandwidth_3db_in_hz.0 - last_upper_bandwidth)
+                                / (filter.bandwidth_3db_in_hz.1 - filter.bandwidth_3db_in_hz.0)
+                            );
+                            last_upper_bandwidth = filter.bandwidth_3db_in_hz.1;
+                        }
+
                         // fill the kernel matrix
-                        for (i, z) in filter.iter().enumerate() {
+                        for (i, z) in filter.v_frequency_domain.iter().enumerate() {
                             if !z.is_zero() {
                                 mat.add_triplet(
                                     idx,
@@ -758,52 +806,84 @@ impl Vqt {
         // TODO: harmonic/percussion source separation possible with our one-sided spectrum?
 
         // amp -> db conversion
-        Self::power_to_db(&power)
+        power_to_db(&power)
         //Self::power_normalized(&power)
     }
     //#
+}
 
-    fn power_to_db(power: &[f32]) -> Vec<f32> {
-        let ref_power: f32 = 0.3.powf(2.0);
-        let a_min: f32 = 1e-6.powf(2.0);
-        let top_db: f32 = 60.0;
+fn power_to_db(power: &[f32]) -> Vec<f32> {
+    let ref_power: f32 = 0.3.powf(2.0);
+    let a_min: f32 = 1e-6.powf(2.0);
+    let top_db: f32 = 60.0;
 
-        let mut log_spec = power
-            .iter()
-            .map(|x| 10.0 * x.max(a_min).log10() - 10.0 * ref_power.max(a_min).log10())
-            .collect::<Vec<f32>>();
-        let log_spec_max = max(&log_spec);
-        // println!(
-        //     "log_spec min {}, max {}, shifting to 0...top_db",
-        //     log_spec_min, log_spec_max,
-        // );
+    let mut log_spec = power
+        .iter()
+        .map(|x| 10.0 * x.max(a_min).log10() - 10.0 * ref_power.max(a_min).log10())
+        .collect::<Vec<f32>>();
+    let log_spec_max = max(&log_spec);
+    // println!(
+    //     "log_spec min {}, max {}, shifting to 0...top_db",
+    //     log_spec_min, log_spec_max,
+    // );
 
-        log_spec.iter_mut().for_each(|x| {
-            if *x < log_spec_max - top_db {
-                *x = log_spec_max - top_db
-            }
-        });
+    log_spec.iter_mut().for_each(|x| {
+        if *x < log_spec_max - top_db {
+            *x = log_spec_max - top_db
+        }
+    });
 
-        let log_spec_min = min(&log_spec);
-        // cut off at 0.0, and don't let it pass top_db
-        log_spec.iter_mut().for_each(|x| {
-            if log_spec_min > 0.0 {
-                *x -= log_spec_min
-            } else if *x < 0.0 {
-                *x = 0.0
-            }
-        });
+    let log_spec_min = min(&log_spec);
+    // cut off at 0.0, and don't let it pass top_db
+    log_spec.iter_mut().for_each(|x| {
+        if log_spec_min > 0.0 {
+            *x -= log_spec_min
+        } else if *x < 0.0 {
+            *x = 0.0
+        }
+    });
 
-        log_spec
+    log_spec
+}
+
+#[allow(dead_code)]
+fn power_normalized(power: &[f32]) -> Vec<f32> {
+    let spec_max = max(power);
+    dbg!(spec_max);
+    power
+        .iter()
+        .map(|x| *x / spec_max * 50.0) //spec_max);
+        .collect::<Vec<_>>()
+}
+
+/// Finds the -3 dB points of a frequency response.
+///
+/// We use this to determine the bandwidth of the filters.
+fn find_3db_points(frequency_response: &[f32], center_freq_index: usize) -> (usize, usize) {
+    let peak_magnitude = frequency_response[center_freq_index];
+    let threshold = peak_magnitude / 2.0_f32.sqrt(); // -3 dB point
+
+    let mut lower_bound = center_freq_index;
+    while lower_bound > 0 && frequency_response[lower_bound] > threshold {
+        lower_bound -= 1;
     }
 
-    #[allow(dead_code)]
-    fn power_normalized(power: &[f32]) -> Vec<f32> {
-        let spec_max = max(power);
-        dbg!(spec_max);
-        power
-            .iter()
-            .map(|x| *x / spec_max * 50.0) //spec_max);
-            .collect::<Vec<_>>()
+    let mut upper_bound = center_freq_index;
+    while upper_bound < frequency_response.len() - 1 && frequency_response[upper_bound] > threshold
+    {
+        upper_bound += 1;
     }
+
+    (lower_bound, upper_bound)
+}
+
+/// Calculate the bandwidth of a filter in Hz.
+///
+/// The arguments are assumed to be downsampled such that the frequency response fits to the scaled_sr.
+fn calculate_bandwidth(scaled_frequency_response: &[f32], scaled_sr: f32) -> (f32, f32) {
+    let center_freq_index = arg_max(&scaled_frequency_response);
+    let (lower_bound, upper_bound) = find_3db_points(scaled_frequency_response, center_freq_index);
+    let lower_bound_in_hz = lower_bound as f32 * scaled_sr / scaled_frequency_response.len() as f32;
+    let upper_bound_in_hz = upper_bound as f32 * scaled_sr / scaled_frequency_response.len() as f32;
+    (lower_bound_in_hz, upper_bound_in_hz)
 }

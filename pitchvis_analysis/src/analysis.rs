@@ -12,8 +12,14 @@ const PEAK_MIN_HEIGHT: f32 = 6.0;
 const _BASSLINE_PEAK_MIN_PROMINENCE: f32 = 12.0;
 const _BASSLINE_PEAK_MIN_HEIGHT: f32 = 4.0;
 const _HIGHEST_BASSNOTE: usize = 12 * 2 + 4;
-const SMOOTH_LENGTH: usize = 3;
-const CALMNESS_HISTORY_LENGTH: usize = 75;
+const SMOOTH_LENGTH: usize = 3; // FIXME: make this independent from the frame rate
+const CALMNESS_HISTORY_LENGTH: usize = 75; // FIXME: make this independent from the frame rate
+
+#[derive(Debug, Clone, Copy)]
+pub struct ContinuousPeak {
+    pub center: f32,
+    pub size: f32,
+}
 
 /// Represents the current state of spectral analysis for musical signals.
 ///
@@ -32,7 +38,7 @@ pub struct AnalysisState {
 
     /// Represents the current VQT frame after filtering out non-peak values.
     /// Dominant frequencies or peaks are retained while others are set to zero.
-    pub x_vqt_peakfiltered: Vec<f32>,
+    x_vqt_peakfiltered: Vec<f32>,
 
     /// Represents the afterglow effects applied to the current VQT frame. This provides
     /// a visual decay effect, enhancing the visualization of the spectrum.
@@ -42,7 +48,7 @@ pub struct AnalysisState {
     pub peaks: HashSet<usize>,
 
     /// Contains pairs of the estimated precise center and size of each detected peak.
-    pub peaks_continuous: Vec<(f32, f32)>,
+    pub peaks_continuous: Vec<ContinuousPeak>,
 
     /// A buffer for the spectrogram visualization. The size is determined by the `spectrum_size`
     /// multiplied by the `history_length` and further multiplied by 4 for RGBA color data.
@@ -168,6 +174,8 @@ impl AnalysisState {
 
         // find peaks
         let peaks = find_peaks(&x_vqt_smoothed, buckets_per_octave);
+        let peaks_continuous =
+            enhance_peaks_continuous(&peaks, &x_vqt_smoothed, octaves, buckets_per_octave);
 
         let x_vqt_peakfiltered = x_vqt_smoothed
             .iter()
@@ -176,39 +184,10 @@ impl AnalysisState {
                 if peaks.contains(&i) {
                     *x
                 } else {
-                    0.0 // x_vqt_smoothed[i] / 5.0
+                    x_vqt_smoothed[i] / 5.0
                 }
             })
             .collect::<Vec<f32>>();
-
-        let mut peaks_continuous = Vec::new();
-        for p in &peaks {
-            let p = *p;
-
-            if p < 1 || p > octaves * buckets_per_octave - 2 {
-                continue;
-            }
-
-            let x = x_vqt_smoothed[p] - x_vqt_smoothed[p - 1] + f32::EPSILON;
-            let y = x_vqt_smoothed[p] - x_vqt_smoothed[p + 1] + f32::EPSILON;
-
-            let estimated_precise_center = p as f32 + 1.0 / (1.0 + y / x) - 0.5;
-            let estimated_precise_size = x_vqt_smoothed
-                [estimated_precise_center.trunc() as usize + 1]
-                * estimated_precise_center.fract()
-                + x_vqt_smoothed[estimated_precise_center.trunc() as usize]
-                    * (1.0 - estimated_precise_center.fract());
-            peaks_continuous.push((estimated_precise_center, estimated_precise_size));
-        }
-        peaks_continuous.sort_by(|a, b| {
-            if a.0 == b.0 {
-                std::cmp::Ordering::Equal
-            } else if a.0 < b.0 {
-                std::cmp::Ordering::Less
-            } else {
-                std::cmp::Ordering::Greater
-            }
-        });
 
         self.x_vqt_afterglow
             .iter_mut()
@@ -281,4 +260,53 @@ fn find_peaks(vqt: &[f32], buckets_per_octave: usize) -> HashSet<usize> {
         .collect::<HashSet<usize>>();
 
     peaks
+}
+
+/// Enhances the detected peaks by estimating the precise center and size of each peak.
+///
+/// This is done by quadratic interpolation. The problem is that currently the bins are
+/// not equally spaced, and their frequency resolution of higher bins increases. This
+/// means that the shape of the parabola must be adjusted to fit the bin. Currently, I'm
+/// not even sure that at high frequencies the filters cover the entire band of a semitone.
+///
+/// FIXME: determine the function f(k_bin, vqt[peak-1], vqt[peak], vqt[peak+1])
+fn enhance_peaks_continuous(
+    discrete_peaks: &HashSet<usize>,
+    vqt: &[f32],
+    octaves: usize,
+    buckets_per_octave: usize,
+) -> Vec<ContinuousPeak> {
+    let mut peaks_continuous = Vec::new();
+    for p in discrete_peaks {
+        let p = *p;
+
+        if p < 1 || p > octaves * buckets_per_octave - 2 {
+            continue;
+        }
+
+        let x = vqt[p] - vqt[p - 1] + f32::EPSILON;
+        let y = vqt[p] - vqt[p + 1] + f32::EPSILON;
+
+        let estimated_precise_center = p as f32 + 1.0 / (1.0 + y / x) - 0.5;
+        let estimated_precise_size = vqt[estimated_precise_center.trunc() as usize + 1]
+            * estimated_precise_center.fract()
+            + vqt[estimated_precise_center.trunc() as usize]
+                * (1.0 - estimated_precise_center.fract());
+        peaks_continuous.push(ContinuousPeak {
+            center: estimated_precise_center,
+            size: estimated_precise_size,
+        });
+    }
+    peaks_continuous.sort_by(|a, b| {
+        return a.center.partial_cmp(&b.center).unwrap();
+        // if a.0 == b.0 {
+        //     std::cmp::Ordering::Equal
+        // } else if a.0 < b.0 {
+        //     std::cmp::Ordering::Less
+        // } else {
+        //     std::cmp::Ordering::Greater
+        // }
+    });
+
+    peaks_continuous
 }

@@ -48,7 +48,7 @@ const FPS: u64 = 30;
 
 // desktop main function
 pub fn main_fun() -> Result<()> {
-    // env_logger::init();
+    env_logger::init();
 
     let audio_stream = pitchvis_audio::audio::new_audio_stream(SR, BUFSIZE).unwrap();
 
@@ -89,9 +89,7 @@ pub fn main_fun() -> Result<()> {
             }),
             ..default()
         }),
-        LogDiagnosticsPlugin::default(),
         FrameTimeDiagnosticsPlugin,
-        //.add_plugin(MaterialPlugin::<display_system::LineMaterial>::default())
         Material2dPlugin::<display_system::material::NoisyColorMaterial>::default(),
     ))
     .insert_resource(vqt_system::VqtResource(vqt))

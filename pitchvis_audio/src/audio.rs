@@ -22,5 +22,3 @@ pub trait AudioStream {
     fn ring_buffer(&self) -> std::sync::Arc<std::sync::Mutex<RingBuffer>>;
     fn play(&self) -> Result<()>;
 }
-
-
