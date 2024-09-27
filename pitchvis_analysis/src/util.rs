@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use log::debug;
+use log::trace;
 
 pub fn arg_min(sl: &[f32]) -> usize {
     // we have no NaNs
@@ -37,7 +37,7 @@ pub fn arg_max(sl: &[f32]) -> usize {
 /// timestep/n is the same as running it once with 1 - exp(-timestep).
 ///
 /// TODO: keep an eye on how consistent this is across different frame rates.
-///
+#[derive(Debug, Clone)]
 pub struct EmaMeasurement {
     time_horizon: Duration,
     y: f32,
@@ -59,7 +59,7 @@ impl EmaMeasurement {
         // let alpha = 1.0 / (n_horizon);
 
         self.update_with_alpha(new_value, alpha);
-        println!(
+        trace!(
             "alpha: {alpha:.04}, timestep: {:.02}, new value: {:.02},  EMA: {:.02}",
             timestep.as_secs_f32(),
             new_value,

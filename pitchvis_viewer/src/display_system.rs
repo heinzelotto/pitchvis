@@ -524,7 +524,8 @@ pub fn update_display(
                 || settings_state.display_mode == DisplayMode::Calmness
                 || settings_state.display_mode == DisplayMode::Debugging
             {
-                color_mat.params.calmness = (analysis_state.calmness[idx] - 0.27).clamp(0.0, 1.0);
+                color_mat.params.calmness =
+                    (analysis_state.calmness[idx].get() - 0.27).clamp(0.0, 1.0);
             } else {
                 color_mat.params.calmness = 0.0;
             }
