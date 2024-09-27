@@ -112,4 +112,12 @@ mod tests {
             for a frame or two."
         );
     }
+
+    #[test]
+    fn test_vqt_delay_from_signal_to_analysis() {
+        unimplemented!(
+            "test how long it takes from the signal being played to the note showing up \
+            in the analysis"
+        );
+    }
 }
