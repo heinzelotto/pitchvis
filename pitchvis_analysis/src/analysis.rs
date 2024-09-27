@@ -1,5 +1,6 @@
 use crate::{util::*, vqt::VqtRange};
 use find_peaks::PeakFinder;
+use log::debug;
 
 use std::{
     cmp::{max, min},
@@ -223,6 +224,10 @@ impl AnalysisState {
         self.peaks_continuous = peaks_continuous;
 
         self.update_calmness(x_vqt, range, frame_time);
+
+        // TODO: more advanced bass note detection than just taking the first peak (e. g. by 
+        // promoting frequences through their overtones first)
+        debug!("bass note: {:?}", self.peaks_continuous.first().map(|p| p.center.round() as usize));
     }
 
     fn update_calmness(&mut self, x_vqt: &[f32], range: &VqtRange, frame_time: Duration) {

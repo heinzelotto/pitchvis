@@ -49,6 +49,8 @@ pub fn update_display(
 ) {
     fade_pitch_balls(set.p0(), &mut noisy_color_materials, &run_time, range);
 
+    // Exit early if there are no detected notes. Note that the below sub-systems will not run
+    // until a few frames into the app.
     let analysis_state = &analysis_state.0;
     if analysis_state.peaks_continuous.is_empty() {
         return;
@@ -67,19 +69,19 @@ pub fn update_display(
 
     update_bass_spiral(
         set.p1(),
-        &cylinder_entities,
         &mut color_materials,
+        &cylinder_entities,
         &analysis_state.peaks_continuous,
         range.buckets_per_octave,
     );
 
     update_spectrum(
         set.p3(),
-        &settings_state,
-        camera,
-        range,
-        &vqt_result,
+        &mut camera,
         &mut meshes,
+        &settings_state,
+        &vqt_result,
+        range,
     );
 
     show_hide_pitch_names(set.p2(), &settings_state);
@@ -242,8 +244,8 @@ fn update_bloom(
 
 fn update_bass_spiral(
     mut bass_cylinders: Query<(&BassCylinder, &mut Visibility, &mut Handle<ColorMaterial>)>,
-    cylinder_entities: &Res<CylinderEntityListResource>,
     materials: &mut ResMut<Assets<ColorMaterial>>,
+    cylinder_entities: &Res<CylinderEntityListResource>,
     peaks_continuous: &[ContinuousPeak],
     buckets_per_octave: u16,
 ) {
@@ -307,15 +309,15 @@ fn update_bass_spiral(
 
 fn update_spectrum(
     mut spectrum: Query<(&mut Visibility, &Mesh2dHandle, &mut Transform), With<Spectrum>>,
-    settings_state: &Res<SettingsState>,
-    mut camera: Query<(
+    camera: &mut Query<(
         &Camera,
         Option<&mut BloomSettings>,
         Ref<OrthographicProjection>,
     )>,
+    meshes: &mut ResMut<Assets<Mesh>>,
+    settings_state: &Res<SettingsState>,
+    vqt_result: &Res<VqtResultResource>,
     range: &VqtRange,
-    vqt_result: &VqtResultResource,
-    meshes: &mut Assets<Mesh>,
 ) {
     let (mut visibility, mesh_handle, mut transform) = spectrum.single_mut();
     {
@@ -327,18 +329,15 @@ fn update_spectrum(
             return;
         }
 
-        // only access mutable if the viewport changed
-        if camera.single().2.is_changed() {
-            // move to right
-            let (_, _, projection) = camera.single_mut();
-            {
-                let Rect { max, .. } = projection.area;
-                *transform = Transform::from_xyz(
-                    max.x - range.n_buckets() as f32 * 0.022 - 0.2,
-                    max.y - 4.2,
-                    -13.0,
-                );
-            }
+        // move to right
+        let (_, _, projection) = camera.single_mut();
+        {
+            let Rect { max, .. } = projection.area;
+            *transform = Transform::from_xyz(
+                max.x - range.n_buckets() as f32 * 0.022 - 0.2,
+                max.y - 4.2,
+                -13.0,
+            );
         }
 
         let spectrum_mesh = LineList {
@@ -359,8 +358,8 @@ fn update_spectrum(
 }
 
 fn show_hide_pitch_names(
-    mut pitch_name_text: Query<'_, '_, (&PitchNameText, &mut Visibility)>,
-    settings_state: &SettingsState,
+    mut pitch_name_text: Query<(&PitchNameText, &mut Visibility)>,
+    settings_state: &Res<SettingsState>,
 ) {
     for (_, mut visibility) in &mut pitch_name_text {
         if settings_state.display_mode == DisplayMode::PitchnamesCalmness

@@ -215,6 +215,7 @@ fn spawn_spectrum(
             mesh: meshes.add(spectrum_mesh).into(),
             material: color_materials.add(Color::srgb(0.25, 0.85, 0.20)),
             transform: Transform::from_xyz(-12.0, 3.0, -13.0),
+            visibility: Visibility::Hidden,
             ..default()
         },
     ));
