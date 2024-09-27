@@ -4,6 +4,7 @@ use find_peaks::PeakFinder;
 use std::{
     cmp::{max, min},
     collections::HashSet,
+    time::Duration,
 };
 
 pub const SPECTROGRAM_LENGTH: usize = 400;
@@ -14,6 +15,7 @@ const _BASSLINE_PEAK_MIN_HEIGHT: f32 = 4.0;
 const _HIGHEST_BASSNOTE: usize = 12 * 2 + 4;
 const SMOOTH_LENGTH: usize = 3; // FIXME: make this independent from the frame rate
 const CALMNESS_HISTORY_LENGTH: usize = 75; // FIXME: make this independent from the frame rate
+const SCENE_CALMNESS_SMOOTHING_DURATION: Duration = Duration::from_millis(1100);
 
 #[derive(Debug, Clone, Copy)]
 pub struct ContinuousPeak {
@@ -38,7 +40,7 @@ pub struct AnalysisState {
 
     /// Represents the current VQT frame after filtering out non-peak values.
     /// Dominant frequencies or peaks are retained while others are set to zero.
-    x_vqt_peakfiltered: Vec<f32>,
+    pub x_vqt_peakfiltered: Vec<f32>,
 
     /// Represents the afterglow effects applied to the current VQT frame. This provides
     /// a visual decay effect, enhancing the visualization of the spectrum.
@@ -107,7 +109,7 @@ impl AnalysisState {
             spectrogram_front_idx: 0,
             ml_midi_base_pitches: vec![0.0; 128],
             calmness: vec![0.0; spectrum_size],
-            smoothed_scene_calmness: EmaMeasurement::new(0.3, 0.0),
+            smoothed_scene_calmness: EmaMeasurement::new(SCENE_CALMNESS_SMOOTHING_DURATION, 0.0),
         }
     }
 
@@ -142,7 +144,13 @@ impl AnalysisState {
     /// let dummy_x_vqt = vec![0.0; 1024]; // Replace with actual VQT data
     /// analysis_state.preprocess(&dummy_x_vqt, 8, 128); // Assuming 8 octaves and 128 buckets per octave
     /// ```
-    pub fn preprocess(&mut self, x_vqt: &[f32], octaves: usize, buckets_per_octave: usize) {
+    pub fn preprocess(
+        &mut self,
+        x_vqt: &[f32],
+        octaves: usize,
+        buckets_per_octave: usize,
+        frame_time: Duration,
+    ) {
         let num_buckets = octaves * buckets_per_octave;
 
         assert!(num_buckets == x_vqt.len());
@@ -204,13 +212,26 @@ impl AnalysisState {
         self.x_vqt_peakfiltered = x_vqt_peakfiltered;
         self.peaks_continuous = peaks_continuous;
 
-        self.update_calmness(x_vqt, octaves, buckets_per_octave);
+        self.update_calmness(x_vqt, octaves, buckets_per_octave, frame_time);
     }
 
-    fn update_calmness(&mut self, x_vqt: &[f32], octaves: usize, buckets_per_octave: usize) {
+    fn update_calmness(
+        &mut self,
+        x_vqt: &[f32],
+        octaves: usize,
+        buckets_per_octave: usize,
+        frame_time: Duration,
+    ) {
         // for each bin, take the few bins around it into account as well. If the bin is a
         // peak, it is promoted as calm. Calmness currently means that the note has been
         // sustained for a while.
+
+        // FIXME: we only take into account the notes that are currently being played. But
+        // the calmness of notes is a function of their history. Should we take into account
+        // the calmness of notes that are not currently being played, or that have recently
+        // been released?
+        // Currently, releasing a note with above average calmness decreases scene calmness.
+        // Releasing a note with below average increases scene calmness.
         let mut peaks_around = vec![false; octaves * buckets_per_octave];
         let radius = buckets_per_octave / 12 / 2;
 
@@ -240,7 +261,7 @@ impl AnalysisState {
         }
         if calmness_count > 0 {
             self.smoothed_scene_calmness
-                .update(calmness_sum / calmness_count as f32);
+                .update_with_timestep(calmness_sum / calmness_count as f32, frame_time);
         }
     }
 }
@@ -299,13 +320,6 @@ fn enhance_peaks_continuous(
     }
     peaks_continuous.sort_by(|a, b| {
         return a.center.partial_cmp(&b.center).unwrap();
-        // if a.0 == b.0 {
-        //     std::cmp::Ordering::Equal
-        // } else if a.0 < b.0 {
-        //     std::cmp::Ordering::Less
-        // } else {
-        //     std::cmp::Ordering::Greater
-        // }
     });
 
     peaks_continuous
