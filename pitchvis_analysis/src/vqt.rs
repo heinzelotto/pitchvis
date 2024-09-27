@@ -8,38 +8,56 @@ use std::ops::DivAssign;
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::util::arg_max;
+use crate::util::{self, arg_max};
 
-/// Returns the maximum value in a slice of floats.
-/// This function is necessary because floats do not implement the Ord trait.
-/// It assumes that there are no NaN values in the slice.
-///
-/// # Arguments
-///
-/// * `sl` - A slice of f32 values.
-///
-/// # Returns
-///
-/// * The maximum value in the slice.
-fn max(sl: &[f32]) -> f32 {
-    sl.iter()
-        .fold(f32::MIN, |cur, x| if *x > cur { *x } else { cur })
+#[derive(Debug, Clone)]
+pub struct VqtRange {
+    /// The minimum frequency (in Hz) of the lowest note analyzed in the variable-Q Transform
+    /// (VQT). Usually A1 (55Hz).
+    pub min_freq: f32,
+
+    /// The total range, in octaves, over which the VQT is computed.
+    pub octaves: u8,
+
+    /// The resolution of the VQT, defined in terms of the number of frequency bins per octave.
+    /// This value must be a multiple of 12, reflecting the 12 semitones in a musical octave.
+    pub buckets_per_octave: u16,
 }
 
-/// Returns the minimum value in a slice of floats.
-/// This function is necessary because floats do not implement the Ord trait.
-/// It assumes that there are no NaN values in the slice.
-///
-/// # Arguments
-///
-/// * `sl` - A slice of f32 values.
-///
-/// # Returns
-///
-/// * The minimum value in the slice.
-fn min(sl: &[f32]) -> f32 {
-    sl.iter()
-        .fold(f32::MAX, |cur, x| if *x < cur { *x } else { cur })
+impl VqtRange {
+    /// Returns the number of frequency bins in the VQT kernel.
+    pub fn n_buckets(&self) -> usize {
+        self.buckets_per_octave as usize * self.octaves as usize
+    }
+}
+
+// increasing BUCKETS_PER_SEMITONE or Q will improve frequency resolution at cost of time resolution,
+// increasing GAMMA will improve time resolution at lower frequencies.
+#[derive(Debug, Clone)]
+pub struct VqtParameters {
+    /// The sample rate (in Hz) of the input audio signal.
+    pub sr: u32, // TODO: ?can make f32?
+
+    /// The number of samples in the longest Fast Fourier Transform (FFT). This will be decimated
+    /// for higher octaves.
+    pub n_fft: usize,
+
+    /// The range of the VQT, min freq, span, and resolution.
+    pub range: VqtRange,
+
+    /// A quantile value used to determine the sparsity of the VQT kernel. A higher value results
+    /// in a sparser representation, with only the most impactful frequency bins being used.
+    pub sparsity_quantile: f32,
+
+    /// A value that determines the quality of the VQT. A higher value results in a more accurate
+    /// representation, at the cost of greater time smearing.
+    pub quality: f32,
+
+    /// A parameter used in the calculation of the VQT, which determines the amount of frequency
+    /// smearing in lower octaves. A higher value results in more smearing, which can be useful
+    /// for analyzing signals with time-varying frequency content where more time resolution is
+    /// desired.
+    pub gamma: f32,
 }
 
 /// A power of two - sized fft window.
@@ -104,36 +122,8 @@ struct PrecomputedFft {
 /// is mostly determined by the lowest octave, this thus gives more control over the total signal
 /// processing delay of the filter bank.
 pub struct Vqt {
-    /// The sample rate (in Hz) of the input audio signal.
-    _sr: usize,
-
-    /// The number of samples in the longest Fast Fourier Transform (FFT). This will be decimated
-    /// for higher octaves.
-    pub n_fft: usize,
-
-    /// The minimum frequency (in Hz) of the lowest note analyzed in the variable-Q Transform (VQT).
-    _min_freq: f32,
-
-    /// The resolution of the VQT, defined in terms of the number of frequency bins per octave.
-    /// This value must be a multiple of 12, reflecting the 12 semitones in a musical octave.
-    buckets_per_octave: usize,
-
-    /// The total range, in octaves, over which the VQT is computed.
-    octaves: usize,
-
-    /// A quantile value used to determine the sparsity of the VQT kernel. A higher value results
-    /// in a sparser representation, with only the most impactful frequency bins being used.
-    _sparsity_quantile: f32,
-
-    /// A value that determines the quality of the VQT. A higher value results in a more accurate
-    /// representation, at the cost of greater time smearing.
-    _quality: f32,
-
-    /// A parameter used in the calculation of the VQT, which determines the amount of frequency
-    /// smearing in lower octaves. A higher value results in more smearing, which can be useful
-    /// for analyzing signals with time-varying frequency content where more time resolution is
-    /// desired.
-    _gamma: f32,
+    /// Parameters that define the VQT kernel.
+    params: VqtParameters,
 
     /// The VQT kernel, which is a precomputed filter bank used in the computation of the VQT.
     vqt_kernel: VqtKernel,
@@ -149,6 +139,12 @@ pub struct Vqt {
 
     #[allow(dead_code)]
     t_diff: f32,
+}
+
+impl Vqt {
+    pub fn params(&self) -> &VqtParameters {
+        &self.params
+    }
 }
 
 /// Creates a new `Vqt` instance.
@@ -168,52 +164,8 @@ pub struct Vqt {
 ///
 /// * A new `Vqt` instance.
 impl Vqt {
-    //#green
-
-    #[allow(dead_code)]
-    fn test_create_sines(&self, t_diff: f32) -> Vec<f32> {
-        let mut wave = vec![0.0; self.n_fft];
-
-        const LOWER_OCTAVE: usize = 0;
-        #[allow(clippy::erasing_op)]
-        for f in ((12 * (LOWER_OCTAVE) + 2)..(12 * (self.octaves - 1) + 12))
-            .step_by(5)
-            .map(|p| self._min_freq * (2.0).powf(p as f32 / 12.0))
-        {
-            //let f = 880.0 * 2.0.powf(1.0/12.0);
-            for (i, w) in wave.iter_mut().enumerate() {
-                let amp = (((i as f32 + t_diff * self._sr as f32) * 2.0 * PI / self._sr as f32)
-                    * f)
-                    .sin()
-                    / 12.0;
-                *w += amp;
-            }
-        }
-
-        wave
-    }
-    //#
-
-    pub fn new(
-        sr: usize,
-        n_fft: usize,
-        min_freq: f32,
-        buckets_per_octave: usize,
-        octaves: usize,
-        sparsity_quantile: f32,
-        quality: f32,
-        gamma: f32,
-    ) -> Self {
-        let (vqt_kernel, delay) = Self::vqt_kernel(
-            sr,
-            n_fft,
-            min_freq,
-            buckets_per_octave,
-            octaves,
-            sparsity_quantile,
-            quality,
-            gamma,
-        );
+    pub fn new(params: &VqtParameters) -> Self {
+        let (vqt_kernel, delay) = Self::vqt_kernel(params);
 
         println!("VQT Analysis delay: {} ms.", delay.as_millis());
 
@@ -249,14 +201,7 @@ impl Vqt {
         }
 
         Self {
-            _sr: sr,
-            n_fft,
-            _min_freq: min_freq,
-            buckets_per_octave,
-            octaves,
-            _sparsity_quantile: sparsity_quantile,
-            _quality: quality,
-            _gamma: gamma,
+            params: params.clone(),
             vqt_kernel,
             delay,
             resample_ffts,
@@ -272,7 +217,7 @@ impl Vqt {
     /// This enables us to make the application of each filter more efficient by computing it on a maximally
     ///  downsampled version of the signal while not losing information.
     fn group_window_sizes(
-        sr: usize,
+        sr: u32,
         n_fft: usize,
         freqs: &[f32],
         window_lengths: &[f32],
@@ -408,7 +353,7 @@ impl Vqt {
     /// * `window_center` - The center of the window in the time domain. We arrange the filters in the time domain
     /// such that all filters are centered around the same time instant.
     fn calculate_filter(
-        sr: usize,
+        sr: u32,
         sparsity_quantile: f32,
         sr_scaling: usize,
         filter_params: FilterParams,
@@ -521,22 +466,13 @@ impl Vqt {
     /// Note: it is checked that at high frequencies the filters cover the entire band of a
     /// semitone. If this is not satisfied, errors are logged.
     ///
-    fn vqt_kernel(
-        sr: usize,
-        n_fft: usize,
-        min_freq: f32,
-        buckets_per_octave: usize,
-        octaves: usize,
-        sparsity_quantile: f32,
-        quality: f32,
-        gamma: f32,
-    ) -> (VqtKernel, Duration) {
-        let freqs = (0..(buckets_per_octave * octaves))
-            .map(|k| min_freq * 2.0_f32.powf(k as f32 / buckets_per_octave as f32))
+    fn vqt_kernel(params: &VqtParameters) -> (VqtKernel, Duration) {
+        let freqs = (0..(params.range.n_buckets()))
+            .map(|k| params.range.min_freq * 2.0_f32.powf(k as f32 / params.range.buckets_per_octave as f32))
             .collect::<Vec<f32>>();
 
         let highest_frequency = *freqs.last().unwrap();
-        let nyquist_frequency = sr / 2;
+        let nyquist_frequency = params.sr / 2;
         if highest_frequency > nyquist_frequency as f32 {
             panic!(
                 "The highest frequency of the VQT kernel is {} Hz, but the Nyquist frequency is {} Hz.",
@@ -545,24 +481,25 @@ impl Vqt {
         }
 
         // calculate filter window sizes
-        let r = 2.0.powf(1.0 / buckets_per_octave as f32);
+        let r = 2.0.powf(1.0 / params.range.buckets_per_octave as f32);
         // alpha is constant and such that (1+a)*f_{k-1} = (1-a)*f_{k+1}
         let alpha = (r.powf(2.0) - 1.0) / (r.powf(2.0) + 1.0);
         #[allow(non_snake_case)]
-        let Q = quality / alpha;
+        let Q = params.quality / alpha;
         let window_lengths = freqs
             .iter()
-            .map(|f_k| Q * sr as f32 / (f_k + gamma / alpha))
+            .map(|f_k| Q * params.sr as f32 / (f_k + params.gamma / alpha))
             .collect::<Vec<f32>>();
 
-        if window_lengths[0] > n_fft as f32 {
+        if window_lengths[0] > params.n_fft as f32 {
             panic!(
                 "The window length of the longest filter is {} samples, but the longest FFT is {} samples.",
-                window_lengths[0], n_fft
+                window_lengths[0], params.n_fft
             );
         }
 
-        let vqt_windows = Self::group_window_sizes(sr, n_fft, &freqs, &window_lengths);
+        let vqt_windows =
+            Self::group_window_sizes(params.sr, params.n_fft, &freqs, &window_lengths);
         for FilterGrouping {
             sr_downscaling_factor,
             unscaled_window,
@@ -574,7 +511,7 @@ impl Vqt {
                 sr_downscaling_factor, unscaled_window
             );
             for (i, fp) in filters.iter().enumerate() {
-                let window_length_in_s = fp.window_length / sr as f32;
+                let window_length_in_s = fp.window_length / params.sr as f32;
                 let wave_num = window_length_in_s * fp.freq;
                 let bandwidth_in_hz = 1.0 / window_length_in_s;
                 let bandwidth_in_semitones = 12.0 * (1.0 + bandwidth_in_hz / fp.freq).log2();
@@ -603,8 +540,8 @@ impl Vqt {
                     let mut last_upper_bandwidth = 0.0;
                     for (idx, filter_params) in filters.iter().enumerate() {
                         let filter = Self::calculate_filter(
-                            sr,
-                            sparsity_quantile,
+                            params.sr,
+                            params.sparsity_quantile,
                             *sr_downscaling_factor,
                             *filter_params,
                             *unscaled_window,
@@ -634,7 +571,7 @@ impl Vqt {
                                 mat.add_triplet(
                                     idx,
                                     i,
-                                    *z / scaled_n_fft as f32 * (sr as f32).sqrt(),
+                                    *z / scaled_n_fft as f32 * (params.sr as f32).sqrt(),
                                 );
                             }
                         }
@@ -650,7 +587,9 @@ impl Vqt {
             .map(|m| m.to_csr())
             .collect::<Vec<sprs::CsMat<num_complex::Complex<f32>>>>();
 
-        let delay = Duration::from_secs_f32((n_fft as f32 - vqt_windows.window_center) / sr as f32);
+        let delay = Duration::from_secs_f32(
+            (params.n_fft as f32 - vqt_windows.window_center) / params.sr as f32,
+        );
 
         (
             VqtKernel {
@@ -739,7 +678,10 @@ impl Vqt {
 
         //dbg!(reduced_n_fft);
 
-        let mut x_vqt = vec![Complex32::zero(); self.buckets_per_octave * self.octaves];
+        let mut x_vqt = vec![
+            Complex32::zero();
+            self.params.range.n_buckets()
+        ];
         let mut offset = 0;
         for (
             FilterGrouping {
@@ -821,7 +763,7 @@ fn power_to_db(power: &[f32]) -> Vec<f32> {
         .iter()
         .map(|x| 10.0 * x.max(a_min).log10() - 10.0 * ref_power.max(a_min).log10())
         .collect::<Vec<f32>>();
-    let log_spec_max = max(&log_spec);
+    let log_spec_max = util::max(&log_spec);
     // println!(
     //     "log_spec min {}, max {}, shifting to 0...top_db",
     //     log_spec_min, log_spec_max,
@@ -833,7 +775,7 @@ fn power_to_db(power: &[f32]) -> Vec<f32> {
         }
     });
 
-    let log_spec_min = min(&log_spec);
+    let log_spec_min = util::min(&log_spec);
     // cut off at 0.0, and don't let it pass top_db
     log_spec.iter_mut().for_each(|x| {
         if log_spec_min > 0.0 {
@@ -848,7 +790,7 @@ fn power_to_db(power: &[f32]) -> Vec<f32> {
 
 #[allow(dead_code)]
 fn power_normalized(power: &[f32]) -> Vec<f32> {
-    let spec_max = max(power);
+    let spec_max = util::max(power);
     dbg!(spec_max);
     power
         .iter()

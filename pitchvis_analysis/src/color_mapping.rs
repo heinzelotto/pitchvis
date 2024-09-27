@@ -90,7 +90,7 @@ pub const EASING_POW: f32 = 1.3;
 /// assert_eq!(result, (0.01, 0.52, 0.71)); // Assuming the bucket matches the color for C# rexactly.
 /// ```
 pub fn calculate_color(
-    buckets_per_octave: usize,
+    buckets_per_octave: u16,
     bucket: f32,
     colors: [[f32; 3]; 12],
     gray_level: f32,

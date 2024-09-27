@@ -23,12 +23,13 @@ use pitchvis_analysis::{
     analysis::ContinuousPeak,
     color_mapping::{COLORS, EASING_POW, GRAY_LEVEL, PITCH_NAMES},
     util::*,
+    vqt::VqtRange,
 };
 use std::collections::HashMap;
 use std::f32::consts::PI;
 
-const HIGHEST_BASSNOTE: usize = 12 * 2 + 4;
-const BASS_SPIRAL_SEGMENTS_PER_SEMITONE: usize = 6;
+const HIGHEST_BASSNOTE: u16 = 12 * 2 + 4;
+const BASS_SPIRAL_SEGMENTS_PER_SEMITONE: u16 = 6;
 
 #[derive(Component)]
 pub struct PitchBall(usize);
@@ -54,8 +55,7 @@ pub enum DisplayMode {
 pub struct CylinderEntityListResource(pub Vec<Entity>);
 
 pub fn setup_display_to_system(
-    octaves: usize,
-    buckets_per_octave: usize,
+    range: &VqtRange,
 ) -> impl FnMut(
     Commands,
     ResMut<Assets<Mesh>>,
@@ -63,14 +63,14 @@ pub fn setup_display_to_system(
     ResMut<Assets<NoisyColorMaterial>>,
     ResMut<CylinderEntityListResource>,
 ) {
+    let range = range.clone();
     move |commands: Commands,
           meshes: ResMut<Assets<Mesh>>,
           color_materials: ResMut<Assets<ColorMaterial>>,
           noisy_color_materials: ResMut<Assets<NoisyColorMaterial>>,
           cylinder_entities: ResMut<CylinderEntityListResource>| {
         setup_display(
-            octaves,
-            buckets_per_octave,
+            &range,
             commands,
             meshes,
             color_materials,
@@ -81,17 +81,16 @@ pub fn setup_display_to_system(
 }
 
 pub fn setup_display(
-    octaves: usize,
-    buckets_per_octave: usize,
+    range: &VqtRange,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut color_materials: ResMut<Assets<ColorMaterial>>,
     mut noisy_color_materials: ResMut<Assets<NoisyColorMaterial>>,
     mut cylinder_entities: ResMut<CylinderEntityListResource>,
 ) {
-    assert!(buckets_per_octave % 12 == 0);
+    assert!(range.buckets_per_octave % 12 == 0);
 
-    let spiral_points = calculate_spiral_points(octaves, buckets_per_octave);
+    let spiral_points = calculate_spiral_points(range.octaves, range.buckets_per_octave);
 
     for (idx, (x, y, _z)) in spiral_points.iter().enumerate() {
         // spheres
@@ -117,11 +116,11 @@ pub fn setup_display(
     }
 
     let bass_spiral_points =
-        calculate_spiral_points(octaves, 12 * BASS_SPIRAL_SEGMENTS_PER_SEMITONE);
+        calculate_spiral_points(range.octaves, 12 * BASS_SPIRAL_SEGMENTS_PER_SEMITONE);
 
     for (prev, cur) in bass_spiral_points
         .iter()
-        .take(HIGHEST_BASSNOTE * buckets_per_octave * 2 / 12)
+        .take((HIGHEST_BASSNOTE * range.buckets_per_octave * 2 / 12) as usize)
         .tuple_windows()
     {
         use std::ops::Sub;
@@ -159,7 +158,7 @@ pub fn setup_display(
     // draw rays
     let line_list: Vec<(Vec3, Vec3)> = (0..12)
         .map(|i| {
-            let radius = octaves as f32 * 2.2; // 19.0 * 0.41421356237
+            let radius = range.octaves as f32 * 2.2; // 19.0 * 0.41421356237
             let (p_y, p_x) = (i as f32 / 12.0 * 2.0 * PI).sin_cos();
 
             (
@@ -200,7 +199,7 @@ pub fn setup_display(
 
     // spectrum
     let spectrum_mesh = LineList {
-        lines: (0..(octaves * buckets_per_octave))
+        lines: (0..range.n_buckets())
             .map(|i| Vec3::new(i as f32 * 0.017, 0.0, 0.0))
             .tuple_windows()
             .collect::<Vec<(Vec3, Vec3)>>(),
@@ -276,7 +275,7 @@ pub fn setup_display(
     ));
 
     // text
-    let text_spiral_points = calculate_spiral_points(octaves, 12);
+    let text_spiral_points = calculate_spiral_points(range.octaves, 12);
     for (idx, (x, y, _z)) in text_spiral_points[text_spiral_points.len() - 12..]
         .iter()
         .enumerate()
@@ -307,8 +306,7 @@ pub fn setup_display(
 }
 
 pub fn update_display_to_system(
-    buckets_per_octave: usize,
-    octaves: usize,
+    range: &VqtRange,
 ) -> impl FnMut(
     ParamSet<(
         Query<(
@@ -335,7 +333,8 @@ pub fn update_display_to_system(
         Option<&mut BloomSettings>,
         &OrthographicProjection,
     )>,
-) + Copy {
+) {
+    let range = range.clone();
     move |set: ParamSet<(
         Query<(
             &PitchBall,
@@ -362,8 +361,7 @@ pub fn update_display_to_system(
         &OrthographicProjection,
     )>| {
         update_display(
-            buckets_per_octave,
-            octaves,
+            &range,
             set,
             color_materials,
             noisy_color_materials,
@@ -379,8 +377,7 @@ pub fn update_display_to_system(
 }
 
 pub fn update_display(
-    buckets_per_octave: usize,
-    octaves: usize,
+    range: &VqtRange,
     mut set: ParamSet<(
         Query<(
             &PitchBall,
@@ -414,7 +411,7 @@ pub fn update_display(
         if *visibility == Visibility::Visible {
             let idx = pitch_ball.0;
             let dropoff_factor_per_30fps_frame =
-                0.90 - 0.15 * (idx as f32 / (octaves * buckets_per_octave) as f32);
+                0.90 - 0.15 * (idx as f32 / range.n_buckets() as f32);
             let dropoff_factor = dropoff_factor_per_30fps_frame.powf(30.0 * timestep.as_secs_f32());
 
             let mut size = transform.scale / scale_factor;
@@ -468,9 +465,9 @@ pub fn update_display(
             let ContinuousPeak { center, size } = peaks_rounded[&idx];
 
             let (r, g, b) = pitchvis_analysis::calculate_color(
-                buckets_per_octave,
-                (center + (buckets_per_octave - 3 * (buckets_per_octave / 12)) as f32)
-                    % buckets_per_octave as f32,
+                range.buckets_per_octave,
+                (center + (range.buckets_per_octave - 3 * (range.buckets_per_octave / 12)) as f32)
+                    % range.buckets_per_octave as f32,
                 COLORS,
                 GRAY_LEVEL,
                 EASING_POW,
@@ -478,7 +475,7 @@ pub fn update_display(
 
             let color_coefficient = 1.0 - (1.0 - size / max_size).powf(2.0);
 
-            let (x, y, _) = bin_to_spiral(buckets_per_octave, center);
+            let (x, y, _) = bin_to_spiral(range.buckets_per_octave, center);
             // make sure larger circles are drawn on top by adding a small offset proportional to the size
             let z_ordering_offset = (size / max_size - 1.01) * 12.5;
             transform.translation = Vec3::new(x, y, z_ordering_offset);
@@ -538,7 +535,7 @@ pub fn update_display(
     // TODO: ?faster lookup through indexes
 
     update_bass_spiral(
-        buckets_per_octave,
+        range.buckets_per_octave,
         cylinder_entities,
         color_materials,
         set.p1(),
@@ -560,7 +557,7 @@ pub fn update_display(
                 (_, _, _, projection) => {
                     let Rect { max, .. } = projection.area;
                     *transform = Transform::from_xyz(
-                        max.x - buckets_per_octave as f32 * octaves as f32 * 0.022 - 0.2,
+                        max.x - range.n_buckets() as f32 * 0.022 - 0.2,
                         max.y - 4.2,
                         -13.0,
                     );
@@ -993,7 +990,7 @@ impl From<LineList> for Mesh {
 // }
 
 fn update_bass_spiral(
-    buckets_per_octave: usize,
+    buckets_per_octave: u16,
     cylinder_entities: Res<CylinderEntityListResource>,
     mut materials: ResMut<Assets<ColorMaterial>>,
     mut bass_cylinders: Query<(&BassCylinder, &mut Visibility, &mut Handle<ColorMaterial>)>,
@@ -1011,7 +1008,8 @@ fn update_bass_spiral(
     // }
     if let Some(ContinuousPeak { center, size }) = peaks_continuous.first() {
         let center = center / buckets_per_octave as f32 * 12.0;
-        if center.round() as usize * BASS_SPIRAL_SEGMENTS_PER_SEMITONE >= cylinder_entities.0.len()
+        if center.round() as usize * BASS_SPIRAL_SEGMENTS_PER_SEMITONE as usize
+            >= cylinder_entities.0.len()
         {
             return;
         }
@@ -1054,13 +1052,13 @@ fn update_bass_spiral(
     }
 }
 
-fn calculate_spiral_points(octaves: usize, buckets_per_octave: usize) -> Vec<(f32, f32, f32)> {
-    (0..(buckets_per_octave * octaves))
+fn calculate_spiral_points(octaves: u8, buckets_per_octave: u16) -> Vec<(f32, f32, f32)> {
+    (0..(buckets_per_octave * octaves as u16))
         .map(|i| bin_to_spiral(buckets_per_octave, i as f32))
         .collect()
 }
 
-fn bin_to_spiral(buckets_per_octave: usize, x: f32) -> (f32, f32, f32) {
+fn bin_to_spiral(buckets_per_octave: u16, x: f32) -> (f32, f32, f32) {
     //let radius = 1.5 * (0.5 + (x / buckets_per_octave as f32).powf(0.75));
     let radius = 2.0 * (0.3 + (x / buckets_per_octave as f32).powf(0.75));
     #[allow(clippy::erasing_op)]

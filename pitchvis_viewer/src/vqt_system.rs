@@ -1,6 +1,6 @@
 use crate::audio_system::AudioBufferResource;
 use bevy::prelude::*;
-use pitchvis_analysis::Vqt;
+use pitchvis_analysis::{vqt::VqtRange, Vqt};
 
 #[derive(Resource)]
 pub struct VqtResource(pub Vqt);
@@ -12,9 +12,9 @@ pub struct VqtResultResource {
 }
 
 impl VqtResultResource {
-    pub fn new(octaves: usize, buckets_per_octave: usize) -> Self {
+    pub fn new(range: &VqtRange) -> Self {
         Self {
-            x_vqt: vec![0.0; octaves * buckets_per_octave],
+            x_vqt: vec![0.0; range.n_buckets()],
             gain: 1.0,
         }
     }
@@ -37,9 +37,9 @@ pub fn update_vqt(
     mut vqt_result: ResMut<VqtResultResource>,
 ) {
     let (x, gain) = {
-        let mut x = vec![0.0_f32; vqt.0.n_fft];
+        let mut x = vec![0.0_f32; vqt.0.params().n_fft];
         let rb = rb.0.lock().unwrap();
-        x.copy_from_slice(&rb.buf[(bufsize - vqt.0.n_fft)..]);
+        x.copy_from_slice(&rb.buf[(bufsize - vqt.0.params().n_fft)..]);
         (x, rb.gain)
     };
 

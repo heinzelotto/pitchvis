@@ -1,6 +1,41 @@
 use std::time::Duration;
 
 use log::trace;
+use rustfft::num_traits::Float;
+
+use crate::vqt::VqtParameters;
+
+/// Returns the maximum value in a slice of floats.
+/// This function is necessary because floats do not implement the Ord trait.
+/// It assumes that there are no NaN values in the slice.
+///
+/// # Arguments
+///
+/// * `sl` - A slice of f32 values.
+///
+/// # Returns
+///
+/// * The maximum value in the slice.
+pub fn max(sl: &[f32]) -> f32 {
+    sl.iter()
+        .fold(f32::MIN, |cur, x| if *x > cur { *x } else { cur })
+}
+
+/// Returns the minimum value in a slice of floats.
+/// This function is necessary because floats do not implement the Ord trait.
+/// It assumes that there are no NaN values in the slice.
+///
+/// # Arguments
+///
+/// * `sl` - A slice of f32 values.
+///
+/// # Returns
+///
+/// * The minimum value in the slice.
+pub fn min(sl: &[f32]) -> f32 {
+    sl.iter()
+        .fold(f32::MAX, |cur, x| if *x < cur { *x } else { cur })
+}
 
 pub fn arg_min(sl: &[f32]) -> usize {
     // we have no NaNs
@@ -23,6 +58,32 @@ pub fn arg_max(sl: &[f32]) -> usize {
         )
         .0
 }
+
+//#green
+#[allow(dead_code)]
+fn test_create_sines(params: &VqtParameters, t_diff: f32) -> Vec<f32> {
+    use std::f32::consts::PI;
+
+    let mut wave = vec![0.0; params.n_fft as usize];
+
+    const LOWER_OCTAVE: usize = 0;
+    #[allow(clippy::erasing_op)]
+    for f in ((12 * (LOWER_OCTAVE) + 2)..(12 * (params.range.octaves as usize - 1) + 12))
+        .step_by(5)
+        .map(|p| params.range.min_freq * (2.0).powf(p as f32 / 12.0))
+    {
+        //let f = 880.0 * 2.0.powf(1.0/12.0);
+        for (i, w) in wave.iter_mut().enumerate() {
+            let amp = (((i as f32 + t_diff * params.sr as f32) * 2.0 * PI / params.sr as f32) * f)
+                .sin()
+                / 12.0;
+            *w += amp;
+        }
+    }
+
+    wave
+}
+//#
 
 /// Exponential moving average helper
 ///

@@ -57,14 +57,14 @@ pub struct Stream {
 }
 
 pub struct WasmAudioStream {
-    pub sr: usize,
+    pub sr: u32,
     pub ring_buffer: std::sync::Arc<std::sync::Mutex<RingBuffer>>,
     pub stream: Stream,
     //pub agc: dagc::MonoAgc,
 }
 
 impl AudioStream for WasmAudioStream {
-    fn sr(&self) -> usize {
+    fn sr(&self) -> u32 {
         self.sr
     }
     fn ring_buffer(&self) -> std::sync::Arc<std::sync::Mutex<RingBuffer>> {
@@ -246,7 +246,7 @@ where
     })
 }
 
-pub async fn async_new_audio_stream(sr: usize, buf_size: usize) -> Result<WasmAudioStream> {
+pub async fn async_new_audio_stream(sr: u32, buf_size: usize) -> Result<WasmAudioStream> {
     dbg!(cpal::available_hosts());
 
     let host = cpal::default_host();
@@ -269,7 +269,7 @@ pub async fn async_new_audio_stream(sr: usize, buf_size: usize) -> Result<WasmAu
 
     let stream_config = cpal::StreamConfig {
         channels: 1u16,
-        sample_rate: cpal::SampleRate(sr as u32),
+        sample_rate: cpal::SampleRate(sr),
         buffer_size: cpal::BufferSize::Default,
     };
 

@@ -18,7 +18,7 @@ pub struct RingBuffer {
 }
 
 pub trait AudioStream {
-    fn sr(&self) -> usize;
+    fn sr(&self) -> u32;
     fn ring_buffer(&self) -> std::sync::Arc<std::sync::Mutex<RingBuffer>>;
     fn play(&self) -> Result<()>;
 }

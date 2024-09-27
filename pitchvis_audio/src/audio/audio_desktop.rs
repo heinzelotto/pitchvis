@@ -6,14 +6,14 @@ use itertools::Itertools;
 use log::trace;
 
 pub struct DesktopAudioStream {
-    pub sr: usize,
+    pub sr: u32,
     pub ring_buffer: std::sync::Arc<std::sync::Mutex<RingBuffer>>,
     pub stream: cpal::Stream,
     //pub agc: dagc::MonoAgc,
 }
 
 impl AudioStream for DesktopAudioStream {
-    fn sr(&self) -> usize {
+    fn sr(&self) -> u32 {
         self.sr
     }
     fn ring_buffer(&self) -> std::sync::Arc<std::sync::Mutex<RingBuffer>> {
@@ -26,7 +26,7 @@ impl AudioStream for DesktopAudioStream {
     }
 }
 
-pub fn new_audio_stream(sr: usize, buf_size: usize) -> Result<DesktopAudioStream> {
+pub fn new_audio_stream(sr: u32, buf_size: usize) -> Result<DesktopAudioStream> {
     dbg!(cpal::available_hosts());
 
     let host = cpal::default_host();
