@@ -23,6 +23,12 @@ struct FpsRoot;
 #[derive(Component)]
 struct FpsText;
 
+#[derive(Resource)]
+pub struct SettingsState {
+    pub display_mode: display_system::DisplayMode,
+    pub fps_limit: Option<u32>,
+}
+
 fn setup_fps_counter(mut commands: Commands) {
     // create our UI root node
     // this is the wrapper/container for the text
@@ -134,7 +140,7 @@ fn fps_text_update_system(
 /// Toggle the FPS counter based on the display mode
 fn fps_counter_showhide(
     mut q: Query<&mut Visibility, With<FpsRoot>>,
-    settings: Res<display_system::SettingsState>,
+    settings: Res<SettingsState>,
 ) {
     let mut vis = q.single_mut();
     if settings.display_mode == display_system::DisplayMode::Debugging {
@@ -153,7 +159,7 @@ fn update_bloom_settings(
     mut text: Query<(&mut Text, &mut Visibility), With<BloomSettingsText>>,
     keycode: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
-    settings: Res<display_system::SettingsState>,
+    settings: Res<SettingsState>,
 ) {
     let mut text = text.single_mut();
     if settings.display_mode != display_system::DisplayMode::Debugging {
@@ -279,10 +285,12 @@ fn setup_bloom_ui(mut commands: Commands) {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn frame_limiter_to_system(fps: u64) -> impl FnMut() + Copy {
-    move || {
+fn frame_limiter_system(settings: Res<SettingsState>) {
+    if let Some(fps) = settings.fps_limit {
         use std::{thread, time};
-        thread::sleep(time::Duration::from_millis((1000 / fps).saturating_sub(5)));
+        thread::sleep(time::Duration::from_micros(
+            (1_000_000 / fps as u64).saturating_sub(5_000),
+        ));
     }
 }
 
@@ -298,7 +306,7 @@ fn user_input_system(
     mut touch_events: EventReader<TouchInput>,
     mut keyboard_input_events: EventReader<KeyboardInput>,
     mut mouse_button_input_events: EventReader<MouseButtonInput>,
-    mut settings: ResMut<display_system::SettingsState>,
+    mut settings: ResMut<SettingsState>,
 ) {
     for touch in touch_events.read() {
         if touch.phase == TouchPhase::Ended {
@@ -312,6 +320,11 @@ fn user_input_system(
                 KeyCode::Space => {
                     settings.display_mode = cycle_display_mode(&settings.display_mode);
                 }
+                KeyCode::KeyF => match settings.fps_limit {
+                    None => settings.fps_limit = Some(30),
+                    Some(30) => settings.fps_limit = Some(60),
+                    _ => settings.fps_limit = None,
+                },
                 _ => {}
             }
         }

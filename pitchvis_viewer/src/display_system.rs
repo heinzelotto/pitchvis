@@ -2,6 +2,7 @@
 
 pub(crate) mod material;
 
+use crate::app::SettingsState;
 use bevy::{
     core_pipeline::{
         bloom::{BloomCompositeMode, BloomPrefilterSettings, BloomSettings},
@@ -15,19 +16,16 @@ use bevy::{
     },
     sprite::{MaterialMesh2dBundle, Mesh2dHandle},
 };
+use itertools::Itertools;
+use material::NoisyColorMaterial;
+use nalgebra::{Rotation3, Vector3};
 use pitchvis_analysis::{
     analysis::ContinuousPeak,
     color_mapping::{COLORS, EASING_POW, GRAY_LEVEL, PITCH_NAMES},
     util::*,
 };
-
-use itertools::Itertools;
-use nalgebra::{Rotation3, Vector3};
-
 use std::collections::HashMap;
 use std::f32::consts::PI;
-
-use crate::display_system::material::NoisyColorMaterial;
 
 const HIGHEST_BASSNOTE: usize = 12 * 2 + 4;
 const BASS_SPIRAL_SEGMENTS_PER_SEMITONE: usize = 6;
@@ -49,11 +47,6 @@ pub enum DisplayMode {
     PitchnamesCalmness,
     Calmness,
     Debugging,
-}
-
-#[derive(Resource)]
-pub struct SettingsState {
-    pub display_mode: DisplayMode,
 }
 
 /// keep an index -> entity mapping for the cylinders
@@ -416,12 +409,15 @@ pub fn update_display(
 ) {
     let scale_factor = 1.0 / 305.0;
 
-    // FIXME: make all this independent of the framerate
+    let timestep = run_time.delta();
     for (pitch_ball, mut visibility, mut transform, color) in &mut set.p0() {
         if *visibility == Visibility::Visible {
             let idx = pitch_ball.0;
+            let dropoff_factor_per_30fps_frame =
+                0.90 - 0.15 * (idx as f32 / (octaves * buckets_per_octave) as f32);
+            let dropoff_factor = dropoff_factor_per_30fps_frame.powf(30.0 * timestep.as_secs_f32());
+
             let mut size = transform.scale / scale_factor;
-            let dropoff_factor = 0.90 - 0.15 * (idx as f32 / (octaves * buckets_per_octave) as f32);
             size *= dropoff_factor;
             transform.scale = size * scale_factor;
 
@@ -434,7 +430,7 @@ pub fn update_display(
                 .with_alpha(color_mat.color.alpha() * dropoff_factor);
 
             // also shift shrinking circles slightly to the background so that they are not cluttering newly appearing larger circles
-            transform.translation.z -= 0.001;
+            transform.translation.z -= 0.001 * 30.0 * timestep.as_secs_f32();
 
             if size.x * scale_factor < 0.003 {
                 *visibility = Visibility::Hidden;
@@ -564,7 +560,7 @@ pub fn update_display(
                 (_, _, _, projection) => {
                     let Rect { max, .. } = projection.area;
                     *transform = Transform::from_xyz(
-                        max.x - buckets_per_octave as f32 * octaves as f32 * 0.017 - 0.2,
+                        max.x - buckets_per_octave as f32 * octaves as f32 * 0.022 - 0.2,
                         max.y - 4.2,
                         -13.0,
                     );
@@ -576,11 +572,11 @@ pub fn update_display(
                     .x_vqt
                     .iter()
                     .enumerate()
-                    .map(|(i, amp)| Vec3::new(i as f32 * 0.017, *amp / 10.0, 0.0))
+                    .map(|(i, amp)| Vec3::new(i as f32 * 0.022, *amp / 10.0, 0.0))
                     .tuple_windows()
                     .collect::<Vec<(Vec3, Vec3)>>(),
                 flip: false,
-                thickness: 0.01,
+                thickness: 0.02,
             };
             let mesh = meshes
                 .get_mut(&mesh_handle.0)

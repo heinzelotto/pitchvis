@@ -8,11 +8,12 @@ use pitchvis_audio::audio::AudioStream;
 use super::close_on_esc;
 use super::fps_counter_showhide;
 use super::fps_text_update_system;
-use super::frame_limiter_to_system;
+use super::frame_limiter_system;
 use super::setup_bloom_ui;
 use super::setup_fps_counter;
 use super::update_bloom_settings;
 use super::user_input_system;
+use super::SettingsState;
 use crate::analysis_system;
 use crate::audio_system;
 use crate::display_system;
@@ -34,7 +35,8 @@ pub const SPARSITY_QUANTILE: f32 = 0.999;
 pub const Q: f32 = 10.0 / UPSCALE_FACTOR as f32;
 pub const GAMMA: f32 = 5.3 * Q;
 
-const FPS: u64 = 30;
+// Default FPS when FPS limiting is on. Else FPS is limited by screen refresh rate.
+const FPS: u32 = 30;
 // TODO: make the animation speed/blurring windows/... independent of the frame rate
 
 /// This enum is used to control the audio stream. It is sent to the audio thread via a channel. This allows us to control the audio stream from the bevy thread.
@@ -104,8 +106,9 @@ pub fn main_fun() -> Result<()> {
             pitchvis_analysis::analysis::SPECTROGRAM_LENGTH,
         ),
     ))
-    .insert_resource(display_system::SettingsState {
+    .insert_resource(SettingsState {
         display_mode: display_system::DisplayMode::PitchnamesCalmness,
+        fps_limit: Some(FPS),
     });
 
     #[cfg(feature = "ml")]
@@ -123,7 +126,7 @@ pub fn main_fun() -> Result<()> {
             Update,
             (
                 close_on_esc,
-                frame_limiter_to_system(FPS),
+                frame_limiter_system,
                 update_vqt_system,
                 user_input_system,
                 fps_text_update_system,
