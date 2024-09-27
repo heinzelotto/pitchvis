@@ -58,7 +58,8 @@ mod tests {
                 let sound = test_create_sines(&VQT_PARAMETERS, &[freq_1, freq_2], 0.0);
                 let x_vqt = vqt.calculate_vqt_instant_in_db(&sound);
 
-                let mut analysis = AnalysisState::new(VQT_PARAMETERS.range, 0);
+                let mut analysis =
+                    AnalysisState::new(VQT_PARAMETERS.range, AnalysisParameters::default());
                 analysis.preprocess(&x_vqt, Duration::from_millis(1000));
 
                 peaks_found.push(analysis.peaks.len());

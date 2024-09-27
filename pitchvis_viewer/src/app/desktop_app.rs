@@ -99,7 +99,7 @@ pub fn main_fun() -> Result<()> {
     .insert_resource(analysis_system::AnalysisStateResource(
         pitchvis_analysis::analysis::AnalysisState::new(
             VQT_PARAMETERS.range.clone(),
-            pitchvis_analysis::analysis::SPECTROGRAM_LENGTH,
+            pitchvis_analysis::analysis::AnalysisParameters::default(),
         ),
     ))
     .insert_resource(SettingsState {

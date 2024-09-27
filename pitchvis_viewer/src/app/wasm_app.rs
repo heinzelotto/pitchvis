@@ -81,7 +81,7 @@ pub async fn main_fun() -> Result<(), JsValue> {
         .insert_resource(analysis_system::AnalysisStateResource(
             pitchvis_analysis::analysis::AnalysisState::new(
                 VQT_PARAMETERS.range.clone(),
-                pitchvis_analysis::analysis::SPECTROGRAM_LENGTH,
+                pitchvis_analysis::analysis::AnalysisParameters::default(),
             ),
         ))
         .insert_resource(display_system::CylinderEntityListResource(Vec::new()))

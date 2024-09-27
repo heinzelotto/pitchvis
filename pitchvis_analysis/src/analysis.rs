@@ -1,3 +1,23 @@
+/// Useful statistics over a series of VQT frames.
+///
+/// This is currently a collection of several heuristics that are used to determine interesting
+/// features of the VQT frames. These features include the calmness of the notes currently being
+/// played, the average calmness of the scene, a time-smoothed version of the VQT sequence, and
+/// a peak detection based on that smoothed VQT sequence.
+///
+/// TODO;
+/// There are lots of parameters that can be adjusted and fine-tuned to improve the detection of
+/// interesting features. Also, different alternative approaches can be tried out.
+///
+/// Ideas to try:
+///  - keyboard shortcuts in the main app to play around with these parameters on the fly
+///  - different smoothing durations for different frequency ranges
+///  - different peak detection parameters for bass notes detection and general note detection
+///  - second VQT with lower quality for bass notes detection. ? is this better than tuning of
+///    the existing VQT?
+///  - drop bass notes that don't have overtones in favor of those that still fall in the bass
+///    range, but do have them
+///
 use crate::{util::*, vqt::VqtRange};
 use find_peaks::PeakFinder;
 use log::debug;
@@ -8,19 +28,48 @@ use std::{
     time::Duration,
 };
 
-pub const SPECTROGRAM_LENGTH: usize = 400;
-const PEAK_MIN_PROMINENCE: f32 = 13.0;
-const PEAK_MIN_HEIGHT: f32 = 6.0;
-const _BASSLINE_PEAK_MIN_PROMINENCE: f32 = 12.0;
-const _BASSLINE_PEAK_MIN_HEIGHT: f32 = 4.0;
-const _HIGHEST_BASSNOTE: usize = 12 * 2 + 4;
-// const SMOOTH_LENGTH: usize = 3;
-/// The duration over which each VQT bin is smoothed.
-const VQT_SMOOTHING_DURATION: Duration = Duration::from_millis(90);
-/// The duration over which the calmness of a indivitual pitch bin is smoothed.
-const NOTE_CALMNESS_SMOOTHING_DURATION: Duration = Duration::from_millis(4_500);
-/// The duration over which the calmness of the scene is smoothed.
-const SCENE_CALMNESS_SMOOTHING_DURATION: Duration = Duration::from_millis(1_100);
+#[derive(Debug, Clone)]
+pub struct AnalysisParameters {
+    /// The length of the spectrogram in frames.
+    spectrogram_length: usize,
+    /// The minimum prominence of a peak to be considered a peak.
+    peak_min_prominence: f32,
+    /// The minimum height of a peak to be considered a peak.
+    peak_min_height: f32,
+    /// The minimum prominence of a peak to be considered a bassline peak.
+    _bassline_peak_min_prominence: f32,
+    /// The minimum height of a peak to be considered a bassline peak.
+    _bassline_peak_min_height: f32,
+    /// The highest bass note to be considered.
+    _highest_bassnote: usize,
+    /// The duration over which each VQT bin is smoothed.
+    vqt_smoothing_duration: Duration,
+    /// The duration over which the calmness of a indivitual pitch bin is smoothed.
+    note_calmness_smoothing_duration: Duration,
+    /// The duration over which the calmness of the scene is smoothed.
+    scene_calmness_smoothing_duration: Duration,
+}
+
+impl AnalysisParameters {
+    // TODO: add setters for the parameters that shall be adjustable on the fly. Either here or on
+    // AnalysisState.
+}
+
+impl Default for AnalysisParameters {
+    fn default() -> Self {
+        Self {
+            spectrogram_length: 400,
+            peak_min_prominence: 13.0,
+            peak_min_height: 6.0,
+            _bassline_peak_min_prominence: 12.0,
+            _bassline_peak_min_height: 4.0,
+            _highest_bassnote: 12 * 2 + 4,
+            vqt_smoothing_duration: Duration::from_millis(90),
+            note_calmness_smoothing_duration: Duration::from_millis(4_500),
+            scene_calmness_smoothing_duration: Duration::from_millis(1_100),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy)]
 pub struct ContinuousPeak {
@@ -48,6 +97,10 @@ pub struct ContinuousPeak {
 /// analysis_state.preprocess(&dummy_x_vqt, Duration::from_millis(30));
 /// ```
 pub struct AnalysisState {
+    /// The parameters used for the analysis.
+    pub params: AnalysisParameters,
+
+    /// The range of the spectrum to be analyzed, specified in octaves and buckets per octave.
     pub range: VqtRange,
 
     // /// A rolling history of the past few VQT frames. This history is used for smoothing and
@@ -72,11 +125,11 @@ pub struct AnalysisState {
     pub peaks_continuous: Vec<ContinuousPeak>,
 
     /// A buffer for the spectrogram visualization. The size is determined by the `spectrum_size`
-    /// multiplied by the `history_length` and further multiplied by 4 for RGBA color data.
-    pub spectrogram_buffer: Vec<u8>,
+    /// multiplied by the `spectrogram_length` and further multiplied by 4 for RGBA color data.
+    _spectrogram_buffer: Vec<u8>,
 
     /// Points to the current start position in the circular `spectrogram_buffer`.
-    pub spectrogram_front_idx: usize,
+    _spectrogram_front_idx: usize,
 
     /// A precomputed or user-defined list of MIDI pitches for machine learning or other
     /// algorithms, indexed by MIDI number.
@@ -102,9 +155,8 @@ impl AnalysisState {
     ///
     /// # Returns:
     /// An initialized `AnalysisState` instance.
-    pub fn new(range: VqtRange, history_length: usize) -> Self {
+    pub fn new(range: VqtRange, params: AnalysisParameters) -> Self {
         let n_buckets = range.n_buckets();
-        let spectrogram_buffer = vec![0; n_buckets * history_length * 4];
 
         Self {
             // history: (0..SMOOTH_LENGTH)
@@ -112,17 +164,27 @@ impl AnalysisState {
             //     .collect(),
             //accum: (vec![0.0; spectrum_size], 0),
             //averaged: vec![0.0; spectrum_size],
+            params: params.clone(),
             range,
-            x_vqt_smoothed: vec![EmaMeasurement::new(VQT_SMOOTHING_DURATION, 0.0); n_buckets],
+            x_vqt_smoothed: vec![
+                EmaMeasurement::new(params.vqt_smoothing_duration, 0.0);
+                n_buckets
+            ],
             x_vqt_peakfiltered: vec![0.0; n_buckets],
             x_vqt_afterglow: vec![0.0; n_buckets],
             peaks: HashSet::new(),
             peaks_continuous: Vec::new(),
-            spectrogram_buffer,
-            spectrogram_front_idx: 0,
+            _spectrogram_buffer: vec![0; n_buckets * params.spectrogram_length * 4],
+            _spectrogram_front_idx: 0,
             ml_midi_base_pitches: vec![0.0; 128],
-            calmness: vec![EmaMeasurement::new(NOTE_CALMNESS_SMOOTHING_DURATION, 0.0); n_buckets],
-            smoothed_scene_calmness: EmaMeasurement::new(SCENE_CALMNESS_SMOOTHING_DURATION, 0.0),
+            calmness: vec![
+                EmaMeasurement::new(params.note_calmness_smoothing_duration, 0.0);
+                n_buckets
+            ],
+            smoothed_scene_calmness: EmaMeasurement::new(
+                params.scene_calmness_smoothing_duration,
+                0.0,
+            ),
         }
     }
 
@@ -189,7 +251,7 @@ impl AnalysisState {
         // }
 
         // find peaks
-        let peaks = find_peaks(&x_vqt_smoothed, self.range.buckets_per_octave);
+        let peaks = find_peaks(&self.params, &x_vqt_smoothed, self.range.buckets_per_octave);
         let peaks_continuous = enhance_peaks_continuous(&peaks, &x_vqt_smoothed, &self.range);
 
         let x_vqt_peakfiltered = x_vqt_smoothed
@@ -222,7 +284,8 @@ impl AnalysisState {
         self.update_calmness(x_vqt, frame_time);
 
         // TODO: more advanced bass note detection than just taking the first peak (e. g. by
-        // promoting frequences through their overtones first)
+        // promoting frequences through their overtones first), using different peak detection
+        // parameters, etc.
         debug!(
             "bass note: {:?}",
             self.peaks_continuous
@@ -246,7 +309,7 @@ impl AnalysisState {
         let radius = self.range.buckets_per_octave / 12 / 2;
 
         // we want unsmoothed peaks for this
-        let peaks = find_peaks(x_vqt, self.range.buckets_per_octave);
+        let peaks = find_peaks(&self.params, x_vqt, self.range.buckets_per_octave);
         for p in peaks {
             for i in max(0, p as i32 - radius as i32)
                 ..min(self.range.n_buckets() as i32, p as i32 + radius as i32)
@@ -273,13 +336,13 @@ impl AnalysisState {
     }
 }
 
-fn find_peaks(vqt: &[f32], buckets_per_octave: u16) -> HashSet<usize> {
+fn find_peaks(params: &AnalysisParameters, vqt: &[f32], buckets_per_octave: u16) -> HashSet<usize> {
     let padding_length = 1;
     let mut x_vqt_padded_left = vec![0.0; padding_length];
     x_vqt_padded_left.extend(vqt.iter());
     let mut fp = PeakFinder::new(&x_vqt_padded_left);
-    fp.with_min_prominence(PEAK_MIN_PROMINENCE);
-    fp.with_min_height(PEAK_MIN_HEIGHT);
+    fp.with_min_prominence(params.peak_min_prominence);
+    fp.with_min_height(params.peak_min_height);
     let peaks = fp.find_peaks();
     let peaks = peaks
         .iter()
@@ -342,7 +405,7 @@ mod tests {
                 octaves: 2,
                 buckets_per_octave: 24,
             },
-            0,
+            AnalysisParameters::default(),
         );
         analysis.preprocess(&vec![0.0; 48], Duration::from_secs(1));
         assert!(!analysis.x_vqt_smoothed.is_empty());
