@@ -189,7 +189,6 @@ pub fn setup_display(
     });
 
     // draw spiral
-    // TODO: consider a higher resolution, it's a bit choppy with buckets_per_semitone = 3
     let spiral_mesh = LineList {
         lines: bass_spiral_points
             .iter()
@@ -207,25 +206,23 @@ pub fn setup_display(
     });
 
     // spectrum
-    //#[cfg(feature = "ml")]
-    // let spectrum_mesh = LineList {
-    //     lines: (0..(octaves * buckets_per_octave))
-    //         .map(|i| Vec3::new(i as f32 * 0.017, 0.0, 0.0))
-    //         .tuple_windows()
-    //         .collect::<Vec<(Vec3, Vec3)>>(),
-    //     flip: false,
-    //     thickness: 0.01,
-    // };
-    //#[cfg(feature = "ml")]
-    // commands.spawn((
-    //     Spectrum,
-    //     MaterialMesh2dBundle {
-    //         mesh: meshes.add(spectrum_mesh).into(),
-    //         material: materials.add(Color::srgb(0.25, 0.85, 0.20)),
-    //         transform: Transform::from_xyz(-12.0, 3.0, -13.0),
-    //         ..default()
-    //     },
-    // ));
+    let spectrum_mesh = LineList {
+        lines: (0..(octaves * buckets_per_octave))
+            .map(|i| Vec3::new(i as f32 * 0.017, 0.0, 0.0))
+            .tuple_windows()
+            .collect::<Vec<(Vec3, Vec3)>>(),
+        flip: false,
+        thickness: 0.01,
+    };
+    commands.spawn((
+        Spectrum,
+        MaterialMesh2dBundle {
+            mesh: meshes.add(spectrum_mesh).into(),
+            material: color_materials.add(Color::srgb(0.25, 0.85, 0.20)),
+            transform: Transform::from_xyz(-12.0, 3.0, -13.0),
+            ..default()
+        },
+    ));
 
     // light
     commands.spawn(PointLightBundle {
@@ -329,8 +326,8 @@ pub fn update_display_to_system(
         )>,
         Query<(&BassCylinder, &mut Visibility, &mut Handle<ColorMaterial>)>,
         Query<(&PitchNameText, &mut Visibility)>,
+        Query<(&mut Visibility, &Mesh2dHandle, &mut Transform), With<Spectrum>>,
     )>,
-    Query<(&Spectrum, &mut Mesh2dHandle)>,
     ResMut<Assets<ColorMaterial>>,
     ResMut<Assets<NoisyColorMaterial>>,
     ResMut<Assets<Mesh>>,
@@ -339,7 +336,12 @@ pub fn update_display_to_system(
     Res<CylinderEntityListResource>,
     Res<SettingsState>,
     Res<Time>,
-    Query<(Entity, Option<&mut BloomSettings>), With<Camera>>,
+    Query<(
+        &Camera,
+        Entity,
+        Option<&mut BloomSettings>,
+        &OrthographicProjection,
+    )>,
 ) + Copy {
     move |set: ParamSet<(
         Query<(
@@ -350,8 +352,8 @@ pub fn update_display_to_system(
         )>,
         Query<(&BassCylinder, &mut Visibility, &mut Handle<ColorMaterial>)>,
         Query<(&PitchNameText, &mut Visibility)>,
+        Query<(&mut Visibility, &Mesh2dHandle, &mut Transform), With<Spectrum>>,
     )>,
-          spectrum_linestrip: Query<(&Spectrum, &mut Mesh2dHandle)>,
           color_materials: ResMut<Assets<ColorMaterial>>,
           noisy_color_materials: ResMut<Assets<NoisyColorMaterial>>,
           meshes: ResMut<Assets<Mesh>>,
@@ -360,12 +362,16 @@ pub fn update_display_to_system(
           cylinder_entities: Res<CylinderEntityListResource>,
           settings_state: Res<SettingsState>,
           run_time: Res<Time>,
-          camera: Query<(Entity, Option<&mut BloomSettings>), With<Camera>>| {
+          camera: Query<(
+        &Camera,
+        Entity,
+        Option<&mut BloomSettings>,
+        &OrthographicProjection,
+    )>| {
         update_display(
             buckets_per_octave,
             octaves,
             set,
-            spectrum_linestrip,
             color_materials,
             noisy_color_materials,
             meshes,
@@ -391,9 +397,8 @@ pub fn update_display(
         )>,
         Query<(&BassCylinder, &mut Visibility, &mut Handle<ColorMaterial>)>,
         Query<(&PitchNameText, &mut Visibility)>,
+        Query<(&mut Visibility, &Mesh2dHandle, &mut Transform), With<Spectrum>>,
     )>,
-
-    mut spectrum_linestrip: Query<(&Spectrum, &mut Mesh2dHandle)>,
     color_materials: ResMut<Assets<ColorMaterial>>,
     mut noisy_color_materials: ResMut<Assets<NoisyColorMaterial>>,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -402,7 +407,12 @@ pub fn update_display(
     cylinder_entities: Res<CylinderEntityListResource>,
     settings_state: Res<SettingsState>,
     run_time: Res<Time>,
-    mut camera: Query<(Entity, Option<&mut BloomSettings>), With<Camera>>,
+    mut camera: Query<(
+        &Camera,
+        Entity,
+        Option<&mut BloomSettings>,
+        &OrthographicProjection,
+    )>,
 ) {
     let scale_factor = 1.0 / 305.0;
 
@@ -523,7 +533,7 @@ pub fn update_display(
         }
     }
     match camera.single_mut() {
-        (_, Some(mut bloom_settings)) => {
+        (_, _, Some(mut bloom_settings), _) => {
             bloom_settings.intensity =
                 (analysis_state.smoothed_scene_calmness.get() * 1.3).clamp(0.0, 1.0);
         }
@@ -539,22 +549,44 @@ pub fn update_display(
         &analysis_state.peaks_continuous,
     );
 
-    for (_, line_strip) in &mut spectrum_linestrip {
-        let spectrum_mesh = LineList {
-            lines: vqt_result
-                .x_vqt
-                .iter()
-                .enumerate()
-                .map(|(i, amp)| Vec3::new(i as f32 * 0.017, *amp / 10.0, 0.0))
-                .tuple_windows()
-                .collect::<Vec<(Vec3, Vec3)>>(),
-            flip: false,
-            thickness: 0.01,
-        };
-        let mesh = meshes
-            .get_mut(&line_strip.0)
-            .expect("spectrum line strip mesh");
-        *mesh = spectrum_mesh.into();
+    match set.p3().single_mut() {
+        (mut visibility, mesh_handle, mut transform) => {
+            // set visibility
+            if settings_state.display_mode == DisplayMode::Debugging {
+                *visibility = Visibility::Visible;
+            } else {
+                *visibility = Visibility::Hidden;
+                // TODO: return early here after refactoring into fn
+            }
+
+            // move to right
+            match camera.single_mut() {
+                (_, _, _, projection) => {
+                    let Rect { max, .. } = projection.area;
+                    *transform = Transform::from_xyz(
+                        max.x - buckets_per_octave as f32 * octaves as f32 * 0.017 - 0.2,
+                        max.y - 4.2,
+                        -13.0,
+                    );
+                }
+            }
+
+            let spectrum_mesh = LineList {
+                lines: vqt_result
+                    .x_vqt
+                    .iter()
+                    .enumerate()
+                    .map(|(i, amp)| Vec3::new(i as f32 * 0.017, *amp / 10.0, 0.0))
+                    .tuple_windows()
+                    .collect::<Vec<(Vec3, Vec3)>>(),
+                flip: false,
+                thickness: 0.01,
+            };
+            let mesh = meshes
+                .get_mut(&mesh_handle.0)
+                .expect("spectrum line strip mesh");
+            *mesh = spectrum_mesh.into();
+        }
     }
 
     for (_, mut visibility) in &mut set.p2() {

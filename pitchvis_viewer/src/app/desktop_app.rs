@@ -1,5 +1,5 @@
 use anyhow::Result;
-use bevy::diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin};
+use bevy::diagnostic::FrameTimeDiagnosticsPlugin;
 use bevy::prelude::*;
 use bevy::sprite::Material2dPlugin;
 
