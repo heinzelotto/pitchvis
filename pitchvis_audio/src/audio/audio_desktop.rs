@@ -51,8 +51,8 @@ pub fn new_audio_stream(sr: u32, buf_size: usize) -> Result<DesktopAudioStream> 
         .supported_input_configs()
         .unwrap()
         .filter_map(|ref sc| {
-            if sc.min_sample_rate() <= cpal::SampleRate(sr as u32)
-                && sc.max_sample_rate() >= cpal::SampleRate(sr as u32)
+            if sc.min_sample_rate() <= cpal::SampleRate(sr)
+                && sc.max_sample_rate() >= cpal::SampleRate(sr)
             {
                 match sc.buffer_size() {
                     cpal::SupportedBufferSize::Range { min, .. } => Some(*min),
@@ -72,7 +72,7 @@ pub fn new_audio_stream(sr: u32, buf_size: usize) -> Result<DesktopAudioStream> 
 
     let stream_config = cpal::StreamConfig {
         channels: 1u16,
-        sample_rate: cpal::SampleRate(sr as u32),
+        sample_rate: cpal::SampleRate(sr),
         buffer_size: cpal::BufferSize::Fixed(buffer_size),
     };
 

@@ -37,7 +37,7 @@ pub const Q: f32 = 10.0 / UPSCALE_FACTOR as f32;
 pub const GAMMA: f32 = 5.3 * Q;
 
 const VQT_PARAMETERS: VqtParameters = VqtParameters {
-    sr: SR,
+    sr: SR as f32,
     n_fft: N_FFT,
     range: VqtRange {
         min_freq: FREQ_A1,
@@ -51,7 +51,6 @@ const VQT_PARAMETERS: VqtParameters = VqtParameters {
 
 // Default FPS when FPS limiting is on. Else FPS is limited by screen refresh rate.
 const FPS: u32 = 30;
-// TODO: make the animation speed/blurring windows/... independent of the frame rate
 
 /// This enum is used to control the audio stream. It is sent to the audio thread via a channel. This allows us to control the audio stream from the bevy thread.
 // enum AudioControl {

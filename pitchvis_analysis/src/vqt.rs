@@ -36,7 +36,7 @@ impl VqtRange {
 #[derive(Debug, Clone)]
 pub struct VqtParameters {
     /// The sample rate (in Hz) of the input audio signal.
-    pub sr: u32, // TODO: ?can make f32?
+    pub sr: f32,
 
     /// The number of samples in the longest Fast Fourier Transform (FFT). This will be decimated
     /// for higher octaves.
@@ -169,7 +169,9 @@ impl Vqt {
 
         println!("VQT Analysis delay: {} ms.", delay.as_millis());
 
-        // TODO: get the info on which ffts are needed first, then create them, then also use them for creation of the vqt_kernel. Currently, the vqt_kernel creates its own ffts and only afterwards provides us with the info on which ffts are needed.
+        // TODO: get the info on which ffts are needed first, then create them, then also use
+        // them for creation of the vqt_kernel. Currently, the vqt_kernel creates its own ffts
+        // and only afterwards provides us with the info on which ffts are needed.
 
         // prepare resample ffts
         let mut resample_ffts = HashMap::new();
@@ -217,7 +219,7 @@ impl Vqt {
     /// This enables us to make the application of each filter more efficient by computing it on a maximally
     ///  downsampled version of the signal while not losing information.
     fn group_window_sizes(
-        sr: u32,
+        sr: f32,
         n_fft: usize,
         freqs: &[f32],
         window_lengths: &[f32],
@@ -249,7 +251,7 @@ impl Vqt {
                     let grace_factor = 1.15;
                     let minimum_scaled_sr_for_f = (f * 2.0 * grace_factor).ceil() as usize;
                     // find maximum k so that minimum_scaled_sr_for_f is smaller than sr / 2^k
-                    let k = (sr as f32 / minimum_scaled_sr_for_f as f32).log2().floor() as usize;
+                    let k = (sr / minimum_scaled_sr_for_f as f32).log2().floor() as usize;
 
                     // let minimum_scaled_sr_for_f = sr as f32 / maximum_sr_scaling_factor_for_f;
 
@@ -351,9 +353,9 @@ impl Vqt {
     /// # Arguments
     ///
     /// * `window_center` - The center of the window in the time domain. We arrange the filters in the time domain
-    /// such that all filters are centered around the same time instant.
+    ///   such that all filters are centered around the same time instant.
     fn calculate_filter(
-        sr: u32,
+        sr: f32,
         sparsity_quantile: f32,
         sr_scaling: usize,
         filter_params: FilterParams,
@@ -387,7 +389,7 @@ impl Vqt {
                     * PI
                     * (i as f32/*- window_lengths[k] / 2.0*/)
                     * scaled_freq
-                    / (sr as f32))
+                    / sr)
                     .exp();
         }
 
@@ -409,7 +411,7 @@ impl Vqt {
             .collect::<Vec<f32>>();
 
         let bandwidth_3db_in_hz =
-            calculate_bandwidth(&v_frequency_response, sr as f32 / sr_scaling as f32);
+            calculate_bandwidth(&v_frequency_response, sr / sr_scaling as f32);
         // dbg!(filter_params.freq, bandwidth);
 
         // filter all values smaller than some value and use sparse arrays
@@ -468,12 +470,15 @@ impl Vqt {
     ///
     fn vqt_kernel(params: &VqtParameters) -> (VqtKernel, Duration) {
         let freqs = (0..(params.range.n_buckets()))
-            .map(|k| params.range.min_freq * 2.0_f32.powf(k as f32 / params.range.buckets_per_octave as f32))
+            .map(|k| {
+                params.range.min_freq
+                    * 2.0_f32.powf(k as f32 / params.range.buckets_per_octave as f32)
+            })
             .collect::<Vec<f32>>();
 
         let highest_frequency = *freqs.last().unwrap();
-        let nyquist_frequency = params.sr / 2;
-        if highest_frequency > nyquist_frequency as f32 {
+        let nyquist_frequency = params.sr / 2.0;
+        if highest_frequency > nyquist_frequency {
             panic!(
                 "The highest frequency of the VQT kernel is {} Hz, but the Nyquist frequency is {} Hz.",
                 highest_frequency, nyquist_frequency
@@ -488,7 +493,7 @@ impl Vqt {
         let Q = params.quality / alpha;
         let window_lengths = freqs
             .iter()
-            .map(|f_k| Q * params.sr as f32 / (f_k + params.gamma / alpha))
+            .map(|f_k| Q * params.sr / (f_k + params.gamma / alpha))
             .collect::<Vec<f32>>();
 
         if window_lengths[0] > params.n_fft as f32 {
@@ -511,7 +516,7 @@ impl Vqt {
                 sr_downscaling_factor, unscaled_window
             );
             for (i, fp) in filters.iter().enumerate() {
-                let window_length_in_s = fp.window_length / params.sr as f32;
+                let window_length_in_s = fp.window_length / params.sr;
                 let wave_num = window_length_in_s * fp.freq;
                 let bandwidth_in_hz = 1.0 / window_length_in_s;
                 let bandwidth_in_semitones = 12.0 * (1.0 + bandwidth_in_hz / fp.freq).log2();
@@ -571,7 +576,7 @@ impl Vqt {
                                 mat.add_triplet(
                                     idx,
                                     i,
-                                    *z / scaled_n_fft as f32 * (params.sr as f32).sqrt(),
+                                    *z / scaled_n_fft as f32 * params.sr.sqrt(),
                                 );
                             }
                         }
@@ -587,9 +592,8 @@ impl Vqt {
             .map(|m| m.to_csr())
             .collect::<Vec<sprs::CsMat<num_complex::Complex<f32>>>>();
 
-        let delay = Duration::from_secs_f32(
-            (params.n_fft as f32 - vqt_windows.window_center) / params.sr as f32,
-        );
+        let delay =
+            Duration::from_secs_f32((params.n_fft as f32 - vqt_windows.window_center) / params.sr);
 
         (
             VqtKernel {
@@ -643,6 +647,7 @@ impl Vqt {
         } = self.resample_ffts.get(&v.len()).unwrap();
 
         fwd_fft.process(&mut x_fft);
+        #[allow(clippy::needless_range_loop)]
         for i in (1 + fft_size / sr_scaling / 2)..(fft_size - fft_size / sr_scaling / 2) {
             x_fft[i] = num_complex::Complex::zero();
         }
@@ -678,10 +683,7 @@ impl Vqt {
 
         //dbg!(reduced_n_fft);
 
-        let mut x_vqt = vec![
-            Complex32::zero();
-            self.params.range.n_buckets()
-        ];
+        let mut x_vqt = vec![Complex32::zero(); self.params.range.n_buckets()];
         let mut offset = 0;
         for (
             FilterGrouping {
@@ -823,7 +825,7 @@ fn find_3db_points(frequency_response: &[f32], center_freq_index: usize) -> (usi
 ///
 /// The arguments are assumed to be downsampled such that the frequency response fits to the scaled_sr.
 fn calculate_bandwidth(scaled_frequency_response: &[f32], scaled_sr: f32) -> (f32, f32) {
-    let center_freq_index = arg_max(&scaled_frequency_response);
+    let center_freq_index = arg_max(scaled_frequency_response);
     let (lower_bound, upper_bound) = find_3db_points(scaled_frequency_response, center_freq_index);
     let lower_bound_in_hz = lower_bound as f32 * scaled_sr / scaled_frequency_response.len() as f32;
     let upper_bound_in_hz = upper_bound as f32 * scaled_sr / scaled_frequency_response.len() as f32;

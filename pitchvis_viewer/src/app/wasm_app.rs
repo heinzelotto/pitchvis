@@ -35,7 +35,7 @@ pub const Q: f32 = 10.0 / UPSCALE_FACTOR as f32;
 pub const GAMMA: f32 = 5.3 * Q;
 
 const VQT_PARAMETERS: VqtParameters = VqtParameters {
-    sr: SR,
+    sr: SR as f32,
     n_fft: N_FFT,
     range: VqtRange {
         min_freq: FREQ_A1,
@@ -48,7 +48,6 @@ const VQT_PARAMETERS: VqtParameters = VqtParameters {
 };
 
 // TODO: on wasm it's currently difficult to limit FPS without forking bevy.
-// Make the animation speed/blurring windows/... independent of the frame rate
 const FPS: u64 = 30;
 
 // wasm main function

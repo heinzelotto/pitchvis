@@ -64,7 +64,7 @@ pub fn arg_max(sl: &[f32]) -> usize {
 fn test_create_sines(params: &VqtParameters, t_diff: f32) -> Vec<f32> {
     use std::f32::consts::PI;
 
-    let mut wave = vec![0.0; params.n_fft as usize];
+    let mut wave = vec![0.0; params.n_fft];
 
     const LOWER_OCTAVE: usize = 0;
     #[allow(clippy::erasing_op)]
@@ -74,9 +74,7 @@ fn test_create_sines(params: &VqtParameters, t_diff: f32) -> Vec<f32> {
     {
         //let f = 880.0 * 2.0.powf(1.0/12.0);
         for (i, w) in wave.iter_mut().enumerate() {
-            let amp = (((i as f32 + t_diff * params.sr as f32) * 2.0 * PI / params.sr as f32) * f)
-                .sin()
-                / 12.0;
+            let amp = (((i as f32 + t_diff * params.sr) * 2.0 * PI / params.sr) * f).sin() / 12.0;
             *w += amp;
         }
     }

@@ -46,7 +46,7 @@ pub const Q: f32 = 10.0 / UPSCALE_FACTOR as f32;
 pub const GAMMA: f32 = 5.3 * Q;
 
 const VQT_PARAMETERS: VqtParameters = VqtParameters {
-    sr: SR,
+    sr: SR as f32,
     n_fft: N_FFT,
     range: VqtRange {
         min_freq: FREQ_A1,
@@ -59,7 +59,6 @@ const VQT_PARAMETERS: VqtParameters = VqtParameters {
 };
 
 const FPS: u32 = 33;
-// TODO: make the animation speed/blurring windows/... independent of the frame rate
 
 fn handle_lifetime_events_system(
     mut lifetime_events: EventReader<AppLifecycle>,

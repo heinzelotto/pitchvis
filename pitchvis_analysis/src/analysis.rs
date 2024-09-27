@@ -193,8 +193,7 @@ impl AnalysisState {
 
         // find peaks
         let peaks = find_peaks(&x_vqt_smoothed, range.buckets_per_octave);
-        let peaks_continuous =
-            enhance_peaks_continuous(&peaks, &x_vqt_smoothed, range);
+        let peaks_continuous = enhance_peaks_continuous(&peaks, &x_vqt_smoothed, range);
 
         let x_vqt_peakfiltered = x_vqt_smoothed
             .iter()
@@ -226,12 +225,7 @@ impl AnalysisState {
         self.update_calmness(x_vqt, range, frame_time);
     }
 
-    fn update_calmness(
-        &mut self,
-        x_vqt: &[f32],
-        range: &VqtRange,
-        frame_time: Duration,
-    ) {
+    fn update_calmness(&mut self, x_vqt: &[f32], range: &VqtRange, frame_time: Duration) {
         // for each bin, take the few bins around it into account as well. If the bin is a
         // peak, it is promoted as calm. Calmness currently means that the note has been
         // sustained for a while.
@@ -249,10 +243,7 @@ impl AnalysisState {
         let peaks = find_peaks(x_vqt, range.buckets_per_octave);
         for p in peaks {
             for i in max(0, p as i32 - radius as i32)
-                ..min(
-                    range.n_buckets() as i32,
-                    p as i32 + radius as i32,
-                )
+                ..min(range.n_buckets() as i32, p as i32 + radius as i32)
             {
                 peaks_around[i as usize] = true;
             }
@@ -260,13 +251,13 @@ impl AnalysisState {
 
         let mut calmness_sum = 0.0;
         let mut calmness_count = 0;
-        for i in 0..range.n_buckets() {
-            if peaks_around[i] {
-                self.calmness[i].update_with_timestep(1.0, frame_time);
-                calmness_sum += self.calmness[i].get();
+        for (calmness, has_peak) in self.calmness.iter_mut().zip(peaks_around.iter()) {
+            if *has_peak {
+                calmness.update_with_timestep(1.0, frame_time);
+                calmness_sum += calmness.get();
                 calmness_count += 1;
             } else {
-                self.calmness[i].update_with_timestep(0.0, frame_time);
+                calmness.update_with_timestep(0.0, frame_time);
             }
         }
         if calmness_count > 0 {
@@ -329,9 +320,7 @@ fn enhance_peaks_continuous(
             size: estimated_precise_size,
         });
     }
-    peaks_continuous.sort_by(|a, b| {
-        return a.center.partial_cmp(&b.center).unwrap();
-    });
+    peaks_continuous.sort_by(|a, b| a.center.partial_cmp(&b.center).unwrap());
 
     peaks_continuous
 }
