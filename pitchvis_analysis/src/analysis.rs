@@ -34,6 +34,19 @@ pub struct ContinuousPeak {
 /// visualizing and analyzing musical spectrums. It contains buffers for storing
 /// smoothed variable-Q transform (VQT) results, peak-filtered VQT results,
 /// afterglow effects, and other internal computations.
+///
+/// # Examples
+///
+/// Assuming the setup of an `AnalysisState` object and some dummy VQT data:
+/// ```
+/// # use pitchvis_analysis::analysis::AnalysisState;
+/// # use pitchvis_analysis::vqt::VqtRange;
+/// # use std::time::Duration;
+/// let range = VqtRange { min_freq: 55.0, octaves: 8, buckets_per_octave: 24 };
+/// let mut analysis_state = AnalysisState::new(range.clone(), 10);
+/// let dummy_x_vqt = vec![0.0; range.n_buckets()]; // Replace with actual VQT data
+/// analysis_state.preprocess(&dummy_x_vqt, Duration::from_millis(30));
+/// ```
 pub struct AnalysisState {
     pub range: VqtRange,
 
@@ -84,19 +97,11 @@ impl AnalysisState {
     /// The resulting `AnalysisState` is ready to process and analyze the VQT of incoming musical signals.
     ///
     /// # Parameters:
-    /// - `spectrum_size`: The size of the spectrum (or number of bins) being analyzed.
+    /// - `range`: The size of the spectrum (octaves and buckets per octave) to be analyzed.
     /// - `history_length`: The number of past spectrums that should be retained for the spectrogram.
     ///
     /// # Returns:
     /// An initialized `AnalysisState` instance.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use analysis::AnalysisState;
-    /// let analysis_state = AnalysisState::new(1024, 10);
-    /// assert_eq!(analysis_state.x_vqt_smoothed.len(), 1024); // matches the spectrum_size
-    /// ```
     pub fn new(range: VqtRange, history_length: usize) -> Self {
         let n_buckets = range.n_buckets();
         let spectrogram_buffer = vec![0; n_buckets * history_length * 4];
@@ -142,16 +147,6 @@ impl AnalysisState {
     /// # Notes:
     /// - The preprocessed data, including the smoothed VQT, peak-filtered VQT, and peaks, will be stored within the `AnalysisState` object.
     /// - The `x_vqt` parameter is expected to represent the spectrum in a log-frequency scale, as is typical for a VQT representation.
-    ///
-    /// # Examples
-    ///
-    /// Assuming the setup of an `AnalysisState` object and some dummy VQT data:
-    /// ```
-    /// # use analysis::AnalysisState;
-    /// let mut analysis_state = AnalysisState::new(1024, 10);
-    /// let dummy_x_vqt = vec![0.0; 1024]; // Replace with actual VQT data
-    /// analysis_state.preprocess(&dummy_x_vqt, 8, 128); // Assuming 8 octaves and 128 buckets per octave
-    /// ```
     pub fn preprocess(&mut self, x_vqt: &[f32], frame_time: Duration) {
         assert!(x_vqt.len() == self.range.n_buckets());
 
