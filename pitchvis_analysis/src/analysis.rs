@@ -13,7 +13,9 @@ const PEAK_MIN_HEIGHT: f32 = 6.0;
 const _BASSLINE_PEAK_MIN_PROMINENCE: f32 = 12.0;
 const _BASSLINE_PEAK_MIN_HEIGHT: f32 = 4.0;
 const _HIGHEST_BASSNOTE: usize = 12 * 2 + 4;
-const SMOOTH_LENGTH: usize = 3; // FIXME: make this independent from the frame rate
+// const SMOOTH_LENGTH: usize = 3;
+/// The duration over which each VQT bin is smoothed.
+const VQT_SMOOTHING_DURATION: Duration = Duration::from_millis(90);
 /// The duration over which the calmness of a indivitual pitch bin is smoothed.
 const NOTE_CALMNESS_SMOOTHING_DURATION: Duration = Duration::from_millis(4_500);
 /// The duration over which the calmness of the scene is smoothed.
@@ -32,13 +34,13 @@ pub struct ContinuousPeak {
 /// smoothed variable-Q transform (VQT) results, peak-filtered VQT results,
 /// afterglow effects, and other internal computations.
 pub struct AnalysisState {
-    /// A rolling history of the past few VQT frames. This history is used for smoothing and
-    /// enhancing the features of the current frame.
-    pub history: Vec<Vec<f32>>,
+    // /// A rolling history of the past few VQT frames. This history is used for smoothing and
+    // /// enhancing the features of the current frame.
+    // pub history: Vec<Vec<f32>>,
 
     /// The smoothed version of the current VQT frame. Smoothing is performed by averaging
     /// over the `history`.
-    pub x_vqt_smoothed: Vec<f32>,
+    pub x_vqt_smoothed: Vec<EmaMeasurement>,
 
     /// Represents the current VQT frame after filtering out non-peak values.
     /// Dominant frequencies or peaks are retained while others are set to zero.
@@ -97,12 +99,12 @@ impl AnalysisState {
         let spectrogram_buffer = vec![0; spectrum_size * history_length * 4];
 
         Self {
-            history: (0..SMOOTH_LENGTH)
-                .map(|_| vec![0.0; spectrum_size])
-                .collect(),
+            // history: (0..SMOOTH_LENGTH)
+            //     .map(|_| vec![0.0; spectrum_size])
+            //     .collect(),
             //accum: (vec![0.0; spectrum_size], 0),
             //averaged: vec![0.0; spectrum_size],
-            x_vqt_smoothed: vec![0.0; spectrum_size],
+            x_vqt_smoothed: vec![EmaMeasurement::new(VQT_SMOOTHING_DURATION, 0.0); spectrum_size],
             x_vqt_peakfiltered: vec![0.0; spectrum_size],
             x_vqt_afterglow: vec![0.0; spectrum_size],
             peaks: HashSet::new(),
@@ -110,7 +112,10 @@ impl AnalysisState {
             spectrogram_buffer,
             spectrogram_front_idx: 0,
             ml_midi_base_pitches: vec![0.0; 128],
-            calmness: vec![EmaMeasurement::new(NOTE_CALMNESS_SMOOTHING_DURATION, 0.0); spectrum_size],
+            calmness: vec![
+                EmaMeasurement::new(NOTE_CALMNESS_SMOOTHING_DURATION, 0.0);
+                spectrum_size
+            ],
             smoothed_scene_calmness: EmaMeasurement::new(SCENE_CALMNESS_SMOOTHING_DURATION, 0.0),
         }
     }
@@ -163,24 +168,37 @@ impl AnalysisState {
         let _max = x_vqt[k_max];
         // println!("x_vqt[{k_min}] = {min}, x_vqt[{k_max}] = {max}");
 
-        // smooth by averaging over the history
-        let mut x_vqt_smoothed = vec![0.0; num_buckets];
-        // if a bin in the history was at peak magnitude at that time, it should be promoted
-        self.history.push(x_vqt.to_owned());
-        //self.history.push(x_vqt.iter().enumerate().map(|(i, x)| if peaks.contains(&i) {*x} else {0.0}).collect::<Vec<f32>>());
-        if self.history.len() > SMOOTH_LENGTH {
-            // TODO: once fps is implemented, make this dependent on time instead of frames
-            // make smoothing range modifiable in-game
-            self.history.drain(0..1);
-        }
-        for (i, smoothed) in x_vqt_smoothed.iter_mut().enumerate() {
-            let mut v = vec![];
-            for t in 0..self.history.len() {
-                v.push(self.history[t][i]);
-            }
-            // arithmetic mean
-            *smoothed = v.iter().sum::<f32>() / SMOOTH_LENGTH as f32;
-        }
+        // smooth the vqt
+        self.x_vqt_smoothed
+            .iter_mut()
+            .zip(x_vqt.iter())
+            .for_each(|(smoothed, x)| {
+                smoothed.update_with_timestep(*x, frame_time);
+            });
+        let x_vqt_smoothed = self
+            .x_vqt_smoothed
+            .iter()
+            .map(|x| x.get())
+            .collect::<Vec<f32>>();
+
+        // // smooth by averaging over the history
+        // let mut x_vqt_smoothed = vec![0.0; num_buckets];
+        // // if a bin in the history was at peak magnitude at that time, it should be promoted
+        // self.history.push(x_vqt.to_owned());
+        // //self.history.push(x_vqt.iter().enumerate().map(|(i, x)| if peaks.contains(&i) {*x} else {0.0}).collect::<Vec<f32>>());
+        // if self.history.len() > SMOOTH_LENGTH {
+        //     // TODO: once fps is implemented, make this dependent on time instead of frames
+        //     // make smoothing range modifiable in-game
+        //     self.history.drain(0..1);
+        // }
+        // for (i, smoothed) in x_vqt_smoothed.iter_mut().enumerate() {
+        //     let mut v = vec![];
+        //     for t in 0..self.history.len() {
+        //         v.push(self.history[t][i]);
+        //     }
+        //     // arithmetic mean
+        //     *smoothed = v.iter().sum::<f32>() / SMOOTH_LENGTH as f32;
+        // }
 
         // find peaks
         let peaks = find_peaks(&x_vqt_smoothed, buckets_per_octave);
@@ -210,7 +228,7 @@ impl AnalysisState {
             });
         self.peaks = peaks;
         //self.averaged = averaged;
-        self.x_vqt_smoothed = x_vqt_smoothed;
+        // self.x_vqt_smoothed = x_vqt_smoothed;
         self.x_vqt_peakfiltered = x_vqt_peakfiltered;
         self.peaks_continuous = peaks_continuous;
 

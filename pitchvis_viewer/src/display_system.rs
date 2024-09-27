@@ -36,9 +36,6 @@ const BASS_SPIRAL_SEGMENTS_PER_SEMITONE: usize = 6;
 pub struct PitchBall(usize);
 
 #[derive(Component)]
-pub struct PB2;
-
-#[derive(Component)]
 pub struct BassCylinder;
 
 #[derive(Component)]
@@ -102,23 +99,6 @@ pub fn setup_display(
     assert!(buckets_per_octave % 12 == 0);
 
     let spiral_points = calculate_spiral_points(octaves, buckets_per_octave);
-
-    // let noisy_color_material = NoisyColorMaterial {
-    //     color: Color::srgb(1.0, 0.7, 0.6).into(),
-    //     noise_level: material::Noise{ val: 0.75 ,..Default::default()},
-    // };
-
-    // commands.spawn((
-    //     PB2,
-    //     MaterialMesh2dBundle {
-    //         mesh: meshes
-    //             .add(Rectangle::new(10.0,10.0))
-    //             .into(),
-    //         material: noisy_color_materials.add(noisy_color_material),
-    //         transform: Transform::from_xyz(0.0, 0.0, -0.01), // needs to be slightly behind the 2d camera
-    //         ..default()
-    //     },
-    // ));
 
     for (idx, (x, y, _z)) in spiral_points.iter().enumerate() {
         // spheres
