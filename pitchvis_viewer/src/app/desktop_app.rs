@@ -72,8 +72,7 @@ pub fn main_fun() -> Result<()> {
     audio_stream.play().unwrap();
 
     let update_vqt_system = vqt_system::update_vqt_to_system(BUFSIZE);
-    let update_analysis_state_system =
-        analysis_system::update_analysis_state_to_system(&VQT_PARAMETERS.range);
+    let update_analysis_state_system = analysis_system::update_analysis_state_to_system();
     #[cfg(feature = "ml")]
     let update_ml_system = ml_system::update_ml_to_system();
     let update_display_system = display_system::update_display_to_system(&VQT_PARAMETERS.range);
@@ -99,7 +98,7 @@ pub fn main_fun() -> Result<()> {
     .insert_resource(audio_system::AudioBufferResource(audio_stream.ring_buffer))
     .insert_resource(analysis_system::AnalysisStateResource(
         pitchvis_analysis::analysis::AnalysisState::new(
-            VQT_PARAMETERS.range.n_buckets(),
+            VQT_PARAMETERS.range.clone(),
             pitchvis_analysis::analysis::SPECTROGRAM_LENGTH,
         ),
     ))

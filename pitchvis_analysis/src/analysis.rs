@@ -35,6 +35,8 @@ pub struct ContinuousPeak {
 /// smoothed variable-Q transform (VQT) results, peak-filtered VQT results,
 /// afterglow effects, and other internal computations.
 pub struct AnalysisState {
+    pub range: VqtRange,
+
     // /// A rolling history of the past few VQT frames. This history is used for smoothing and
     // /// enhancing the features of the current frame.
     // pub history: Vec<Vec<f32>>,
@@ -95,8 +97,9 @@ impl AnalysisState {
     /// let analysis_state = AnalysisState::new(1024, 10);
     /// assert_eq!(analysis_state.x_vqt_smoothed.len(), 1024); // matches the spectrum_size
     /// ```
-    pub fn new(spectrum_size: usize, history_length: usize) -> Self {
-        let spectrogram_buffer = vec![0; spectrum_size * history_length * 4];
+    pub fn new(range: VqtRange, history_length: usize) -> Self {
+        let n_buckets = range.n_buckets();
+        let spectrogram_buffer = vec![0; n_buckets * history_length * 4];
 
         Self {
             // history: (0..SMOOTH_LENGTH)
@@ -104,18 +107,16 @@ impl AnalysisState {
             //     .collect(),
             //accum: (vec![0.0; spectrum_size], 0),
             //averaged: vec![0.0; spectrum_size],
-            x_vqt_smoothed: vec![EmaMeasurement::new(VQT_SMOOTHING_DURATION, 0.0); spectrum_size],
-            x_vqt_peakfiltered: vec![0.0; spectrum_size],
-            x_vqt_afterglow: vec![0.0; spectrum_size],
+            range,
+            x_vqt_smoothed: vec![EmaMeasurement::new(VQT_SMOOTHING_DURATION, 0.0); n_buckets],
+            x_vqt_peakfiltered: vec![0.0; n_buckets],
+            x_vqt_afterglow: vec![0.0; n_buckets],
             peaks: HashSet::new(),
             peaks_continuous: Vec::new(),
             spectrogram_buffer,
             spectrogram_front_idx: 0,
             ml_midi_base_pitches: vec![0.0; 128],
-            calmness: vec![
-                EmaMeasurement::new(NOTE_CALMNESS_SMOOTHING_DURATION, 0.0);
-                spectrum_size
-            ],
+            calmness: vec![EmaMeasurement::new(NOTE_CALMNESS_SMOOTHING_DURATION, 0.0); n_buckets],
             smoothed_scene_calmness: EmaMeasurement::new(SCENE_CALMNESS_SMOOTHING_DURATION, 0.0),
         }
     }
@@ -151,8 +152,8 @@ impl AnalysisState {
     /// let dummy_x_vqt = vec![0.0; 1024]; // Replace with actual VQT data
     /// analysis_state.preprocess(&dummy_x_vqt, 8, 128); // Assuming 8 octaves and 128 buckets per octave
     /// ```
-    pub fn preprocess(&mut self, x_vqt: &[f32], range: &VqtRange, frame_time: Duration) {
-        assert!(range.n_buckets() == x_vqt.len());
+    pub fn preprocess(&mut self, x_vqt: &[f32], frame_time: Duration) {
+        assert!(x_vqt.len() == self.range.n_buckets());
 
         let k_min = arg_min(x_vqt);
         let k_max = arg_max(x_vqt);
@@ -193,8 +194,8 @@ impl AnalysisState {
         // }
 
         // find peaks
-        let peaks = find_peaks(&x_vqt_smoothed, range.buckets_per_octave);
-        let peaks_continuous = enhance_peaks_continuous(&peaks, &x_vqt_smoothed, range);
+        let peaks = find_peaks(&x_vqt_smoothed, self.range.buckets_per_octave);
+        let peaks_continuous = enhance_peaks_continuous(&peaks, &x_vqt_smoothed, &self.range);
 
         let x_vqt_peakfiltered = x_vqt_smoothed
             .iter()
@@ -212,7 +213,7 @@ impl AnalysisState {
             .iter_mut()
             .enumerate()
             .for_each(|(i, x)| {
-                *x *= 0.85 - 0.15 * (i as f32 / range.n_buckets() as f32);
+                *x *= 0.85 - 0.15 * (i as f32 / self.range.n_buckets() as f32);
                 if *x < x_vqt_smoothed[i] {
                     *x = x_vqt_smoothed[i];
                 }
@@ -223,14 +224,19 @@ impl AnalysisState {
         self.x_vqt_peakfiltered = x_vqt_peakfiltered;
         self.peaks_continuous = peaks_continuous;
 
-        self.update_calmness(x_vqt, range, frame_time);
+        self.update_calmness(x_vqt, frame_time);
 
-        // TODO: more advanced bass note detection than just taking the first peak (e. g. by 
+        // TODO: more advanced bass note detection than just taking the first peak (e. g. by
         // promoting frequences through their overtones first)
-        debug!("bass note: {:?}", self.peaks_continuous.first().map(|p| p.center.round() as usize));
+        debug!(
+            "bass note: {:?}",
+            self.peaks_continuous
+                .first()
+                .map(|p| p.center.round() as usize)
+        );
     }
 
-    fn update_calmness(&mut self, x_vqt: &[f32], range: &VqtRange, frame_time: Duration) {
+    fn update_calmness(&mut self, x_vqt: &[f32], frame_time: Duration) {
         // for each bin, take the few bins around it into account as well. If the bin is a
         // peak, it is promoted as calm. Calmness currently means that the note has been
         // sustained for a while.
@@ -241,14 +247,14 @@ impl AnalysisState {
         // been released?
         // Currently, releasing a note with above average calmness decreases scene calmness.
         // Releasing a note with below average increases scene calmness.
-        let mut peaks_around = vec![false; range.n_buckets()];
-        let radius = range.buckets_per_octave / 12 / 2;
+        let mut peaks_around = vec![false; self.range.n_buckets()];
+        let radius = self.range.buckets_per_octave / 12 / 2;
 
         // we want unsmoothed peaks for this
-        let peaks = find_peaks(x_vqt, range.buckets_per_octave);
+        let peaks = find_peaks(x_vqt, self.range.buckets_per_octave);
         for p in peaks {
             for i in max(0, p as i32 - radius as i32)
-                ..min(range.n_buckets() as i32, p as i32 + radius as i32)
+                ..min(self.range.n_buckets() as i32, p as i32 + radius as i32)
             {
                 peaks_around[i as usize] = true;
             }
@@ -328,4 +334,23 @@ fn enhance_peaks_continuous(
     peaks_continuous.sort_by(|a, b| a.center.partial_cmp(&b.center).unwrap());
 
     peaks_continuous
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test_analysis_does_something() {
+        let mut analysis = AnalysisState::new(
+            VqtRange {
+                min_freq: 55.0,
+                octaves: 2,
+                buckets_per_octave: 24,
+            },
+            0,
+        );
+        analysis.preprocess(&vec![0.0; 48], Duration::from_secs(1));
+        assert!(!analysis.x_vqt_smoothed.is_empty());
+        assert!(analysis.x_vqt_smoothed.iter().all(|x| x.get() == 0.0));
+    }
 }

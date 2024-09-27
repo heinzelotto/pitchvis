@@ -26,6 +26,7 @@ bevy = { version = "0.14.2", features = ["tonemapping_luts"] }
 nalgebra = "0.32.2"
 pitchvis_analysis = { path = "../pitchvis_analysis" }
 pitchvis_audio = { path = "../pitchvis_audio" }
+pitchvis_colors = { path = "../pitchvis_colors" }
 dagc = {version = "0.1.0", path = "../dagc_fork" } # FIXME: fork and reference fork as patched dependency
 
 [target.'cfg(target_os = "android")'.dependencies]

@@ -15,6 +15,7 @@ const _COLORS_WONKY_SATURATION: [(f32, f32, f32); 12] = [
     (0.27, 0.69, 0.39), // H
 ];
 
+// TODO: move to own crate
 pub const COLORS: [[f32; 3]; 12] = [
     [0.85, 0.36, 0.36], // C
     [0.01, 0.52, 0.71], // C#

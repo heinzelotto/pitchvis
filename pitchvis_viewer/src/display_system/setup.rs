@@ -15,10 +15,8 @@ use nalgebra::{Rotation3, Vector3};
 use std::f32::consts::PI;
 
 use crate::display_system::BassCylinder;
-use pitchvis_analysis::{
-    color_mapping::{COLORS, PITCH_NAMES},
-    vqt::VqtRange,
-};
+use pitchvis_analysis::vqt::VqtRange;
+use pitchvis_colors::{COLORS, PITCH_NAMES};
 
 const HIGHEST_BASSNOTE: u16 = 12 * 2 + 4;
 const SPIRAL_SEGMENTS_PER_SEMITONE: u16 = 6;

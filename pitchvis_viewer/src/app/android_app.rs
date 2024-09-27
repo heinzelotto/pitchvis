@@ -252,8 +252,7 @@ fn main() -> AppExit {
     audio_stream.request_start().unwrap();
 
     let update_vqt_system = vqt_system::update_vqt_to_system(BUFSIZE);
-    let update_analysis_state_system =
-        analysis_system::update_analysis_state_to_system(&VQT_PARAMETERS.range);
+    let update_analysis_state_system = analysis_system::update_analysis_state_to_system();
     let update_display_system = display_system::update_display_to_system(&VQT_PARAMETERS.range);
 
     let mut app = App::new();
@@ -281,7 +280,7 @@ fn main() -> AppExit {
     .insert_resource(audio_system::AudioBufferResource(ring_buffer))
     .insert_resource(analysis_system::AnalysisStateResource(
         pitchvis_analysis::analysis::AnalysisState::new(
-            VQT_PARAMETERS.range.n_buckets(),
+            VQT_PARAMETERS.range.clone(),
             pitchvis_analysis::analysis::SPECTROGRAM_LENGTH,
         ),
     ))

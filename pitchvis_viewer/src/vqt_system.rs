@@ -1,6 +1,6 @@
 use crate::audio_system::AudioBufferResource;
 use bevy::prelude::*;
-use pitchvis_analysis::{vqt::VqtRange, Vqt};
+use pitchvis_analysis::{vqt::Vqt, vqt::VqtRange};
 
 #[derive(Resource)]
 pub struct VqtResource(pub Vqt);

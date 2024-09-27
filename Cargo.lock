@@ -4487,6 +4487,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "pitchvis_colors"
+version = "0.1.0"
+dependencies = [
+ "lab",
+]
+
+[[package]]
 name = "pitchvis_serial"
 version = "0.1.0"
 dependencies = [
@@ -4539,6 +4546,7 @@ dependencies = [
  "ndk-context",
  "pitchvis_analysis",
  "pitchvis_audio",
+ "pitchvis_colors",
  "regex",
  "tch",
  "wasm-bindgen",

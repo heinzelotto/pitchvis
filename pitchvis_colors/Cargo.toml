@@ -1,0 +1,11 @@
+[package]
+name = "pitchvis_colors"
+version = "0.1.0"
+authors = ["Felix Monninger <felix.monninger@gmail.com>"]
+edition = "2021"
+
+[lib]
+name = "pitchvis_colors"
+
+[dependencies]
+lab = "0.11.0"

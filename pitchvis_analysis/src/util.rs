@@ -1,7 +1,6 @@
 use std::time::Duration;
 
 use log::trace;
-use rustfft::num_traits::Float;
 
 use crate::vqt::VqtParameters;
 
@@ -61,16 +60,17 @@ pub fn arg_max(sl: &[f32]) -> usize {
 
 //#green
 #[allow(dead_code)]
-fn test_create_sines(params: &VqtParameters, t_diff: f32) -> Vec<f32> {
+pub fn test_create_sines(params: &VqtParameters, freqs: &[f32], t_diff: f32) -> Vec<f32> {
     use std::f32::consts::PI;
 
     let mut wave = vec![0.0; params.n_fft];
 
     const LOWER_OCTAVE: usize = 0;
     #[allow(clippy::erasing_op)]
-    for f in ((12 * (LOWER_OCTAVE) + 2)..(12 * (params.range.octaves as usize - 1) + 12))
-        .step_by(5)
-        .map(|p| params.range.min_freq * (2.0).powf(p as f32 / 12.0))
+    for f in freqs
+    // ((12 * (LOWER_OCTAVE) + 2)..(12 * (params.range.octaves as usize - 1) + 12))
+    //     .step_by(5)
+    //     .map(|p| params.range.min_freq * (2.0).powf(p as f32 / 12.0))
     {
         //let f = 880.0 * 2.0.powf(1.0/12.0);
         for (i, w) in wave.iter_mut().enumerate() {

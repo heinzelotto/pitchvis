@@ -10,11 +10,11 @@ use crate::{
     analysis_system::AnalysisStateResource, app::SettingsState, vqt_system::VqtResultResource,
 };
 use pitchvis_analysis::{
-    analysis::ContinuousPeak,
-    color_mapping::{COLORS, EASING_POW, GRAY_LEVEL},
+    analysis::{AnalysisState, ContinuousPeak},
     util::*,
     vqt::VqtRange,
 };
+use pitchvis_colors::{calculate_color, COLORS, EASING_POW, GRAY_LEVEL};
 
 const SPIRAL_SEGMENTS_PER_SEMITONE: u16 = 6;
 const PITCH_BALL_SCALE_FACTOR: f32 = 1.0 / 305.0; // TODO: get rid of this, we're engineers, not magicians
@@ -141,7 +141,7 @@ fn update_pitch_balls(
     noisy_color_materials: &mut ResMut<Assets<NoisyColorMaterial>>,
     run_time: &Res<Time>,
     settings_state: &Res<SettingsState>,
-    analysis_state: &pitchvis_analysis::AnalysisState,
+    analysis_state: &AnalysisState,
     range: &VqtRange,
 ) {
     let k_max = arg_max(
@@ -164,7 +164,7 @@ fn update_pitch_balls(
         if peaks_rounded.contains_key(&idx) {
             let ContinuousPeak { center, size } = peaks_rounded[&idx];
 
-            let (r, g, b) = pitchvis_analysis::calculate_color(
+            let (r, g, b) = calculate_color(
                 range.buckets_per_octave,
                 (center + (range.buckets_per_octave - 3 * (range.buckets_per_octave / 12)) as f32)
                     % range.buckets_per_octave as f32,
@@ -234,7 +234,7 @@ fn update_bloom(
         Option<&mut BloomSettings>,
         Ref<OrthographicProjection>,
     )>,
-    analysis_state: &pitchvis_analysis::AnalysisState,
+    analysis_state: &AnalysisState,
 ) {
     if let (_, Some(mut bloom_settings), _) = camera.single_mut() {
         bloom_settings.intensity =
@@ -277,7 +277,7 @@ fn update_bass_spiral(
             **visibility = Visibility::Visible;
 
             let color_map_ref = center.round() * buckets_per_octave as f32 / 12.0;
-            let (r, g, b) = pitchvis_analysis::color_mapping::calculate_color(
+            let (r, g, b) = calculate_color(
                 buckets_per_octave,
                 (color_map_ref + (buckets_per_octave - 3 * (buckets_per_octave / 12)) as f32)
                     % buckets_per_octave as f32,
