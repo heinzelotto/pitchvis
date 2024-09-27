@@ -1,0 +1,380 @@
+use super::{
+    material::NoisyColorMaterial, util::bin_to_spiral, BassCylinder, CylinderEntityListResource,
+    DisplayMode, LineList, PitchBall, PitchNameText, Spectrum,
+};
+use bevy::{core_pipeline::bloom::BloomSettings, prelude::*, sprite::Mesh2dHandle};
+use itertools::Itertools;
+use std::collections::HashMap;
+
+use crate::{
+    analysis_system::AnalysisStateResource, app::SettingsState, vqt_system::VqtResultResource,
+};
+use pitchvis_analysis::{
+    analysis::ContinuousPeak,
+    color_mapping::{COLORS, EASING_POW, GRAY_LEVEL},
+    util::*,
+    vqt::VqtRange,
+};
+
+const SPIRAL_SEGMENTS_PER_SEMITONE: u16 = 6;
+const PITCH_BALL_SCALE_FACTOR: f32 = 1.0 / 305.0; // TODO: get rid of this, we're engineers, not magicians
+
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
+pub fn update_display(
+    range: &VqtRange,
+    mut set: ParamSet<(
+        Query<(
+            &PitchBall,
+            &mut Visibility,
+            &mut Transform,
+            &mut Handle<NoisyColorMaterial>,
+        )>,
+        Query<(&BassCylinder, &mut Visibility, &mut Handle<ColorMaterial>)>,
+        Query<(&PitchNameText, &mut Visibility)>,
+        Query<(&mut Visibility, &Mesh2dHandle, &mut Transform), With<Spectrum>>,
+    )>,
+    mut color_materials: ResMut<Assets<ColorMaterial>>,
+    mut noisy_color_materials: ResMut<Assets<NoisyColorMaterial>>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    analysis_state: Res<AnalysisStateResource>,
+    vqt_result: Res<VqtResultResource>,
+    cylinder_entities: Res<CylinderEntityListResource>,
+    settings_state: Res<SettingsState>,
+    run_time: Res<Time>,
+    mut camera: Query<(
+        &Camera,
+        Option<&mut BloomSettings>,
+        Ref<OrthographicProjection>, // Ref because we want to check `is_changed` later
+    )>,
+) {
+    fade_pitch_balls(set.p0(), &mut noisy_color_materials, &run_time, range);
+
+    let analysis_state = &analysis_state.0;
+    if analysis_state.peaks_continuous.is_empty() {
+        return;
+    }
+
+    update_pitch_balls(
+        set.p0(),
+        &mut noisy_color_materials,
+        &run_time,
+        &settings_state,
+        analysis_state,
+        range,
+    );
+
+    update_bloom(&mut camera, analysis_state);
+
+    update_bass_spiral(
+        set.p1(),
+        &cylinder_entities,
+        &mut color_materials,
+        &analysis_state.peaks_continuous,
+        range.buckets_per_octave,
+    );
+
+    update_spectrum(
+        set.p3(),
+        &settings_state,
+        camera,
+        range,
+        &vqt_result,
+        &mut meshes,
+    );
+
+    show_hide_pitch_names(set.p2(), &settings_state);
+}
+
+fn fade_pitch_balls(
+    mut pitch_balls: Query<(
+        &PitchBall,
+        &mut Visibility,
+        &mut Transform,
+        &mut Handle<NoisyColorMaterial>,
+    )>,
+    noisy_color_materials: &mut ResMut<Assets<NoisyColorMaterial>>,
+    run_time: &Res<Time>,
+    range: &VqtRange,
+) {
+    let timestep = run_time.delta();
+    for (pitch_ball, mut visibility, mut transform, color) in &mut pitch_balls {
+        if *visibility == Visibility::Visible {
+            let idx = pitch_ball.0;
+            let dropoff_factor_per_30fps_frame =
+                0.90 - 0.15 * (idx as f32 / range.n_buckets() as f32);
+            let dropoff_factor = dropoff_factor_per_30fps_frame.powf(30.0 * timestep.as_secs_f32());
+
+            let mut size = transform.scale / PITCH_BALL_SCALE_FACTOR;
+            size *= dropoff_factor;
+            transform.scale = size * PITCH_BALL_SCALE_FACTOR;
+
+            // also make them slightly more transparent when they are smaller
+            let color_mat = noisy_color_materials
+                .get_mut(&*color)
+                .expect("ball color material");
+            color_mat.color = color_mat
+                .color
+                .with_alpha(color_mat.color.alpha() * dropoff_factor);
+
+            // also shift shrinking circles slightly to the background so that they are not cluttering newly appearing larger circles
+            transform.translation.z -= 0.001 * 30.0 * timestep.as_secs_f32();
+
+            if size.x * PITCH_BALL_SCALE_FACTOR < 0.003 {
+                *visibility = Visibility::Hidden;
+            }
+
+            // FIXME: test how it looks when we only show the balls that are currently active in the vqt analysis
+            // *visibility = Visibility::Hidden;
+        }
+    }
+}
+
+fn update_pitch_balls(
+    mut pitch_balls: Query<(
+        &PitchBall,
+        &mut Visibility,
+        &mut Transform,
+        &mut Handle<NoisyColorMaterial>,
+    )>,
+    noisy_color_materials: &mut ResMut<Assets<NoisyColorMaterial>>,
+    run_time: &Res<Time>,
+    settings_state: &Res<SettingsState>,
+    analysis_state: &pitchvis_analysis::AnalysisState,
+    range: &VqtRange,
+) {
+    let k_max = arg_max(
+        &analysis_state
+            .peaks_continuous
+            .iter()
+            .map(|p| p.size)
+            .collect::<Vec<f32>>(),
+    );
+    let max_size = analysis_state.peaks_continuous[k_max].size;
+
+    let peaks_rounded = analysis_state
+        .peaks_continuous
+        .iter()
+        .map(|p| (p.center.trunc() as usize, *p))
+        .collect::<HashMap<usize, ContinuousPeak>>();
+
+    for (pitch_ball, mut visibility, mut transform, color) in &mut pitch_balls {
+        let idx = pitch_ball.0;
+        if peaks_rounded.contains_key(&idx) {
+            let ContinuousPeak { center, size } = peaks_rounded[&idx];
+
+            let (r, g, b) = pitchvis_analysis::calculate_color(
+                range.buckets_per_octave,
+                (center + (range.buckets_per_octave - 3 * (range.buckets_per_octave / 12)) as f32)
+                    % range.buckets_per_octave as f32,
+                COLORS,
+                GRAY_LEVEL,
+                EASING_POW,
+            );
+
+            let color_coefficient = 1.0 - (1.0 - size / max_size).powf(2.0);
+
+            let (x, y, _) = bin_to_spiral(range.buckets_per_octave, center);
+            // make sure larger circles are drawn on top by adding a small offset proportional to the size
+            let z_ordering_offset = (size / max_size - 1.01) * 12.5;
+            transform.translation = Vec3::new(x, y, z_ordering_offset);
+
+            let color_mat = noisy_color_materials
+                .get_mut(&*color)
+                .expect("ball color material");
+            color_mat.params.time = run_time.elapsed_seconds();
+            // color_mat.color = Color::srgb(
+            //     r * color_coefficient,
+            //     g * color_coefficient,
+            //     b * color_coefficient,
+            // );
+            color_mat.color = Color::srgba(r, g, b, color_coefficient).into();
+
+            #[cfg(feature = "ml")]
+            if let Some(midi_pitch) = vqt_bin_to_midi_pitch(buckets_per_octave, idx) {
+                let inferred_midi_pitch_strength = analysis_state.ml_midi_base_pitches[midi_pitch];
+                if inferred_midi_pitch_strength > 0.35 {
+                    color_mat.color = Color::srgba(r, g, b, 1.0);
+                } else {
+                    color_mat.color = Color::srgba(r, g, b, color_coefficient * 0.1);
+                }
+            }
+
+            // set calmness visual effect.
+            // FIXME: Usually we see values of 0.75 for very calm notes... Fix this to be more intuitive.
+            if settings_state.display_mode == DisplayMode::PitchnamesCalmness
+                || settings_state.display_mode == DisplayMode::Calmness
+                || settings_state.display_mode == DisplayMode::Debugging
+            {
+                color_mat.params.calmness =
+                    (analysis_state.calmness[idx].get() - 0.27).clamp(0.0, 1.0);
+            } else {
+                color_mat.params.calmness = 0.0;
+            }
+
+            // scale calm ones even more
+            let calmness_scale = 1.0 + 0.2 * color_mat.params.calmness;
+
+            // TODO: scale up new notes to make them more prominent
+
+            // scale and threshold to vanish
+            transform.scale = Vec3::splat(size * PITCH_BALL_SCALE_FACTOR * calmness_scale);
+            if transform.scale.x >= 0.002 {
+                *visibility = Visibility::Visible;
+            }
+        }
+    }
+    // TODO: ?faster lookup through indexes
+}
+
+fn update_bloom(
+    camera: &mut Query<(
+        &Camera,
+        Option<&mut BloomSettings>,
+        Ref<OrthographicProjection>,
+    )>,
+    analysis_state: &pitchvis_analysis::AnalysisState,
+) {
+    if let (_, Some(mut bloom_settings), _) = camera.single_mut() {
+        bloom_settings.intensity =
+            (analysis_state.smoothed_scene_calmness.get() * 1.3).clamp(0.0, 1.0);
+    }
+}
+
+fn update_bass_spiral(
+    mut bass_cylinders: Query<(&BassCylinder, &mut Visibility, &mut Handle<ColorMaterial>)>,
+    cylinder_entities: &Res<CylinderEntityListResource>,
+    materials: &mut ResMut<Assets<ColorMaterial>>,
+    peaks_continuous: &[ContinuousPeak],
+    buckets_per_octave: u16,
+) {
+    //let mut color_map: Vec<i32> = vec![-1; self.buckets_per_octave * self.octaves];
+    // for (prev, cur) in peaks.iter().tuple_windows() {
+    //     color_map[*prev..*cur].fill(*prev as i32);
+    // }
+    for (_, mut visibility, _) in &mut bass_cylinders {
+        if *visibility == Visibility::Visible {
+            *visibility = Visibility::Hidden;
+        }
+    }
+    // if gain > 1000.0 {
+    //     return;
+    // }
+    if let Some(ContinuousPeak { center, size }) = peaks_continuous.first() {
+        let center = center / buckets_per_octave as f32 * 12.0;
+        if center.round() as usize * SPIRAL_SEGMENTS_PER_SEMITONE as usize
+            >= cylinder_entities.0.len()
+        {
+            return;
+        }
+
+        // color up to lowest note
+        for idx in 0..((center.round() * SPIRAL_SEGMENTS_PER_SEMITONE as f32) as usize) {
+            let (_, ref mut visibility, color) = bass_cylinders
+                .get_mut(cylinder_entities.0[idx])
+                .expect("cylinder entity");
+            **visibility = Visibility::Visible;
+
+            let color_map_ref = center.round() * buckets_per_octave as f32 / 12.0;
+            let (r, g, b) = pitchvis_analysis::color_mapping::calculate_color(
+                buckets_per_octave,
+                (color_map_ref + (buckets_per_octave - 3 * (buckets_per_octave / 12)) as f32)
+                    % buckets_per_octave as f32,
+                COLORS,
+                GRAY_LEVEL,
+                EASING_POW,
+            );
+
+            let k_max = arg_max(
+                &peaks_continuous
+                    .iter()
+                    .map(|p| p.size)
+                    .collect::<Vec<f32>>(),
+            );
+            let max_size = peaks_continuous[k_max].size;
+
+            let color_coefficient = 1.0 - (1.0 - size / max_size).powf(2.0);
+
+            materials
+                .get_mut(&*color)
+                .expect("cylinder color material")
+                .color = Color::srgba(r, g, b, color_coefficient);
+
+            // let radius = 0.08;
+            // c.set_local_scale(radius, *height, radius);
+        }
+    }
+}
+
+fn update_spectrum(
+    mut spectrum: Query<(&mut Visibility, &Mesh2dHandle, &mut Transform), With<Spectrum>>,
+    settings_state: &Res<SettingsState>,
+    mut camera: Query<(
+        &Camera,
+        Option<&mut BloomSettings>,
+        Ref<OrthographicProjection>,
+    )>,
+    range: &VqtRange,
+    vqt_result: &VqtResultResource,
+    meshes: &mut Assets<Mesh>,
+) {
+    let (mut visibility, mesh_handle, mut transform) = spectrum.single_mut();
+    {
+        // set visibility
+        if settings_state.display_mode == DisplayMode::Debugging {
+            *visibility = Visibility::Visible;
+        } else {
+            *visibility = Visibility::Hidden;
+            return;
+        }
+
+        // only access mutable if the viewport changed
+        if camera.single().2.is_changed() {
+            // move to right
+            let (_, _, projection) = camera.single_mut();
+            {
+                let Rect { max, .. } = projection.area;
+                *transform = Transform::from_xyz(
+                    max.x - range.n_buckets() as f32 * 0.022 - 0.2,
+                    max.y - 4.2,
+                    -13.0,
+                );
+            }
+        }
+
+        let spectrum_mesh = LineList {
+            lines: vqt_result
+                .x_vqt
+                .iter()
+                .enumerate()
+                .map(|(i, amp)| Vec3::new(i as f32 * 0.022, *amp / 10.0, 0.0))
+                .tuple_windows()
+                .collect::<Vec<(Vec3, Vec3)>>(),
+            thickness: 0.02,
+        };
+        let mesh = meshes
+            .get_mut(&mesh_handle.0)
+            .expect("spectrum line strip mesh");
+        *mesh = spectrum_mesh.into();
+    }
+}
+
+fn show_hide_pitch_names(
+    mut pitch_name_text: Query<'_, '_, (&PitchNameText, &mut Visibility)>,
+    settings_state: &SettingsState,
+) {
+    for (_, mut visibility) in &mut pitch_name_text {
+        if settings_state.display_mode == DisplayMode::PitchnamesCalmness
+            || settings_state.display_mode == DisplayMode::Debugging
+        {
+            *visibility = Visibility::Visible;
+        } else {
+            *visibility = Visibility::Hidden;
+        }
+    }
+}
+
+// #[derive(PartialEq)]
+// pub enum PauseState {
+//     Running,
+//     Paused,
+// }

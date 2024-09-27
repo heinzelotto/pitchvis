@@ -172,102 +172,98 @@ fn update_bloom_settings(
     let bloom_settings = camera.single_mut();
     let text = &mut text.0.sections[0].value;
 
-    match bloom_settings {
-        (_, Some(mut bloom_settings)) => {
-            *text = "BloomSettings\n".to_string();
-            text.push_str(&format!("(Q/A) Intensity: {}\n", bloom_settings.intensity));
-            text.push_str(&format!(
-                "(W/S) Low-frequency boost: {}\n",
-                bloom_settings.low_frequency_boost
-            ));
-            text.push_str(&format!(
-                "(E/D) Low-frequency boost curvature: {}\n",
-                bloom_settings.low_frequency_boost_curvature
-            ));
-            text.push_str(&format!(
-                "(R/F) High-pass frequency: {}\n",
-                bloom_settings.high_pass_frequency
-            ));
-            text.push_str(&format!(
-                "(T/G) Mode: {}\n",
-                match bloom_settings.composite_mode {
-                    BloomCompositeMode::EnergyConserving => "Energy-conserving",
-                    BloomCompositeMode::Additive => "Additive",
-                }
-            ));
-            text.push_str(&format!(
-                "(Y/H) Threshold: {}\n",
-                bloom_settings.prefilter_settings.threshold
-            ));
-            text.push_str(&format!(
-                "(U/J) Threshold softness: {}\n",
-                bloom_settings.prefilter_settings.threshold_softness
-            ));
+    if let (_, Some(mut bloom_settings)) = bloom_settings {
+        *text = "BloomSettings\n".to_string();
+        text.push_str(&format!("(Q/A) Intensity: {}\n", bloom_settings.intensity));
+        text.push_str(&format!(
+            "(W/S) Low-frequency boost: {}\n",
+            bloom_settings.low_frequency_boost
+        ));
+        text.push_str(&format!(
+            "(E/D) Low-frequency boost curvature: {}\n",
+            bloom_settings.low_frequency_boost_curvature
+        ));
+        text.push_str(&format!(
+            "(R/F) High-pass frequency: {}\n",
+            bloom_settings.high_pass_frequency
+        ));
+        text.push_str(&format!(
+            "(T/G) Mode: {}\n",
+            match bloom_settings.composite_mode {
+                BloomCompositeMode::EnergyConserving => "Energy-conserving",
+                BloomCompositeMode::Additive => "Additive",
+            }
+        ));
+        text.push_str(&format!(
+            "(Y/H) Threshold: {}\n",
+            bloom_settings.prefilter_settings.threshold
+        ));
+        text.push_str(&format!(
+            "(U/J) Threshold softness: {}\n",
+            bloom_settings.prefilter_settings.threshold_softness
+        ));
 
-            let dt = time.delta_seconds();
+        let dt = time.delta_seconds();
 
-            if keycode.pressed(KeyCode::KeyA) {
-                bloom_settings.intensity -= dt / 10.0;
-            }
-            if keycode.pressed(KeyCode::KeyQ) {
-                bloom_settings.intensity += dt / 10.0;
-            }
-            bloom_settings.intensity = bloom_settings.intensity.clamp(0.0, 1.0);
+        if keycode.pressed(KeyCode::KeyA) {
+            bloom_settings.intensity -= dt / 10.0;
+        }
+        if keycode.pressed(KeyCode::KeyQ) {
+            bloom_settings.intensity += dt / 10.0;
+        }
+        bloom_settings.intensity = bloom_settings.intensity.clamp(0.0, 1.0);
 
-            if keycode.pressed(KeyCode::KeyS) {
-                bloom_settings.low_frequency_boost -= dt / 10.0;
-            }
-            if keycode.pressed(KeyCode::KeyW) {
-                bloom_settings.low_frequency_boost += dt / 10.0;
-            }
-            bloom_settings.low_frequency_boost = bloom_settings.low_frequency_boost.clamp(0.0, 1.0);
+        if keycode.pressed(KeyCode::KeyS) {
+            bloom_settings.low_frequency_boost -= dt / 10.0;
+        }
+        if keycode.pressed(KeyCode::KeyW) {
+            bloom_settings.low_frequency_boost += dt / 10.0;
+        }
+        bloom_settings.low_frequency_boost = bloom_settings.low_frequency_boost.clamp(0.0, 1.0);
 
-            if keycode.pressed(KeyCode::KeyD) {
-                bloom_settings.low_frequency_boost_curvature -= dt / 10.0;
-            }
-            if keycode.pressed(KeyCode::KeyE) {
-                bloom_settings.low_frequency_boost_curvature += dt / 10.0;
-            }
-            bloom_settings.low_frequency_boost_curvature =
-                bloom_settings.low_frequency_boost_curvature.clamp(0.0, 1.0);
+        if keycode.pressed(KeyCode::KeyD) {
+            bloom_settings.low_frequency_boost_curvature -= dt / 10.0;
+        }
+        if keycode.pressed(KeyCode::KeyE) {
+            bloom_settings.low_frequency_boost_curvature += dt / 10.0;
+        }
+        bloom_settings.low_frequency_boost_curvature =
+            bloom_settings.low_frequency_boost_curvature.clamp(0.0, 1.0);
 
-            if keycode.pressed(KeyCode::KeyF) {
-                bloom_settings.high_pass_frequency -= dt / 10.0;
-            }
-            if keycode.pressed(KeyCode::KeyR) {
-                bloom_settings.high_pass_frequency += dt / 10.0;
-            }
-            bloom_settings.high_pass_frequency = bloom_settings.high_pass_frequency.clamp(0.0, 1.0);
+        if keycode.pressed(KeyCode::KeyF) {
+            bloom_settings.high_pass_frequency -= dt / 10.0;
+        }
+        if keycode.pressed(KeyCode::KeyR) {
+            bloom_settings.high_pass_frequency += dt / 10.0;
+        }
+        bloom_settings.high_pass_frequency = bloom_settings.high_pass_frequency.clamp(0.0, 1.0);
 
-            if keycode.pressed(KeyCode::KeyG) {
-                bloom_settings.composite_mode = BloomCompositeMode::Additive;
-            }
-            if keycode.pressed(KeyCode::KeyT) {
-                bloom_settings.composite_mode = BloomCompositeMode::EnergyConserving;
-            }
-
-            if keycode.pressed(KeyCode::KeyH) {
-                bloom_settings.prefilter_settings.threshold -= dt;
-            }
-            if keycode.pressed(KeyCode::KeyY) {
-                bloom_settings.prefilter_settings.threshold += dt;
-            }
-            bloom_settings.prefilter_settings.threshold =
-                bloom_settings.prefilter_settings.threshold.max(0.0);
-
-            if keycode.pressed(KeyCode::KeyJ) {
-                bloom_settings.prefilter_settings.threshold_softness -= dt / 10.0;
-            }
-            if keycode.pressed(KeyCode::KeyU) {
-                bloom_settings.prefilter_settings.threshold_softness += dt / 10.0;
-            }
-            bloom_settings.prefilter_settings.threshold_softness = bloom_settings
-                .prefilter_settings
-                .threshold_softness
-                .clamp(0.0, 1.0);
+        if keycode.pressed(KeyCode::KeyG) {
+            bloom_settings.composite_mode = BloomCompositeMode::Additive;
+        }
+        if keycode.pressed(KeyCode::KeyT) {
+            bloom_settings.composite_mode = BloomCompositeMode::EnergyConserving;
         }
 
-        _ => (),
+        if keycode.pressed(KeyCode::KeyH) {
+            bloom_settings.prefilter_settings.threshold -= dt;
+        }
+        if keycode.pressed(KeyCode::KeyY) {
+            bloom_settings.prefilter_settings.threshold += dt;
+        }
+        bloom_settings.prefilter_settings.threshold =
+            bloom_settings.prefilter_settings.threshold.max(0.0);
+
+        if keycode.pressed(KeyCode::KeyJ) {
+            bloom_settings.prefilter_settings.threshold_softness -= dt / 10.0;
+        }
+        if keycode.pressed(KeyCode::KeyU) {
+            bloom_settings.prefilter_settings.threshold_softness += dt / 10.0;
+        }
+        bloom_settings.prefilter_settings.threshold_softness = bloom_settings
+            .prefilter_settings
+            .threshold_softness
+            .clamp(0.0, 1.0);
     }
 }
 
@@ -332,6 +328,7 @@ fn user_input_system(
 
     for mouse_button_input in mouse_button_input_events.read() {
         if mouse_button_input.state.is_pressed() {
+            #[allow(clippy::single_match)]
             match mouse_button_input.button {
                 MouseButton::Left => {
                     settings.display_mode = cycle_display_mode(&settings.display_mode);

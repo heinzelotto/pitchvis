@@ -84,11 +84,8 @@ pub fn main_fun() -> Result<()> {
     let mut app = App::new();
     app.add_plugins((
         DefaultPlugins.set(WindowPlugin {
-            // primary_window: Some(Window {
-            //     present_mode: PresentMode::AutoNoVsync,
-            //     ..default()
-            // }),
             primary_window: Some(Window {
+                // present_mode: PresentMode::Immediate,
                 title: "Pitchvis".to_string(),
                 ..default()
             }),
