@@ -13,7 +13,7 @@ mod tests {
     use super::vqt::*;
 
     pub const SR: u32 = 22050;
-    pub const BUFSIZE: usize = 2 * SR as usize;
+    pub const _BUFSIZE: usize = 2 * SR as usize;
     pub const N_FFT: usize = 2 * 16384;
     pub const FREQ_A1: f32 = 55.0;
     pub const UPSCALE_FACTOR: u16 = 1;
