@@ -2,22 +2,24 @@ use anyhow::Result;
 use bevy::diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin};
 use bevy::prelude::*;
 use bevy::sprite::Material2dPlugin;
+use bevy::winit::{UpdateMode, WinitSettings};
+use pitchvis_analysis::analysis::{AnalysisParameters, AnalysisState};
 use wasm_bindgen::prelude::*;
 
-use super::common::close_on_esc;
 use super::common::fps_counter_showhide;
 use super::common::fps_text_update_system;
-use super::common::frame_limiter_system;
 use super::common::setup_fps_counter;
 use super::common::user_input_system;
 use super::common::SettingsState;
-use crate::analysis_system;
-use crate::audio_system;
-use crate::display_system;
-use crate::vqt_system;
-use pitchvis_analysis::vqt::VqtParameters;
+use super::common::{close_on_esc, setup_bloom_ui, update_bloom_settings};
+use crate::analysis_system::{self, AnalysisStateResource};
+use crate::audio_system::AudioBufferResource;
+use crate::display_system::material::NoisyColorMaterial;
+use crate::display_system::{self, CylinderEntityListResource, DisplayMode};
+use crate::vqt_system::{self, VqtResource, VqtResultResource};
 use pitchvis_analysis::vqt::VqtRange;
-use pitchvis_audio::audio::AudioStream;
+use pitchvis_analysis::vqt::{Vqt, VqtParameters};
+use pitchvis_audio::AudioStream;
 
 // increasing BUCKETS_PER_SEMITONE or Q will improve frequency resolution at cost of time resolution,
 // increasing GAMMA will improve time resolution at lower frequencies.
@@ -48,17 +50,44 @@ const VQT_PARAMETERS: VqtParameters = VqtParameters {
     gamma: GAMMA,
 };
 
-// TODO: on wasm it's currently difficult to limit FPS without forking bevy.
-const FPS: u64 = 30;
+#[derive(Resource)]
+struct CurrentFpsLimit(pub Option<u32>);
+
+fn set_frame_limiter_system(
+    mut current_limit: ResMut<CurrentFpsLimit>,
+    mut winit_settings: ResMut<WinitSettings>,
+    settings: Res<SettingsState>,
+) {
+    if settings.fps_limit != current_limit.0 {
+        current_limit.0 = settings.fps_limit;
+        *winit_settings = match settings.fps_limit {
+            Some(fps) => WinitSettings {
+                focused_mode: UpdateMode::Reactive {
+                    wait: std::time::Duration::from_millis(1000 / fps as u64),
+                    react_to_device_events: true,
+                    react_to_user_events: true,
+                    react_to_window_events: true,
+                },
+                unfocused_mode: UpdateMode::Reactive {
+                    wait: std::time::Duration::from_millis(1000 / fps as u64),
+                    react_to_device_events: true,
+                    react_to_user_events: true,
+                    react_to_window_events: true,
+                },
+            },
+            None => WinitSettings::game(),
+        };
+    }
+}
 
 // wasm main function
 #[wasm_bindgen]
 pub async fn main_fun() -> Result<(), JsValue> {
-    let audio_stream = pitchvis_audio::audio::async_new_audio_stream(SR, BUFSIZE)
+    let audio_stream = pitchvis_audio::async_new_audio_stream(SR, BUFSIZE)
         .await
         .unwrap();
 
-    let vqt = pitchvis_analysis::vqt::Vqt::new(&VQT_PARAMETERS);
+    let vqt = Vqt::new(&VQT_PARAMETERS);
 
     audio_stream.play().unwrap();
 
@@ -71,52 +100,36 @@ pub async fn main_fun() -> Result<(), JsValue> {
             DefaultPlugins,
             LogDiagnosticsPlugin::default(),
             FrameTimeDiagnosticsPlugin::default(),
-            Material2dPlugin::<display_system::material::NoisyColorMaterial>::default(),
+            Material2dPlugin::<NoisyColorMaterial>::default(),
         ))
-        .insert_resource(vqt_system::VqtResource(vqt))
-        .insert_resource(vqt_system::VqtResultResource::new(&VQT_PARAMETERS.range))
-        .insert_resource(audio_system::AudioBufferResource(
-            audio_stream.ring_buffer.clone(),
-        ))
-        .insert_resource(analysis_system::AnalysisStateResource(
-            pitchvis_analysis::analysis::AnalysisState::new(
-                VQT_PARAMETERS.range.clone(),
-                pitchvis_analysis::analysis::AnalysisParameters::default(),
-            ),
-        ))
-        .insert_resource(display_system::CylinderEntityListResource(Vec::new()))
+        .insert_resource(VqtResource(vqt))
+        .insert_resource(VqtResultResource::new(&VQT_PARAMETERS.range))
+        .insert_resource(AudioBufferResource(audio_stream.ring_buffer.clone()))
+        .insert_resource(AnalysisStateResource(AnalysisState::new(
+            VQT_PARAMETERS.range.clone(),
+            AnalysisParameters::default(),
+        )))
+        .insert_resource(CylinderEntityListResource(Vec::new()))
         .insert_resource(SettingsState {
-            display_mode: display_system::DisplayMode::PitchnamesCalmness,
-            fps_limit: None, // doesn't work on wasm
+            display_mode: DisplayMode::PitchnamesCalmness,
+            fps_limit: None,
         })
+        .insert_resource(CurrentFpsLimit(None))
         // hacky way to limit FPS. Only works when the user is not moving the mouse.
         // And if we set the react_ arguments to false, the FPS limit is all wonky.
-        .insert_resource(bevy::winit::WinitSettings {
-            focused_mode: bevy::winit::UpdateMode::Reactive {
-                wait: std::time::Duration::from_millis(1000 / FPS),
-                react_to_device_events: true,
-                react_to_user_events: true,
-                react_to_window_events: true,
-            },
-            unfocused_mode: bevy::winit::UpdateMode::Reactive {
-                wait: std::time::Duration::from_millis(1000 / FPS),
-                react_to_device_events: true,
-                react_to_user_events: true,
-                react_to_window_events: true,
-            },
-        })
+        .insert_resource(WinitSettings::game())
         .add_systems(
             Startup,
             (
                 display_system::setup_display_to_system(&VQT_PARAMETERS.range),
                 setup_fps_counter,
+                setup_bloom_ui,
             ),
         )
         .add_systems(
             Update,
             (
                 close_on_esc,
-                // frame_limiter_system, // FIXME: this is not working on wasm
                 update_vqt_system,
                 update_analysis_state_system
                     .clone()
@@ -125,6 +138,8 @@ pub async fn main_fun() -> Result<(), JsValue> {
                 user_input_system,
                 fps_text_update_system,
                 fps_counter_showhide,
+                update_bloom_settings,
+                set_frame_limiter_system,
             ),
         )
         .run();

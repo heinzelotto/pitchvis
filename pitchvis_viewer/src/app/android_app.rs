@@ -200,7 +200,7 @@ fn main() -> AppExit {
     let vqt = pitchvis_analysis::vqt::Vqt::new(&VQT_PARAMETERS);
 
     // let (audio_control_channel_tx, audio_control_channel_rx) = mpsc::channel::<AudioControl>();
-    let mut ring_buffer = pitchvis_audio::audio::RingBuffer {
+    let mut ring_buffer = pitchvis_audio::RingBuffer {
         buf: Vec::new(),
         gain: 0.0,
     };

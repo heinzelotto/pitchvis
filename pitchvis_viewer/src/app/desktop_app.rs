@@ -18,7 +18,7 @@ use crate::display_system;
 use crate::vqt_system;
 use pitchvis_analysis::vqt::VqtParameters;
 use pitchvis_analysis::vqt::VqtRange;
-use pitchvis_audio::audio::AudioStream;
+use pitchvis_audio::AudioStream;
 
 // increasing BUCKETS_PER_SEMITONE or Q will improve frequency resolution at cost of time resolution,
 // increasing GAMMA will improve time resolution at lower frequencies.
@@ -65,7 +65,7 @@ const FPS: u32 = 30;
 pub fn main_fun() -> Result<()> {
     env_logger::init();
 
-    let audio_stream = pitchvis_audio::audio::new_audio_stream(SR, BUFSIZE).unwrap();
+    let audio_stream = pitchvis_audio::new_audio_stream(SR, BUFSIZE).unwrap();
 
     let vqt = pitchvis_analysis::vqt::Vqt::new(&VQT_PARAMETERS);
 
@@ -122,15 +122,15 @@ pub fn main_fun() -> Result<()> {
             Update,
             (
                 close_on_esc,
-                frame_limiter_system,
                 update_vqt_system,
-                user_input_system,
-                fps_text_update_system,
-                fps_counter_showhide,
                 update_analysis_state_system
                     .clone()
                     .after(update_vqt_system),
+                user_input_system,
+                fps_text_update_system,
+                fps_counter_showhide,
                 update_bloom_settings,
+                frame_limiter_system,
             ),
         );
     #[cfg(feature = "ml")]
