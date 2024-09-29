@@ -1,4 +1,5 @@
 use anyhow::Result;
+use bevy::asset::AssetMetaCheck;
 use bevy::diagnostic::FrameTimeDiagnosticsPlugin;
 use bevy::prelude::*;
 use bevy::sprite::Material2dPlugin;
@@ -82,14 +83,19 @@ pub fn main_fun() -> Result<()> {
 
     let mut app = App::new();
     app.add_plugins((
-        DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                // present_mode: PresentMode::Immediate,
-                title: "Pitchvis".to_string(),
+        DefaultPlugins
+            .set(WindowPlugin {
+                primary_window: Some(Window {
+                    // present_mode: PresentMode::Immediate,
+                    title: "Pitchvis".to_string(),
+                    ..default()
+                }),
+                ..default()
+            })
+            .set(AssetPlugin {
+                meta_check: AssetMetaCheck::Never,
                 ..default()
             }),
-            ..default()
-        }),
         FrameTimeDiagnosticsPlugin,
         Material2dPlugin::<display_system::material::NoisyColorMaterial>::default(),
     ))

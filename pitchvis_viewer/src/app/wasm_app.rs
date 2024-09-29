@@ -1,4 +1,5 @@
 use anyhow::Result;
+use bevy::asset::AssetMetaCheck;
 use bevy::diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin};
 use bevy::prelude::*;
 use bevy::sprite::Material2dPlugin;
@@ -97,7 +98,12 @@ pub async fn main_fun() -> Result<(), JsValue> {
 
     App::new()
         .add_plugins((
-            DefaultPlugins,
+            DefaultPlugins.set(AssetPlugin {
+                // needed for the Progressive Web App not to fail looking for a nonexisting
+                // .wasm.meta file when offline
+                meta_check: AssetMetaCheck::Never,
+                ..default()
+            }),
             LogDiagnosticsPlugin::default(),
             FrameTimeDiagnosticsPlugin::default(),
             Material2dPlugin::<NoisyColorMaterial>::default(),

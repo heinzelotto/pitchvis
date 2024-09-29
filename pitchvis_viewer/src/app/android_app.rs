@@ -1,4 +1,5 @@
 use android_activity::AndroidApp;
+use bevy::asset::AssetMetaCheck;
 use bevy::diagnostic::FrameTimeDiagnosticsPlugin;
 use bevy::diagnostic::LogDiagnosticsPlugin;
 use bevy::prelude::*;
@@ -269,6 +270,10 @@ fn main() -> AppExit {
             .set(LogPlugin {
                 filter: "wgpu=error,warn".to_string(),
                 level: bevy::log::Level::DEBUG,
+                ..default()
+            })
+            .set(AssetPlugin {
+                meta_check: AssetMetaCheck::Never,
                 ..default()
             }),
         LogDiagnosticsPlugin::default(),
