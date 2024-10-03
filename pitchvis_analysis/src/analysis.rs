@@ -50,6 +50,8 @@ pub struct AnalysisParameters {
     note_calmness_smoothing_duration: Duration,
     /// The duration over which the calmness of the scene is smoothed.
     scene_calmness_smoothing_duration: Duration,
+    /// The duration over which the tuning inaccuracy is smoothed.
+    tuning_inaccuracy_smoothing_duration: Duration,
 }
 
 impl AnalysisParameters {
@@ -69,13 +71,16 @@ impl Default for AnalysisParameters {
             vqt_smoothing_duration: Duration::from_millis(90),
             note_calmness_smoothing_duration: Duration::from_millis(4_500),
             scene_calmness_smoothing_duration: Duration::from_millis(1_100),
+            tuning_inaccuracy_smoothing_duration: Duration::from_millis(4_000),
         }
     }
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct ContinuousPeak {
+    /// The estimated precise center of the peak, in buckets starting from the min_freq.
     pub center: f32,
+    /// The estimated precise amplitude of the peak, in ???
     pub size: f32,
 }
 
@@ -142,6 +147,20 @@ pub struct AnalysisState {
 
     /// the smoothed average calmness of all active bins
     pub smoothed_scene_calmness: EmaMeasurement,
+
+    /// The smoothed average inaccuracy of the notes w. r. t. a 440Hz tuning, in cents (1/100)
+    /// semitone.
+    ///
+    /// This is calculated from the absolute drifts of each note from the nearest
+    /// semitone. This means that even music that is on average on pitch can have
+    /// an inaccuracy, i. e. because of vibrato. But averaging over the non-absolute
+    /// drifts of the notes would be worse, because something totally off-pitch at
+    /// the border of +-50 cts would be average to a perfect zero, and a choir with
+    /// randomly drifting voices would also average near "zero drift". The stricter
+    /// pitch inaccuracy measure based on absolutes is probably more useful.
+    ///
+    /// Also, overtones that don't fit to the tuning grid will also impact the inaccuracy.
+    pub smoothed_tuning_grid_inaccuracy: EmaMeasurement,
 }
 
 impl AnalysisState {
@@ -185,6 +204,10 @@ impl AnalysisState {
             ],
             smoothed_scene_calmness: EmaMeasurement::new(
                 params.scene_calmness_smoothing_duration,
+                0.0,
+            ),
+            smoothed_tuning_grid_inaccuracy: EmaMeasurement::new(
+                params.tuning_inaccuracy_smoothing_duration,
                 0.0,
             ),
         }
@@ -285,6 +308,9 @@ impl AnalysisState {
 
         self.update_calmness(x_vqt, frame_time);
 
+        // needs to be run after the continuous peaks have been calculated
+        self.update_tuning_inaccuracy(frame_time);
+
         // TODO: more advanced bass note detection than just taking the first peak (e. g. by
         // promoting frequences through their overtones first), using different peak detection
         // parameters, etc.
@@ -336,6 +362,28 @@ impl AnalysisState {
                 .update_with_timestep(calmness_sum / calmness_count as f32, frame_time);
         }
     }
+
+    fn update_tuning_inaccuracy(&mut self, frame_time: Duration) {
+        let mut inaccuracy_sum = 0.0;
+        let mut amplitude_sum = 0.0;
+        for p in &self.peaks_continuous {
+            amplitude_sum += p.size;
+
+            let center_in_semitones = p.center * 12.0 / self.range.buckets_per_octave as f32;
+            inaccuracy_sum += (center_in_semitones - center_in_semitones.round()).abs() * p.size;
+        }
+
+        let average_tuning_inaccuracy = if amplitude_sum > 0.0 {
+            inaccuracy_sum / amplitude_sum
+        } else {
+            0.0
+        };
+
+        let average_tuning_inaccuracy_in_cents = 100.0 * average_tuning_inaccuracy;
+
+        self.smoothed_tuning_grid_inaccuracy
+            .update_with_timestep(average_tuning_inaccuracy_in_cents, frame_time);
+    }
 }
 
 fn find_peaks(params: &AnalysisParameters, vqt: &[f32], buckets_per_octave: u16) -> HashSet<usize> {
@@ -370,27 +418,32 @@ fn enhance_peaks_continuous(
     vqt: &[f32],
     range: &VqtRange,
 ) -> Vec<ContinuousPeak> {
-    let mut peaks_continuous = Vec::new();
-    for p in discrete_peaks {
-        let p = *p;
+    let mut peaks_continuous: Vec<_> = discrete_peaks
+        .iter()
+        .filter_map(|p| {
+            // TODO: add test for how this behaves when the values of two neighbor bins are very similar
+            let p = *p;
 
-        if p < 1 || p > range.n_buckets() - 2 {
-            continue;
-        }
+            if p < 1 || p > range.n_buckets() - 2 {
+                // FIXME: shift the center by one bin instead of discarding the peak
+                return None;
+            }
 
-        let x = vqt[p] - vqt[p - 1] + f32::EPSILON;
-        let y = vqt[p] - vqt[p + 1] + f32::EPSILON;
+            let x = vqt[p] - vqt[p - 1] + f32::EPSILON;
+            let y = vqt[p] - vqt[p + 1] + f32::EPSILON;
 
-        let estimated_precise_center = p as f32 + 1.0 / (1.0 + y / x) - 0.5;
-        let estimated_precise_size = vqt[estimated_precise_center.trunc() as usize + 1]
-            * estimated_precise_center.fract()
-            + vqt[estimated_precise_center.trunc() as usize]
-                * (1.0 - estimated_precise_center.fract());
-        peaks_continuous.push(ContinuousPeak {
-            center: estimated_precise_center,
-            size: estimated_precise_size,
-        });
-    }
+            let estimated_precise_center = p as f32 + 1.0 / (1.0 + y / x) - 0.5;
+            let estimated_precise_size = vqt[estimated_precise_center.trunc() as usize + 1]
+                * estimated_precise_center.fract()
+                + vqt[estimated_precise_center.trunc() as usize]
+                    * (1.0 - estimated_precise_center.fract());
+
+            Some(ContinuousPeak {
+                center: estimated_precise_center,
+                size: estimated_precise_size,
+            })
+        })
+        .collect();
     peaks_continuous.sort_by(|a, b| a.center.partial_cmp(&b.center).unwrap());
 
     peaks_continuous

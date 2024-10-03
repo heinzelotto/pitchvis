@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::Instant;
 
+use crate::analysis_system::AnalysisStateResource;
 use crate::display_system;
 use bevy::core_pipeline::bloom::BloomCompositeMode;
 use bevy::core_pipeline::bloom::BloomSettings;
@@ -96,7 +97,7 @@ pub fn setup_fps_counter(mut commands: Commands) {
     commands.entity(root).push_children(&[text_fps]);
 }
 
-pub fn fps_text_update_system(
+pub fn update_fps_text_system(
     diagnostics: Res<DiagnosticsStore>,
     mut query: Query<&mut Text, With<FpsText>>,
     settings: Res<SettingsState>,
@@ -134,9 +135,7 @@ pub fn fps_text_update_system(
             text.sections[1].style.color = Color::WHITE;
         }
         if let Some(fps_limit) = settings.fps_limit {
-            text.sections[1]
-                .value
-                .push_str(&mut format!("/{}", fps_limit));
+            text.sections[1].value.push_str(&format!("/{}", fps_limit));
         }
     }
 }
@@ -146,6 +145,104 @@ pub fn fps_counter_showhide(
     mut q: Query<&mut Visibility, With<FpsRoot>>,
     settings: Res<SettingsState>,
 ) {
+    let mut vis = q.single_mut();
+    if settings.display_mode == display_system::DisplayMode::Debugging {
+        *vis = Visibility::Visible;
+    } else {
+        *vis = Visibility::Hidden;
+    }
+}
+
+/// Marker to find the container entity so we can show/hide the FPS counter
+#[derive(Component)]
+pub struct AnalysisRoot;
+
+/// Marker to find the text entity so we can update it
+#[derive(Component)]
+pub struct AnalysisText;
+
+pub fn setup_analysis_text(mut commands: Commands) {
+    let root = commands
+        .spawn((
+            AnalysisRoot,
+            NodeBundle {
+                background_color: BackgroundColor(Color::BLACK.with_alpha(0.5)),
+                z_index: ZIndex::Global(i32::MAX),
+                style: Style {
+                    position_type: PositionType::Absolute,
+                    left: Val::Auto,
+                    top: Val::Auto,
+                    right: Val::Percent(1.),
+                    bottom: Val::Percent(1.),
+                    // give it some padding for readability
+                    padding: UiRect::all(Val::Px(4.0)),
+                    ..Default::default()
+                },
+                visibility: Visibility::Visible,
+                ..Default::default()
+            },
+        ))
+        .id();
+    let text_analysis = commands
+        .spawn((
+            AnalysisText,
+            TextBundle {
+                text: Text::from_sections([
+                    TextSection {
+                        value: "Tuning drift: ".into(),
+                        style: TextStyle {
+                            font_size: 16.0,
+                            color: Color::WHITE,
+                            ..default()
+                        },
+                    },
+                    TextSection {
+                        value: " N/A".into(),
+                        style: TextStyle {
+                            font_size: 16.0,
+                            color: Color::WHITE,
+                            ..default()
+                        },
+                    },
+                ]),
+                ..Default::default()
+            },
+        ))
+        .id();
+    commands.entity(root).push_children(&[text_analysis]);
+}
+
+pub fn update_analysis_text_system(
+    // TODO: replace with Single in bevy 0.15
+    mut query: Query<&mut Text, With<AnalysisText>>,
+    analysis: Res<AnalysisStateResource>,
+) {
+    let inaccuracy = analysis.0.smoothed_tuning_grid_inaccuracy.get().round();
+    let mut text = query.single_mut();
+
+    // Format the number as to leave space for 3 digits, just in case,
+    // right-aligned and rounded. This helps readability when the
+    // number changes rapidly.
+    text.sections[1].value = format!("{inaccuracy:>3.0}");
+
+    let inaccuracy_abs = inaccuracy.abs();
+    text.sections[1].style.color = if inaccuracy_abs <= 10.0 {
+        Color::srgb(0.0, 1.0, 0.0)
+    } else if inaccuracy_abs <= 20.0 {
+        Color::srgb((inaccuracy_abs - 10.0) / (20.0 - 10.0), 1.0, 0.0)
+    } else if inaccuracy_abs <= 30.0 {
+        Color::srgb(1.0, 1.0 - (inaccuracy_abs - 20.0) / (30.0 - 20.0), 0.0)
+    } else {
+        Color::srgb(1.0, 0.0, 0.0)
+    };
+}
+
+/// Toggle the FPS counter based on the display mode
+pub fn analysis_text_showhide(
+    mut q: Query<&mut Visibility, With<AnalysisRoot>>,
+    settings: Res<SettingsState>,
+) {
+    // TODO: move all showhides into one system that updates the scene based on the display mode
     let mut vis = q.single_mut();
     if settings.display_mode == display_system::DisplayMode::Debugging {
         *vis = Visibility::Visible;

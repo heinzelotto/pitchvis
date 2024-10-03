@@ -139,15 +139,15 @@ pub async fn main_fun() -> Result<(), JsValue> {
             (
                 close_on_esc,
                 update_vqt_system,
-                update_analysis_state_system
-                    .clone()
-                    .after(update_vqt_system),
-                update_display_system.after(update_analysis_state_system),
+                update_analysis_state_system.after(update_vqt_system),
                 user_input_system,
-                fps_text_update_system,
+                update_fps_text_system.after(update_vqt_system),
                 fps_counter_showhide,
-                update_bloom_settings,
-                set_frame_limiter_system,
+                update_bloom_settings.after(update_analysis_state_system),
+                update_analysis_text_system.after(update_analysis_state_system),
+                analysis_text_showhide,
+                frame_limiter_system,
+                update_display_system.after(update_analysis_state_system),
             ),
         )
         .run();

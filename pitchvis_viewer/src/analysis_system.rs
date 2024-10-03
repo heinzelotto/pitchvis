@@ -8,7 +8,7 @@ use pitchvis_analysis::analysis::AnalysisState;
 pub struct AnalysisStateResource(pub AnalysisState);
 
 pub fn update_analysis_state_to_system(
-) -> impl FnMut(ResMut<AnalysisStateResource>, Res<VqtResultResource>, Res<Time>) + Clone {
+) -> impl FnMut(ResMut<AnalysisStateResource>, Res<VqtResultResource>, Res<Time>) + Copy {
     move |mut analysis_state: ResMut<AnalysisStateResource>,
           vqt_result: Res<VqtResultResource>,
           time: Res<Time>| {

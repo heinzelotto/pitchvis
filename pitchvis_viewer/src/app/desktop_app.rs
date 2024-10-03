@@ -4,13 +4,16 @@ use bevy::diagnostic::FrameTimeDiagnosticsPlugin;
 use bevy::prelude::*;
 use bevy::sprite::Material2dPlugin;
 
+use super::common::analysis_text_showhide;
 use super::common::close_on_esc;
 use super::common::fps_counter_showhide;
-use super::common::fps_text_update_system;
 use super::common::frame_limiter_system;
+use super::common::setup_analysis_text;
 use super::common::setup_bloom_ui;
 use super::common::setup_fps_counter;
+use super::common::update_analysis_text_system;
 use super::common::update_bloom_settings;
+use super::common::update_fps_text_system;
 use super::common::user_input_system;
 use super::common::ActiveTouches;
 use super::common::SettingsState;
@@ -124,6 +127,7 @@ pub fn main_fun() -> Result<()> {
                 display_system::setup_display_to_system(&VQT_PARAMETERS.range),
                 setup_fps_counter,
                 setup_bloom_ui,
+                setup_analysis_text,
             ),
         )
         .add_systems(
@@ -131,14 +135,15 @@ pub fn main_fun() -> Result<()> {
             (
                 close_on_esc,
                 update_vqt_system,
-                update_analysis_state_system
-                    .clone()
-                    .after(update_vqt_system),
+                update_analysis_state_system.after(update_vqt_system),
                 user_input_system,
-                fps_text_update_system,
+                update_fps_text_system.after(update_vqt_system),
                 fps_counter_showhide,
-                update_bloom_settings,
+                update_bloom_settings.after(update_analysis_state_system),
+                update_analysis_text_system.after(update_analysis_state_system),
+                analysis_text_showhide,
                 frame_limiter_system,
+                update_display_system.after(update_analysis_state_system),
             ),
         );
     #[cfg(feature = "ml")]
@@ -148,14 +153,8 @@ pub fn main_fun() -> Result<()> {
             update_ml_system.after(update_analysis_state_system),
             update_display_system.after(update_ml_system),
         ),
-    )
-    .run();
-    #[cfg(not(feature = "ml"))]
-    app.add_systems(
-        Update,
-        update_display_system.after(update_analysis_state_system),
-    )
-    .run();
+    );
+    app.run();
 
     Ok(())
 }
