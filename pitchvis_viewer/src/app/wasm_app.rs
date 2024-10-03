@@ -11,6 +11,7 @@ use super::common::fps_counter_showhide;
 use super::common::fps_text_update_system;
 use super::common::setup_fps_counter;
 use super::common::user_input_system;
+use super::common::ActiveTouches;
 use super::common::SettingsState;
 use super::common::{close_on_esc, setup_bloom_ui, update_bloom_settings};
 use crate::analysis_system::{self, AnalysisStateResource};
@@ -120,6 +121,7 @@ pub async fn main_fun() -> Result<(), JsValue> {
             display_mode: DisplayMode::PitchnamesCalmness,
             fps_limit: None,
         })
+        .insert_resource(ActiveTouches::default())
         .insert_resource(CurrentFpsLimit(None))
         // hacky way to limit FPS. Only works when the user is not moving the mouse.
         // And if we set the react_ arguments to false, the FPS limit is all wonky.

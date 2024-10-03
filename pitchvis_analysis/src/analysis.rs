@@ -17,6 +17,8 @@
 ///    the existing VQT?
 ///  - drop bass notes that don't have overtones in favor of those that still fall in the bass
 ///    range, but do have them
+///  - make note smoothing a function of the calmness of the scene, if this will not cause a
+///    feedback loop
 ///
 use crate::{util::*, vqt::VqtRange};
 use find_peaks::PeakFinder;

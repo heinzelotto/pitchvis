@@ -12,6 +12,7 @@ use super::common::setup_bloom_ui;
 use super::common::setup_fps_counter;
 use super::common::update_bloom_settings;
 use super::common::user_input_system;
+use super::common::ActiveTouches;
 use super::common::SettingsState;
 use crate::analysis_system;
 use crate::audio_system;
@@ -111,7 +112,8 @@ pub fn main_fun() -> Result<()> {
     .insert_resource(SettingsState {
         display_mode: display_system::DisplayMode::PitchnamesCalmness,
         fps_limit: Some(FPS),
-    });
+    })
+    .insert_resource(ActiveTouches::default());
 
     #[cfg(feature = "ml")]
     app.insert_resource(ml_model_resource);

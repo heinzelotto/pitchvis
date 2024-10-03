@@ -1,3 +1,8 @@
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::sync::Mutex;
+use std::time::Instant;
+
 use crate::display_system;
 use bevy::core_pipeline::bloom::BloomCompositeMode;
 use bevy::core_pipeline::bloom::BloomSettings;
@@ -62,7 +67,7 @@ pub fn setup_fps_counter(mut commands: Commands) {
                 // use two sections, so it is easy to update just the number
                 text: Text::from_sections([
                     TextSection {
-                        value: "FPS: ".into(),
+                        value: "FPS (F/long press to cycle): ".into(),
                         style: TextStyle {
                             font_size: 16.0,
                             color: Color::WHITE,
@@ -94,6 +99,7 @@ pub fn setup_fps_counter(mut commands: Commands) {
 pub fn fps_text_update_system(
     diagnostics: Res<DiagnosticsStore>,
     mut query: Query<&mut Text, With<FpsText>>,
+    settings: Res<SettingsState>,
 ) {
     for mut text in &mut query {
         // try to get a "smoothed" FPS value from Bevy
@@ -126,6 +132,11 @@ pub fn fps_text_update_system(
             // add an extra space to preserve alignment
             text.sections[1].value = " N/A".into();
             text.sections[1].style.color = Color::WHITE;
+        }
+        if let Some(fps_limit) = settings.fps_limit {
+            text.sections[1]
+                .value
+                .push_str(&mut format!("/{}", fps_limit));
         }
     }
 }
@@ -283,23 +294,62 @@ pub fn frame_limiter_system(settings: Res<SettingsState>) {
     }
 }
 
-fn cycle_display_mode(mode: &display_system::DisplayMode) -> display_system::DisplayMode {
-    match mode {
+fn cycle_display_mode(mode: &mut display_system::DisplayMode) {
+    *mode = match mode {
         display_system::DisplayMode::PitchnamesCalmness => display_system::DisplayMode::Calmness,
         display_system::DisplayMode::Calmness => display_system::DisplayMode::Debugging,
         display_system::DisplayMode::Debugging => display_system::DisplayMode::PitchnamesCalmness,
     }
 }
 
+fn cycle_fps_limit(fps_limit: &mut Option<u32>) {
+    *fps_limit = match fps_limit {
+        None => Some(30),
+        Some(30) => Some(60),
+        _ => None,
+    };
+}
+
+#[derive(Resource, Default)]
+pub struct ActiveTouches(Arc<Mutex<HashMap<u64, Instant>>>);
+
 pub fn user_input_system(
     mut touch_events: EventReader<TouchInput>,
+    active_touches: Res<ActiveTouches>,
     mut keyboard_input_events: EventReader<KeyboardInput>,
     mut mouse_button_input_events: EventReader<MouseButtonInput>,
     mut settings: ResMut<SettingsState>,
 ) {
+    const LONG_PRESS_DURATION: f32 = 1.0;
+    // trigger fps limit change immediately after long press duration even if touch is still held
+    active_touches.0.lock().unwrap().retain(|_, touch_start| {
+        if touch_start.elapsed().as_secs_f32() >= LONG_PRESS_DURATION {
+            cycle_fps_limit(&mut settings.fps_limit);
+            false
+        } else {
+            true
+        }
+    });
+
     for touch in touch_events.read() {
-        if touch.phase == TouchPhase::Ended {
-            settings.display_mode = cycle_display_mode(&settings.display_mode);
+        match touch.phase {
+            TouchPhase::Started => {
+                active_touches
+                    .0
+                    .lock()
+                    .unwrap()
+                    .insert(touch.id, Instant::now());
+            }
+            TouchPhase::Ended => {
+                // trigger display mode change on touch release only
+                let touch_start = active_touches.0.lock().unwrap().remove(&touch.id);
+                if let Some(touch_start) = touch_start {
+                    if touch_start.elapsed().as_secs_f32() < LONG_PRESS_DURATION {
+                        cycle_display_mode(&mut settings.display_mode);
+                    }
+                }
+            }
+            _ => {}
         }
     }
 
@@ -307,13 +357,9 @@ pub fn user_input_system(
         if keyboard_input.state.is_pressed() {
             match keyboard_input.key_code {
                 KeyCode::Space => {
-                    settings.display_mode = cycle_display_mode(&settings.display_mode);
+                    cycle_display_mode(&mut settings.display_mode);
                 }
-                KeyCode::KeyF => match settings.fps_limit {
-                    None => settings.fps_limit = Some(30),
-                    Some(30) => settings.fps_limit = Some(60),
-                    _ => settings.fps_limit = None,
-                },
+                KeyCode::KeyF => cycle_fps_limit(&mut settings.fps_limit),
                 _ => {}
             }
         }
@@ -324,7 +370,7 @@ pub fn user_input_system(
             #[allow(clippy::single_match)]
             match mouse_button_input.button {
                 MouseButton::Left => {
-                    settings.display_mode = cycle_display_mode(&settings.display_mode);
+                    cycle_display_mode(&mut settings.display_mode);
                 }
                 _ => {}
             }

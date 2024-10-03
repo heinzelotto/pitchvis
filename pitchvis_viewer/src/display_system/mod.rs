@@ -36,6 +36,7 @@ pub enum DisplayMode {
     PitchnamesCalmness,
     Calmness,
     Debugging,
+    // TODO: add a state with low display fidelity for weaker devices
 }
 
 /// keep an index -> entity mapping for the cylinders

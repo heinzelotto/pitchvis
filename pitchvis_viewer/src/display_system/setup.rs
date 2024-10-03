@@ -266,6 +266,7 @@ fn spawn_camera(commands: &mut Commands) {
             },
             ..default()
         },
+        // TODO: make bloom removable based on display mode
         BloomSettings {
             intensity: 0.0,
             low_frequency_boost: 1.0,
