@@ -276,6 +276,7 @@ pub async fn async_new_audio_stream(sr: u32, buf_size: usize) -> Result<WasmAudi
     let mut ring_buffer = RingBuffer {
         buf: Vec::new(),
         gain: 0.0,
+        latency_ms: None,
     };
     ring_buffer.buf.resize(buf_size, 0f32);
     let ring_buffer = std::sync::Mutex::from(ring_buffer);

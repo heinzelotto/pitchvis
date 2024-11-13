@@ -10,6 +10,7 @@ use jni::{
     sys::{jobject, jstring},
     JavaVM,
 };
+use nix::time::{clock_gettime, ClockId};
 
 use super::common::analysis_text_showhide;
 use super::common::close_on_esc;
@@ -177,7 +178,7 @@ fn main() -> AppExit {
         },
     };
 
-    //env_logger::init();
+    // env_logger::init();
 
     if !microphone_permission_granted("android.permission.RECORD_AUDIO") {
         log::info!("requesting microphone permission");
@@ -208,6 +209,7 @@ fn main() -> AppExit {
     let mut ring_buffer = pitchvis_audio::RingBuffer {
         buf: Vec::new(),
         gain: 0.0,
+        latency_ms: None,
     };
     ring_buffer.buf.resize(BUFSIZE, 0f32);
     let ring_buffer = std::sync::Mutex::from(ring_buffer);
@@ -224,8 +226,9 @@ fn main() -> AppExit {
         .set_format(aaudio::Format::F32)
         .set_channel_count(1)
         .set_sharing_mode(aaudio::SharingMode::Exclusive)
+        .set_input_preset(aaudio::InputPreset::Unprocessed)
         .set_callbacks(
-            move |_, data: &mut [u8], frames: i32| {
+            move |stream_infos: &aaudio::AAudioStreamInfo, data: &mut [u8], frames: i32| {
                 let data = unsafe {
                     std::slice::from_raw_parts_mut(data.as_ptr() as *mut f32, frames as usize * 1)
                 };
@@ -246,6 +249,28 @@ fn main() -> AppExit {
                 let begin = rb.buf.len() - data.len();
                 agc.process(&mut rb.buf[begin..]);
                 rb.gain = agc.gain();
+
+                if let Ok(ts) = stream_infos.get_timestamp_monotonic() {
+                    let app_frame_index = stream_infos.get_frames_read();
+
+                    // ts is a snapshot. We use the sample rate to calculate the corresponding
+                    // time of the latest sample we are currently handling.
+                    let frame_delta = app_frame_index - ts.frame_position;
+                    let frame_time_delta = frame_delta as f64 / SR as f64 * 1e9;
+                    let app_frame_in_hardware_time = ts.time_nanos + frame_time_delta as i64;
+
+                    // We assume that the frame we are currently handling is being processed
+                    // NOW, and calculate the latency by comparing this to the time it originated
+                    // from the hardware.
+                    let app_frame_time =
+                        std::time::Duration::from(clock_gettime(ClockId::CLOCK_MONOTONIC).unwrap())
+                            .as_nanos();
+                    let latency_nanos = app_frame_time - app_frame_in_hardware_time as u128;
+
+                    rb.latency_ms = Some((latency_nanos as f64 / 1e6) as f32);
+                } else {
+                    rb.latency_ms = None;
+                }
 
                 aaudio::CallbackResult::Continue
             },

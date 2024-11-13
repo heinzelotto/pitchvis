@@ -4,6 +4,7 @@ use std::sync::Mutex;
 use std::time::Instant;
 
 use crate::analysis_system::AnalysisStateResource;
+use crate::audio_system::AudioBufferResource;
 use crate::display_system;
 use bevy::core_pipeline::bloom::BloomCompositeMode;
 use bevy::core_pipeline::bloom::BloomSettings;
@@ -89,6 +90,22 @@ pub fn setup_fps_counter(mut commands: Commands) {
                             ..default()
                         },
                     },
+                    TextSection {
+                        value: "\nAudio latency: ".into(),
+                        style: TextStyle {
+                            font_size: 16.0,
+                            color: Color::WHITE,
+                            ..default()
+                        },
+                    },
+                    TextSection {
+                        value: "N/A".into(),
+                        style: TextStyle {
+                            font_size: 16.0,
+                            color: Color::WHITE,
+                            ..default()
+                        },
+                    }
                 ]),
                 ..Default::default()
             },
@@ -101,6 +118,7 @@ pub fn update_fps_text_system(
     diagnostics: Res<DiagnosticsStore>,
     mut query: Query<&mut Text, With<FpsText>>,
     settings: Res<SettingsState>,
+    audio_buffer: Res<AudioBufferResource>,
 ) {
     for mut text in &mut query {
         // try to get a "smoothed" FPS value from Bevy
@@ -136,6 +154,11 @@ pub fn update_fps_text_system(
         }
         if let Some(fps_limit) = settings.fps_limit {
             text.sections[1].value.push_str(&format!("/{}", fps_limit));
+        }
+        if let Some(latency_ms) = audio_buffer.0.lock().unwrap().latency_ms {
+            text.sections[3].value = format!("{:.2}ms", latency_ms);
+        } else {
+            text.sections[3].value = "N/A".into();
         }
     }
 }

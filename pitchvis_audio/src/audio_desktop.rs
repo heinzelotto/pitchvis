@@ -42,7 +42,7 @@ pub fn new_audio_stream(sr: u32, buf_size: usize) -> Result<DesktopAudioStream> 
         .map(|d| d.name().expect("has no name"))
         .join(" ");
 
-    //panic!("{:?}", device_names);
+    // panic!("{:?}", _device_names);
 
     let device = host.devices().unwrap().next().unwrap();
 
@@ -79,6 +79,7 @@ pub fn new_audio_stream(sr: u32, buf_size: usize) -> Result<DesktopAudioStream> 
     let mut ring_buffer = RingBuffer {
         buf: Vec::new(),
         gain: 0.0,
+        latency_ms: None,
     };
     ring_buffer.buf.resize(buf_size, 0f32);
     let ring_buffer = std::sync::Mutex::from(ring_buffer);
