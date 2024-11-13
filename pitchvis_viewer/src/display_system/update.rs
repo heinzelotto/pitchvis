@@ -226,6 +226,30 @@ fn update_pitch_balls(
         }
     }
     // TODO: ?faster lookup through indexes
+
+    let mut balls_to_hide = vec![false; pitch_balls.iter().len()];
+    for (_, ContinuousPeak { center, .. }) in peaks_rounded.iter() {
+        // hide all balls that are close to the currently active peaks
+        let radius = (range.buckets_per_octave / 12) as f32 * 0.66;
+        for i in ((center - radius).round().max(0.0) as usize)
+            ..=((center + radius)
+                .round()
+                .min((pitch_balls.iter().len() - 1) as f32) as usize)
+        {
+            balls_to_hide[i] = true;
+        }
+    }
+    for (idx, _) in peaks_rounded.iter() {
+        // show peaks itself even if they are close to other peaks
+        balls_to_hide[*idx] = false;
+    }
+    let mut hidden_cnt = 0;
+    for (pitch_ball, mut visibility, _, _) in &mut pitch_balls {
+        if *visibility == Visibility::Visible && balls_to_hide[pitch_ball.0] {
+            *visibility = Visibility::Hidden;
+            hidden_cnt += 1;
+        }
+    }
 }
 
 fn update_bloom(
