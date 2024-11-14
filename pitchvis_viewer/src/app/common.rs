@@ -123,6 +123,7 @@ pub fn setup_fps_counter(mut commands: Commands) {
                             ..default()
                         },
                     },
+                    // TODO: add section for analysis smoothing latency
                 ]),
                 ..Default::default()
             },

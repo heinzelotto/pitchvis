@@ -46,7 +46,6 @@ pub fn setup_display(
         &mut cylinder_entities,
         &mut meshes,
         &mut color_materials,
-        range,
         &visual_spiral_points,
     );
 
@@ -104,7 +103,6 @@ fn spawn_bass_spiral(
     cylinder_entities: &mut ResMut<CylinderEntityListResource>,
     meshes: &mut ResMut<Assets<Mesh>>,
     color_materials: &mut ResMut<Assets<ColorMaterial>>,
-    range: &VqtRange,
     bass_spiral_points: &[(f32, f32, f32)],
 ) {
     for (prev, cur) in bass_spiral_points
