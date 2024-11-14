@@ -231,6 +231,7 @@ fn update_pitch_balls(
     for (_, ContinuousPeak { center, .. }) in peaks_rounded.iter() {
         // hide all balls that are close to the currently active peaks
         let radius = (range.buckets_per_octave / 12) as f32 * 0.66;
+        #[allow(clippy::needless_range_loop)]
         for i in ((center - radius).round().max(0.0) as usize)
             ..=((center + radius)
                 .round()
@@ -250,6 +251,7 @@ fn update_pitch_balls(
             hidden_cnt += 1;
         }
     }
+    log::trace!("Hid {} balls", hidden_cnt);
 }
 
 fn update_bloom(

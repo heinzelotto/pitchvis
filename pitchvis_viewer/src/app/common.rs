@@ -105,7 +105,7 @@ pub fn setup_fps_counter(mut commands: Commands) {
                             color: Color::WHITE,
                             ..default()
                         },
-                    }
+                    },
                 ]),
                 ..Default::default()
             },

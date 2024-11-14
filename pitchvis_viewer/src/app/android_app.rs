@@ -10,7 +10,10 @@ use jni::{
     sys::{jobject, jstring},
     JavaVM,
 };
-use nix::time::{clock_gettime, ClockId};
+use oboe::{
+    AudioInputCallback, AudioInputStreamSafe, AudioStream, AudioStreamBuilder, DataCallbackResult,
+    Input, InputPreset, Mono, PerformanceMode, SampleRateConversionQuality, SharingMode,
+};
 
 use super::common::analysis_text_showhide;
 use super::common::close_on_esc;
@@ -162,6 +165,67 @@ pub fn request_microphone_permission(android_app: &AndroidApp, permission: &str)
 // #[derive(Resource)]
 // struct AudioControlChannelResource(std::sync::mpsc::Sender<AudioControl>);
 
+struct AudioCallback {
+    ring_buffer: std::sync::Arc<std::sync::Mutex<pitchvis_audio::RingBuffer>>,
+    agc: dagc::MonoAgc,
+}
+
+impl AudioInputCallback for AudioCallback {
+    type FrameType = (f32, Mono);
+
+    fn on_audio_ready(
+        &mut self,
+        stream: &mut dyn AudioInputStreamSafe,
+        data: &[f32],
+    ) -> DataCallbackResult {
+        // check for invalid samples
+        if let Some(x) = data.iter().find(|x| !x.is_finite()) {
+            log::warn!("bad audio sample encountered: {x}");
+            return DataCallbackResult::Continue;
+        }
+
+        // agc processing
+        let sample_sq_sum = data.iter().map(|x| x.powi(2)).sum::<f32>();
+        self.agc.freeze_gain(sample_sq_sum < 1e-6);
+
+        // update ring buffer
+        let mut rb = self.ring_buffer.lock().expect("locking failed");
+        rb.buf.drain(..data.len());
+        rb.buf.extend_from_slice(data);
+        let begin = rb.buf.len() - data.len();
+        self.agc.process(&mut rb.buf[begin..]);
+        rb.gain = self.agc.gain();
+
+        // calculate latency
+        // use nix::time::{clock_gettime, ClockId};
+        // if let Ok(ts) = stream.get_timestamp(ClockId::CLOCK_MONOTONIC.into()) {
+        //     let app_frame_index = stream.get_frames_read();
+
+        //     // ts is a snapshot. We use the sample rate to calculate the corresponding
+        //     // time of the latest sample we are currently handling.
+        //     let frame_delta = app_frame_index - ts.position;
+        //     let frame_time_delta = frame_delta as f64 / SR as f64 * 1e9;
+        //     let app_frame_in_hardware_time = ts.timestamp + frame_time_delta as i64;
+
+        //     // We assume that the frame we are currently handling is being processed
+        //     // NOW, and calculate the latency by comparing this to the time it originated
+        //     // from the hardware.
+        //     let app_frame_time =
+        //         std::time::Duration::from(clock_gettime(ClockId::CLOCK_MONOTONIC).unwrap())
+        //             .as_nanos();
+        //     let latency_nanos = app_frame_time - app_frame_in_hardware_time as u128;
+
+        //     rb.latency_ms = Some((latency_nanos as f64 / 1e6) as f32);
+        // } else {
+        //     rb.latency_ms = None;
+        // }
+
+        rb.latency_ms = stream.calculate_latency_millis().ok().map(|x| x as f32);
+
+        DataCallbackResult::Continue
+    }
+}
+
 // android main function
 #[bevy_main]
 fn main() -> AppExit {
@@ -214,68 +278,27 @@ fn main() -> AppExit {
     ring_buffer.buf.resize(BUFSIZE, 0f32);
     let ring_buffer = std::sync::Mutex::from(ring_buffer);
     let ring_buffer = std::sync::Arc::new(ring_buffer);
-    // spawn thread for audio
-    let ring_buffer_input_thread_clone = ring_buffer.clone();
 
     let mut agc = dagc::MonoAgc::new(0.07, 0.0001).expect("mono-agc creation failed");
-    let mut audio_stream = aaudio::AAudioStreamBuilder::new()
-        .unwrap()
-        .set_direction(aaudio::Direction::Input)
-        .set_performance_mode(aaudio::PerformanceMode::LowLatency)
+
+    let callback = AudioCallback {
+        ring_buffer: ring_buffer.clone(),
+        agc,
+    };
+
+    let mut audio_stream = AudioStreamBuilder::default()
+        .set_direction::<Input>()
+        .set_performance_mode(PerformanceMode::LowLatency)
         .set_sample_rate(SR as i32)
-        .set_format(aaudio::Format::F32)
-        .set_channel_count(1)
-        .set_sharing_mode(aaudio::SharingMode::Exclusive)
-        .set_input_preset(aaudio::InputPreset::Unprocessed)
-        .set_callbacks(
-            move |stream_infos: &aaudio::AAudioStreamInfo, data: &mut [u8], frames: i32| {
-                let data = unsafe {
-                    std::slice::from_raw_parts_mut(data.as_ptr() as *mut f32, frames as usize * 1)
-                };
-                if let Some(x) = data.iter().find(|x| !x.is_finite()) {
-                    log::warn!("bad audio sample encountered: {x}");
-                    return aaudio::CallbackResult::Continue;
-                }
-                let sample_sq_sum = data.iter().map(|x| x.powi(2)).sum::<f32>();
-                agc.freeze_gain(sample_sq_sum < 1e-6);
-
-                // log::info!("audio callback");
-
-                let mut rb = ring_buffer_input_thread_clone
-                    .lock()
-                    .expect("locking failed");
-                rb.buf.drain(..data.len());
-                rb.buf.extend_from_slice(data);
-                let begin = rb.buf.len() - data.len();
-                agc.process(&mut rb.buf[begin..]);
-                rb.gain = agc.gain();
-
-                if let Ok(ts) = stream_infos.get_timestamp_monotonic() {
-                    let app_frame_index = stream_infos.get_frames_read();
-
-                    // ts is a snapshot. We use the sample rate to calculate the corresponding
-                    // time of the latest sample we are currently handling.
-                    let frame_delta = app_frame_index - ts.frame_position;
-                    let frame_time_delta = frame_delta as f64 / SR as f64 * 1e9;
-                    let app_frame_in_hardware_time = ts.time_nanos + frame_time_delta as i64;
-
-                    // We assume that the frame we are currently handling is being processed
-                    // NOW, and calculate the latency by comparing this to the time it originated
-                    // from the hardware.
-                    let app_frame_time =
-                        std::time::Duration::from(clock_gettime(ClockId::CLOCK_MONOTONIC).unwrap())
-                            .as_nanos();
-                    let latency_nanos = app_frame_time - app_frame_in_hardware_time as u128;
-
-                    rb.latency_ms = Some((latency_nanos as f64 / 1e6) as f32);
-                } else {
-                    rb.latency_ms = None;
-                }
-
-                aaudio::CallbackResult::Continue
-            },
-            |_, _| {},
-        )
+         // TODO: support all microphone channels if `Mono` does not mix them down
+        .set_channel_count::<Mono>()
+        .set_format::<f32>()
+        .set_sharing_mode(SharingMode::Exclusive)
+        .set_input_preset(InputPreset::Unprocessed)
+        // this will solve bugs on some devices
+        // TODO: is `Best` necessary?
+        .set_sample_rate_conversion_quality(SampleRateConversionQuality::Best)
+        .set_callback(callback)
         .open_stream()
         .unwrap();
 

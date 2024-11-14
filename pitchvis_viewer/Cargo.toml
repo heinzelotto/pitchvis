@@ -34,7 +34,7 @@ android-activity = { version = "0.6.0", features = ["native-activity"] }
 jni = "0.21.0"
 ndk-context = "0.1.1"
 bevy_winit = "0.14.2"
-aaudio = "0.1.0"
+oboe = "0.6.1"
 nix = { version = "0.29.0", features = ["time"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
