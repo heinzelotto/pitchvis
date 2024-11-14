@@ -109,7 +109,7 @@ fn spawn_bass_spiral(
 ) {
     for (prev, cur) in bass_spiral_points
         .iter()
-        .take((HIGHEST_BASSNOTE * range.buckets_per_octave * 2 / 12) as usize)
+        .take((HIGHEST_BASSNOTE * SPIRAL_SEGMENTS_PER_SEMITONE) as usize)
         .tuple_windows()
     {
         use std::ops::Sub;

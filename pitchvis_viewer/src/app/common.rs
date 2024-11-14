@@ -6,6 +6,7 @@ use std::time::Instant;
 use crate::analysis_system::AnalysisStateResource;
 use crate::audio_system::AudioBufferResource;
 use crate::display_system;
+use crate::vqt_system::VqtResource;
 use bevy::core_pipeline::bloom::BloomCompositeMode;
 use bevy::core_pipeline::bloom::BloomSettings;
 use bevy::diagnostic::DiagnosticsStore;
@@ -106,6 +107,22 @@ pub fn setup_fps_counter(mut commands: Commands) {
                             ..default()
                         },
                     },
+                    TextSection {
+                        value: "\nVQT latency: ".into(),
+                        style: TextStyle {
+                            font_size: 16.0,
+                            color: Color::WHITE,
+                            ..default()
+                        },
+                    },
+                    TextSection {
+                        value: "N/A".into(),
+                        style: TextStyle {
+                            font_size: 16.0,
+                            color: Color::WHITE,
+                            ..default()
+                        },
+                    },
                 ]),
                 ..Default::default()
             },
@@ -119,6 +136,7 @@ pub fn update_fps_text_system(
     mut query: Query<&mut Text, With<FpsText>>,
     settings: Res<SettingsState>,
     audio_buffer: Res<AudioBufferResource>,
+    vqt: Res<VqtResource>,
 ) {
     for mut text in &mut query {
         // try to get a "smoothed" FPS value from Bevy
@@ -160,6 +178,7 @@ pub fn update_fps_text_system(
         } else {
             text.sections[3].value = "N/A".into();
         }
+        text.sections[5].value = format!("{}ms", vqt.0.delay.as_millis());
     }
 }
 
@@ -395,7 +414,15 @@ pub fn setup_bloom_ui(mut commands: Commands) {
     // UI
     commands.spawn((
         BloomSettingsText,
-        TextBundle::from_section("", TextStyle::default()).with_style(Style {
+        TextBundle::from_section(
+            "",
+            TextStyle {
+                font_size: 16.0,
+                color: Color::WHITE,
+                ..default()
+            },
+        )
+        .with_style(Style {
             position_type: PositionType::Absolute,
             bottom: Val::Px(12.0),
             left: Val::Px(12.0),

@@ -9,13 +9,13 @@ name = "pitchvis_audio"
 
 [dependencies]
 anyhow = "1.0"
-itertools = "0.10.5"
+itertools = "0.13.0"
 log = "0.4.17"
 dagc = {version = "0.1.0", path = "../dagc_fork" } # TODO: fork and reference fork as patched dependency
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 cpal = { version = "0.15.0", features = [] }
-env_logger = "0.10.0"
+env_logger = "0.11.5"
 
 [target.wasm32-unknown-unknown.dependencies]
 cpal = { version = "0.15.0", features = ["wasm-bindgen"]}
@@ -28,4 +28,4 @@ web-sys = { version = "0.3.35", features = [ "AudioContext",
 "MessagePort", "console", "MessageEvent", "MediaStreamTrack", "MediaTrackSettings"] }
 js-sys = "0.3.61"
 regex = "1"
-rubato = "0.12.0"
+rubato = "0.16.1"

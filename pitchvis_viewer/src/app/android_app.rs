@@ -290,7 +290,7 @@ fn main() -> AppExit {
         .set_direction::<Input>()
         .set_performance_mode(PerformanceMode::LowLatency)
         .set_sample_rate(SR as i32)
-         // TODO: support all microphone channels if `Mono` does not mix them down
+        // TODO: support all microphone channels if `Mono` does not mix them down
         .set_channel_count::<Mono>()
         .set_format::<f32>()
         .set_sharing_mode(SharingMode::Exclusive)

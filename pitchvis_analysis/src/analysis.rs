@@ -22,7 +22,7 @@
 ///
 use crate::{util::*, vqt::VqtRange};
 use find_peaks::PeakFinder;
-use log::debug;
+use log::trace;
 
 use std::{
     cmp::{max, min},
@@ -31,17 +31,21 @@ use std::{
 };
 
 #[derive(Debug, Clone)]
+pub struct PeakDetectionParameters {
+    /// The minimum prominence of a peak to be considered a peak.
+    pub min_prominence: f32,
+    /// The minimum height of a peak to be considered a peak.
+    pub min_height: f32,
+}
+
+#[derive(Debug, Clone)]
 pub struct AnalysisParameters {
     /// The length of the spectrogram in frames.
     spectrogram_length: usize,
-    /// The minimum prominence of a peak to be considered a peak.
-    peak_min_prominence: f32,
-    /// The minimum height of a peak to be considered a peak.
-    peak_min_height: f32,
-    /// The minimum prominence of a peak to be considered a bassline peak.
-    _bassline_peak_min_prominence: f32,
-    /// The minimum height of a peak to be considered a bassline peak.
-    _bassline_peak_min_height: f32,
+    /// Peak detection parameters for the general peaks.
+    peak_config: PeakDetectionParameters,
+    /// Peak detection parameters for the bassline peaks.
+    _bassline_peak_config: PeakDetectionParameters,
     /// The highest bass note to be considered.
     _highest_bassnote: usize,
     /// The duration over which each VQT bin is smoothed.
@@ -63,10 +67,14 @@ impl Default for AnalysisParameters {
     fn default() -> Self {
         Self {
             spectrogram_length: 400,
-            peak_min_prominence: 13.0,
-            peak_min_height: 6.0,
-            _bassline_peak_min_prominence: 12.0,
-            _bassline_peak_min_height: 4.0,
+            peak_config: PeakDetectionParameters {
+                min_prominence: 10.0,
+                min_height: 4.0,
+            },
+            _bassline_peak_config: PeakDetectionParameters {
+                min_prominence: 5.0,
+                min_height: 5.0,
+            },
             _highest_bassnote: 12 * 2 + 4,
             vqt_smoothing_duration: Duration::from_millis(90),
             note_calmness_smoothing_duration: Duration::from_millis(4_500),
@@ -314,7 +322,7 @@ impl AnalysisState {
         // TODO: more advanced bass note detection than just taking the first peak (e. g. by
         // promoting frequences through their overtones first), using different peak detection
         // parameters, etc.
-        debug!(
+        trace!(
             "bass note: {:?}",
             self.peaks_continuous
                 .first()
@@ -391,8 +399,8 @@ fn find_peaks(params: &AnalysisParameters, vqt: &[f32], buckets_per_octave: u16)
     let mut x_vqt_padded_left = vec![0.0; padding_length];
     x_vqt_padded_left.extend(vqt.iter());
     let mut fp = PeakFinder::new(&x_vqt_padded_left);
-    fp.with_min_prominence(params.peak_min_prominence);
-    fp.with_min_height(params.peak_min_height);
+    fp.with_min_prominence(params.peak_config.min_prominence);
+    fp.with_min_height(params.peak_config.min_height);
     let peaks = fp.find_peaks();
     let peaks = peaks
         .iter()

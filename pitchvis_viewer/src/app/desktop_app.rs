@@ -22,37 +22,9 @@ use crate::audio_system;
 use crate::display_system;
 use crate::vqt_system;
 use pitchvis_analysis::vqt::VqtParameters;
-use pitchvis_analysis::vqt::VqtRange;
 use pitchvis_audio::AudioStream;
 
-// increasing BUCKETS_PER_SEMITONE or Q will improve frequency resolution at cost of time resolution,
-// increasing GAMMA will improve time resolution at lower frequencies.
-pub const SR: u32 = 22050;
-pub const BUFSIZE: usize = 2 * SR as usize;
-pub const N_FFT: usize = 2 * 16384;
-pub const FREQ_A1: f32 = 55.0;
-#[cfg(feature = "ml")]
-pub const FREQ_A1_MIDI_KEY_ID: i32 = 33;
-pub const UPSCALE_FACTOR: u16 = 1;
-pub const BUCKETS_PER_SEMITONE: u16 = 3 * UPSCALE_FACTOR;
-pub const BUCKETS_PER_OCTAVE: u16 = 12 * BUCKETS_PER_SEMITONE;
-pub const OCTAVES: u8 = 7;
-pub const SPARSITY_QUANTILE: f32 = 0.999;
-pub const Q: f32 = 10.0 / UPSCALE_FACTOR as f32;
-pub const GAMMA: f32 = 5.3 * Q;
-
-const VQT_PARAMETERS: VqtParameters = VqtParameters {
-    sr: SR as f32,
-    n_fft: N_FFT,
-    range: VqtRange {
-        min_freq: FREQ_A1,
-        buckets_per_octave: BUCKETS_PER_OCTAVE,
-        octaves: OCTAVES,
-    },
-    sparsity_quantile: SPARSITY_QUANTILE,
-    quality: Q,
-    gamma: GAMMA,
-};
+const BUFSIZE: usize = 2 * 16384;
 
 // Default FPS when FPS limiting is on. Else FPS is limited by screen refresh rate.
 const FPS: u32 = 30;
@@ -70,7 +42,9 @@ const FPS: u32 = 30;
 pub fn main_fun() -> Result<()> {
     env_logger::init();
 
-    let audio_stream = pitchvis_audio::new_audio_stream(SR, BUFSIZE).unwrap();
+    let VQT_PARAMETERS: VqtParameters = VqtParameters::default();
+
+    let audio_stream = pitchvis_audio::new_audio_stream(VQT_PARAMETERS.sr as u32, BUFSIZE).unwrap();
 
     let vqt = pitchvis_analysis::vqt::Vqt::new(&VQT_PARAMETERS);
 

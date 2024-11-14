@@ -1,4 +1,4 @@
-use log::{debug, error};
+use log::{debug, error, info};
 use num_complex::{Complex32, ComplexFloat};
 use rustfft::num_traits::Zero;
 use rustfft::{Fft, FftPlanner};
@@ -60,6 +60,38 @@ pub struct VqtParameters {
     pub gamma: f32,
 }
 
+impl Default for VqtParameters {
+    fn default() -> Self {
+        // increasing BUCKETS_PER_SEMITONE or Q will improve frequency resolution at cost of time resolution,
+        // increasing GAMMA will improve time resolution at lower frequencies.
+        pub const SR: u32 = 22050;
+        pub const N_FFT: usize = 2 * 16384;
+        pub const FREQ_A1: f32 = 55.0;
+        pub const UPSCALE_FACTOR: u16 = 1;
+        pub const BUCKETS_PER_SEMITONE: u16 = 7 * UPSCALE_FACTOR;
+        pub const BUCKETS_PER_OCTAVE: u16 = 12 * BUCKETS_PER_SEMITONE;
+        pub const OCTAVES: u8 = 7;
+        pub const SPARSITY_QUANTILE: f32 = 0.999;
+        // FIXME: for logarithmically spaced bins (fixed number of bins per octave) lower Q factor is
+        // needed so that higher frequencies are fully covered by bin's bandwidths. Maybe only do Vqt
+        // at lower frequencies and then do a normal FFT at higher frequencies?
+        pub const Q: f32 = 1.8 / UPSCALE_FACTOR as f32;
+        pub const GAMMA: f32 = 4.8 * Q;
+        Self {
+            sr: SR as f32,
+            n_fft: N_FFT,
+            range: VqtRange {
+                min_freq: FREQ_A1,
+                octaves: OCTAVES,
+                buckets_per_octave: BUCKETS_PER_OCTAVE,
+            },
+            sparsity_quantile: SPARSITY_QUANTILE,
+            quality: Q,
+            gamma: GAMMA,
+        }
+    }
+}
+
 /// A power of two - sized fft window.
 #[derive(Debug, Clone, Copy)]
 pub struct UnscaledWindow {
@@ -72,6 +104,7 @@ pub struct UnscaledWindow {
 pub struct VqtKernel {
     pub filter_bank: Vec<sprs::CsMat<Complex32>>,
     pub windows: VqtWindows,
+    pub calculated_q: f32,
 }
 
 /// Parameters used to create a single filter in the VQT filter bank.
@@ -141,12 +174,6 @@ pub struct Vqt {
     t_diff: f32,
 }
 
-impl Vqt {
-    pub fn params(&self) -> &VqtParameters {
-        &self.params
-    }
-}
-
 /// Creates a new `Vqt` instance.
 ///
 /// # Arguments
@@ -167,7 +194,7 @@ impl Vqt {
     pub fn new(params: &VqtParameters) -> Self {
         let (vqt_kernel, delay) = Self::vqt_kernel(params);
 
-        println!("VQT Analysis delay: {} ms.", delay.as_millis());
+        info!("VQT Analysis delay: {} ms.", delay.as_millis());
 
         // TODO: get the info on which ffts are needed first, then create them, then also use
         // them for creation of the vqt_kernel. Currently, the vqt_kernel creates its own ffts
@@ -209,6 +236,14 @@ impl Vqt {
             resample_ffts,
             t_diff: 0.0,
         }
+    }
+
+    pub fn params(&self) -> &VqtParameters {
+        &self.params
+    }
+
+    pub fn kernel(&self) -> &VqtKernel {
+        &self.vqt_kernel
     }
 
     //#orange
@@ -489,11 +524,9 @@ impl Vqt {
         let r = 2.0.powf(1.0 / params.range.buckets_per_octave as f32);
         // alpha is constant and such that (1+a)*f_{k-1} = (1-a)*f_{k+1}
         let alpha = (r.powf(2.0) - 1.0) / (r.powf(2.0) + 1.0);
-        #[allow(non_snake_case)]
-        let Q = params.quality / alpha;
         let window_lengths = freqs
             .iter()
-            .map(|f_k| Q * params.sr / (f_k + params.gamma / alpha))
+            .map(|f_k| params.quality * params.sr / (alpha * f_k + params.gamma))
             .collect::<Vec<f32>>();
 
         if window_lengths[0] > params.n_fft as f32 {
@@ -553,6 +586,12 @@ impl Vqt {
                             vqt_windows.window_center,
                             &fft,
                         );
+                        debug!(
+                            "filter with freq {:.1} Hz, window length {:.1} samples, bandwidth {:.2} Hz",
+                            filter_params.freq,
+                            filter_params.window_length,
+                            filter.bandwidth_3db_in_hz.1 - filter.bandwidth_3db_in_hz.0
+                        );
                         if last_upper_bandwidth != 0.0
                             && filter.bandwidth_3db_in_hz.0 > last_upper_bandwidth
                         {
@@ -599,6 +638,7 @@ impl Vqt {
             VqtKernel {
                 filter_bank: kernel,
                 windows: vqt_windows,
+                calculated_q: 1.0,
             },
             delay,
         )
@@ -678,7 +718,9 @@ impl Vqt {
         // neither allows us to reuse the same frame for subsequent downsamplings, nor allows us to do the
         // fft ourselves.
 
-        // let x = self.test_create_sines(self.t_diff);
+        // let freqs = (1..10).map(|i| self.params.range.min_freq * 2.0.powf(i as f32 * 7.0 / 12.0) )
+        // .collect::<Vec<_>>();
+        //     let x = util::test_create_sines(&self.params, &freqs, self.t_diff);
         // self.t_diff += 0.0002;
 
         //dbg!(reduced_n_fft);
@@ -803,6 +845,9 @@ fn power_normalized(power: &[f32]) -> Vec<f32> {
 /// Finds the -3 dB points of a frequency response.
 ///
 /// We use this to determine the bandwidth of the filters.
+///
+/// Note: Since we downscale the signal as much as possible, the frequency response only spans a
+/// few buckets and the -3 dB points are a very crude approximation of the bandwidth.
 fn find_3db_points(frequency_response: &[f32], center_freq_index: usize) -> (usize, usize) {
     let peak_magnitude = frequency_response[center_freq_index];
     let threshold = peak_magnitude / 2.0_f32.sqrt(); // -3 dB point
@@ -830,4 +875,78 @@ fn calculate_bandwidth(scaled_frequency_response: &[f32], scaled_sr: f32) -> (f3
     let lower_bound_in_hz = lower_bound as f32 * scaled_sr / scaled_frequency_response.len() as f32;
     let upper_bound_in_hz = upper_bound as f32 * scaled_sr / scaled_frequency_response.len() as f32;
     (lower_bound_in_hz, upper_bound_in_hz)
+}
+
+#[cfg(test)]
+mod test {
+    use util::max;
+
+    use super::*;
+
+    #[test]
+    fn test_vqt_bandwidths() {
+        let _ = env_logger::try_init();
+
+        let params = VqtParameters::default();
+        let vqt = Vqt::new(&params);
+
+        const SUBDIVISIONS_PER_BUCKET: usize = 20;
+        let mut max_single_response = 0.0_f32;
+        let mut min_sum_response = f32::INFINITY;
+        for i in (SUBDIVISIONS_PER_BUCKET / 2) // skip the first and last half semitone
+            ..(params.range.n_buckets() * SUBDIVISIONS_PER_BUCKET - SUBDIVISIONS_PER_BUCKET / 2)
+        {
+            let freq = params.range.min_freq
+                * 2.0_f32.powf(
+                    i as f32
+                        / (params.range.buckets_per_octave as f32 * SUBDIVISIONS_PER_BUCKET as f32),
+                );
+            let x = util::test_create_sines(&params, &vec![freq], 0.0);
+            let vqt_res = vqt.calculate_vqt_instant_in_db(&x);
+            let max_single = max(&vqt_res);
+            let sum = vqt_res.iter().sum::<f32>();
+            // debug!(
+            //     "freq: {:.1}, max: {:.1}, max - 60: {:.1}, sum: {:.1}",
+            //     freq,
+            //     max_single,
+            //     max_single - 60.0,
+            //     sum,
+            // );
+
+            max_single_response = max_single_response.max(max_single);
+            min_sum_response = min_sum_response.min(sum);
+        }
+        println!(
+            "max_single_response: {:.1}, min_sum_response: {:.1}",
+            max_single_response, min_sum_response
+        );
+        assert!(max_single_response - min_sum_response < 3.0);
+    }
+
+    #[test]
+    fn test_vqt_delay() {
+        let params = VqtParameters::default();
+        let vqt = Vqt::new(&params);
+
+        println!("VQT delay: {} ms.", vqt.delay.as_millis());
+        assert!(vqt.delay.as_millis() < 100);
+    }
+
+    #[test]
+    fn test_fft_library() {
+        // check that the fft library does not multiply the output by 1/n or anything else
+        let mut x = vec![0.0; 256];
+        x[0] = 1.0;
+        let mut x_fft = x
+            .iter()
+            .map(|f| rustfft::num_complex::Complex32::new(*f, 0.0))
+            .collect::<Vec<rustfft::num_complex::Complex32>>();
+        let mut planner = FftPlanner::new();
+        let fft = planner.plan_fft_forward(256);
+        fft.process(&mut x_fft);
+        let inv_fft = planner.plan_fft_inverse(256);
+        inv_fft.process(&mut x_fft);
+
+        assert_eq!(x_fft[0].re, 256.0);
+    }
 }

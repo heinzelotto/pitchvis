@@ -292,6 +292,7 @@ fn update_bass_spiral(
         if center.round() as usize * SPIRAL_SEGMENTS_PER_SEMITONE as usize
             >= cylinder_entities.0.len()
         {
+            // lowest peak is outside the maximum bass spiral range
             return;
         }
 
