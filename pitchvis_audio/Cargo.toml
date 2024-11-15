@@ -28,4 +28,4 @@ web-sys = { version = "0.3.35", features = [ "AudioContext",
 "MessagePort", "console", "MessageEvent", "MediaStreamTrack", "MediaTrackSettings"] }
 js-sys = "0.3.61"
 regex = "1"
-rubato = "0.16.1"
+rubato = "0.12" # TODO: update to 0.16, but currently this breaks resampling

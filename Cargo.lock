@@ -4518,7 +4518,7 @@ dependencies = [
  "pitchvis_analysis",
  "pitchvis_audio",
  "regex",
- "rubato 0.12.0",
+ "rubato",
  "rustfft",
  "sprs",
  "wasm-bindgen",
@@ -4552,7 +4552,7 @@ dependencies = [
  "js-sys",
  "log",
  "regex",
- "rubato 0.16.1",
+ "rubato",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
@@ -5016,18 +5016,6 @@ name = "rubato"
 version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cd70209c27d5b08f5528bdc779ea3ffb418954e28987f9f9775c6eac41003f9c"
-dependencies = [
- "num-complex 0.4.6",
- "num-integer",
- "num-traits",
- "realfft",
-]
-
-[[package]]
-name = "rubato"
-version = "0.16.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cdd96992d7e24b3d7f35fdfe02af037a356ac90d41b466945cf3333525a86eea"
 dependencies = [
  "num-complex 0.4.6",
  "num-integer",

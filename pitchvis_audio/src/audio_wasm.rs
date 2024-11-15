@@ -183,6 +183,7 @@ where
     .expect("resampler");
 
     let mut bufs = vec![Vec::new()];
+    // let mut bufs = resampler.output_buffer_allocate(true);
     let cb = Closure::wrap(Box::new(move |s: &JsValue| {
         let message_event = web_sys::MessageEvent::unchecked_from_js_ref(s);
         let array = js_sys::Float32Array::unchecked_from_js(message_event.data());
