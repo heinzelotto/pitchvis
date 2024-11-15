@@ -7,9 +7,12 @@ use bevy::winit::{UpdateMode, WinitSettings};
 use pitchvis_analysis::analysis::{AnalysisParameters, AnalysisState};
 use wasm_bindgen::prelude::*;
 
+use super::common::analysis_text_showhide;
 use super::common::fps_counter_showhide;
-use super::common::fps_text_update_system;
+use super::common::setup_analysis_text;
 use super::common::setup_fps_counter;
+use super::common::update_analysis_text_system;
+use super::common::update_fps_text_system;
 use super::common::user_input_system;
 use super::common::ActiveTouches;
 use super::common::SettingsState;
@@ -19,38 +22,10 @@ use crate::audio_system::AudioBufferResource;
 use crate::display_system::material::NoisyColorMaterial;
 use crate::display_system::{self, CylinderEntityListResource, DisplayMode};
 use crate::vqt_system::{self, VqtResource, VqtResultResource};
-use pitchvis_analysis::vqt::VqtRange;
 use pitchvis_analysis::vqt::{Vqt, VqtParameters};
 use pitchvis_audio::AudioStream;
 
-// increasing BUCKETS_PER_SEMITONE or Q will improve frequency resolution at cost of time resolution,
-// increasing GAMMA will improve time resolution at lower frequencies.
-pub const SR: u32 = 22050;
-pub const BUFSIZE: usize = 2 * SR as usize;
-pub const N_FFT: usize = 2 * 16384;
-pub const FREQ_A1: f32 = 55.0;
-#[cfg(feature = "ml")]
-pub const FREQ_A1_MIDI_KEY_ID: i32 = 33;
-pub const UPSCALE_FACTOR: u16 = 1;
-pub const BUCKETS_PER_SEMITONE: u16 = 3 * UPSCALE_FACTOR;
-pub const BUCKETS_PER_OCTAVE: u16 = 12 * BUCKETS_PER_SEMITONE;
-pub const OCTAVES: u8 = 7;
-pub const SPARSITY_QUANTILE: f32 = 0.999;
-pub const Q: f32 = 10.0 / UPSCALE_FACTOR as f32;
-pub const GAMMA: f32 = 5.3 * Q;
-
-const VQT_PARAMETERS: VqtParameters = VqtParameters {
-    sr: SR as f32,
-    n_fft: N_FFT,
-    range: VqtRange {
-        min_freq: FREQ_A1,
-        buckets_per_octave: BUCKETS_PER_OCTAVE,
-        octaves: OCTAVES,
-    },
-    sparsity_quantile: SPARSITY_QUANTILE,
-    quality: Q,
-    gamma: GAMMA,
-};
+pub const BUFSIZE: usize = 2 * 16384;
 
 #[derive(Resource)]
 struct CurrentFpsLimit(pub Option<u32>);
@@ -85,17 +60,19 @@ fn set_frame_limiter_system(
 // wasm main function
 #[wasm_bindgen]
 pub async fn main_fun() -> Result<(), JsValue> {
-    let audio_stream = pitchvis_audio::async_new_audio_stream(SR, BUFSIZE)
+    let vqt_parameters = VqtParameters::default();
+
+    let audio_stream = pitchvis_audio::async_new_audio_stream(vqt_parameters.sr as u32, BUFSIZE)
         .await
         .unwrap();
 
-    let vqt = Vqt::new(&VQT_PARAMETERS);
+    let vqt = Vqt::new(&vqt_parameters);
 
     audio_stream.play().unwrap();
 
     let update_vqt_system = vqt_system::update_vqt_to_system(BUFSIZE);
     let update_analysis_state_system = analysis_system::update_analysis_state_to_system();
-    let update_display_system = display_system::update_display_to_system(&VQT_PARAMETERS.range);
+    let update_display_system = display_system::update_display_to_system(&vqt_parameters.range);
 
     App::new()
         .add_plugins((
@@ -110,10 +87,10 @@ pub async fn main_fun() -> Result<(), JsValue> {
             Material2dPlugin::<NoisyColorMaterial>::default(),
         ))
         .insert_resource(VqtResource(vqt))
-        .insert_resource(VqtResultResource::new(&VQT_PARAMETERS.range))
+        .insert_resource(VqtResultResource::new(&vqt_parameters.range))
         .insert_resource(AudioBufferResource(audio_stream.ring_buffer.clone()))
         .insert_resource(AnalysisStateResource(AnalysisState::new(
-            VQT_PARAMETERS.range.clone(),
+            vqt_parameters.range.clone(),
             AnalysisParameters::default(),
         )))
         .insert_resource(CylinderEntityListResource(Vec::new()))
@@ -129,9 +106,10 @@ pub async fn main_fun() -> Result<(), JsValue> {
         .add_systems(
             Startup,
             (
-                display_system::setup_display_to_system(&VQT_PARAMETERS.range),
+                display_system::setup_display_to_system(&vqt_parameters.range),
                 setup_fps_counter,
                 setup_bloom_ui,
+                setup_analysis_text,
             ),
         )
         .add_systems(
@@ -146,7 +124,7 @@ pub async fn main_fun() -> Result<(), JsValue> {
                 update_bloom_settings.after(update_analysis_state_system),
                 update_analysis_text_system.after(update_analysis_state_system),
                 analysis_text_showhide,
-                frame_limiter_system,
+                set_frame_limiter_system,
                 update_display_system.after(update_analysis_state_system),
             ),
         )
