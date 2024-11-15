@@ -87,7 +87,8 @@ fn spawn_pitch_balls(
                 mesh: meshes.add(Rectangle::new(20.0, 20.0)).into(),
                 material: noisy_color_materials.add(noisy_color_material),
                 transform: Transform::from_xyz(*x * 1.0, *y * 1.0, -0.01), // needs to be slightly behind the 2d camera
-                visibility: if idx % 7 == 0 {
+                visibility: if idx % 17 == 0 {
+                    // 12 * 7 = 84 and 17 * 5 = 85, so we get a curved 5-star
                     Visibility::Visible
                 } else {
                     Visibility::Hidden
