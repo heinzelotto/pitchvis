@@ -76,7 +76,7 @@ impl Default for VqtParameters {
         // needed so that higher frequencies are fully covered by bin's bandwidths. Maybe only do Vqt
         // at lower frequencies and then do a normal FFT at higher frequencies?
         pub const Q: f32 = 1.8 / UPSCALE_FACTOR as f32;
-        pub const GAMMA: f32 = 4.8 * Q;
+        pub const GAMMA: f32 = 4.8 * Q; // TODO; lower value for second vqt just for the bass notes
         Self {
             sr: SR as f32,
             n_fft: N_FFT,

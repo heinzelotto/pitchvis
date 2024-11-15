@@ -45,9 +45,9 @@ pub struct AnalysisParameters {
     /// Peak detection parameters for the general peaks.
     peak_config: PeakDetectionParameters,
     /// Peak detection parameters for the bassline peaks.
-    _bassline_peak_config: PeakDetectionParameters,
+    bassline_peak_config: PeakDetectionParameters,
     /// The highest bass note to be considered.
-    _highest_bassnote: usize,
+    highest_bassnote: usize,
     /// The duration over which each VQT bin is smoothed.
     vqt_smoothing_duration: Duration,
     /// The duration over which the calmness of a indivitual pitch bin is smoothed.
@@ -71,11 +71,11 @@ impl Default for AnalysisParameters {
                 min_prominence: 10.0,
                 min_height: 4.0,
             },
-            _bassline_peak_config: PeakDetectionParameters {
+            bassline_peak_config: PeakDetectionParameters {
                 min_prominence: 5.0,
-                min_height: 5.0,
+                min_height: 3.5,
             },
-            _highest_bassnote: 12 * 2 + 4,
+            highest_bassnote: 12 * 2 + 4,
             vqt_smoothing_duration: Duration::from_millis(90),
             note_calmness_smoothing_duration: Duration::from_millis(4_500),
             scene_calmness_smoothing_duration: Duration::from_millis(1_100),
@@ -283,8 +283,25 @@ impl AnalysisState {
         //     *smoothed = v.iter().sum::<f32>() / SMOOTH_LENGTH as f32;
         // }
 
-        // find peaks
-        let peaks = find_peaks(&self.params, &x_vqt_smoothed, self.range.buckets_per_octave);
+        // find peaks (different config for bass notes and higher notes)
+        let peaks = find_peaks(
+            &self.params.bassline_peak_config,
+            &x_vqt_smoothed,
+            self.range.buckets_per_octave,
+        )
+        .iter()
+        .filter(|p| **p <= self.params.highest_bassnote as usize)
+        .chain(
+            find_peaks(
+                &self.params.peak_config,
+                &x_vqt_smoothed,
+                self.range.buckets_per_octave,
+            )
+            .iter()
+            .filter(|p| **p > self.params.highest_bassnote as usize),
+        )
+        .cloned()
+        .collect();
         let peaks_continuous = enhance_peaks_continuous(&peaks, &x_vqt_smoothed, &self.range);
 
         let x_vqt_peakfiltered = x_vqt_smoothed
@@ -345,7 +362,11 @@ impl AnalysisState {
         let radius = self.range.buckets_per_octave / 12 / 2;
 
         // we want unsmoothed peaks for this
-        let peaks = find_peaks(&self.params, x_vqt, self.range.buckets_per_octave);
+        let peaks = find_peaks(
+            &self.params.peak_config,
+            x_vqt,
+            self.range.buckets_per_octave,
+        );
         for p in peaks {
             for i in max(0, p as i32 - radius as i32)
                 ..min(self.range.n_buckets() as i32, p as i32 + radius as i32)
@@ -394,13 +415,17 @@ impl AnalysisState {
     }
 }
 
-fn find_peaks(params: &AnalysisParameters, vqt: &[f32], buckets_per_octave: u16) -> HashSet<usize> {
+fn find_peaks(
+    peak_config: &PeakDetectionParameters,
+    vqt: &[f32],
+    buckets_per_octave: u16,
+) -> HashSet<usize> {
     let padding_length = 1;
     let mut x_vqt_padded_left = vec![0.0; padding_length];
     x_vqt_padded_left.extend(vqt.iter());
     let mut fp = PeakFinder::new(&x_vqt_padded_left);
-    fp.with_min_prominence(params.peak_config.min_prominence);
-    fp.with_min_height(params.peak_config.min_height);
+    fp.with_min_prominence(peak_config.min_prominence);
+    fp.with_min_height(peak_config.min_height);
     let peaks = fp.find_peaks();
     let peaks = peaks
         .iter()
