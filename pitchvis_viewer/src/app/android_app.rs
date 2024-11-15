@@ -2,6 +2,7 @@ use android_activity::AndroidApp;
 use bevy::asset::AssetMetaCheck;
 use bevy::diagnostic::FrameTimeDiagnosticsPlugin;
 use bevy::diagnostic::LogDiagnosticsPlugin;
+use bevy::log::LogPlugin;
 use bevy::prelude::*;
 use bevy::sprite::Material2dPlugin;
 use bevy::window::AppLifecycle;
@@ -33,41 +34,11 @@ use crate::audio_system;
 use crate::display_system;
 use crate::vqt_system;
 use pitchvis_analysis::vqt::VqtParameters;
-use pitchvis_analysis::vqt::VqtRange;
 
 #[cfg_attr(not(feature = "ml"), link(name = "c++_shared"))]
 extern "C" {}
 
-// increasing BUCKETS_PER_SEMITONE or Q will improve frequency resolution at cost of time resolution,
-// increasing GAMMA will improve time resolution at lower frequencies.
-pub const SR: u32 = 22050;
-pub const BUFSIZE: usize = 2 * SR as usize;
-pub const N_FFT: usize = 2 * 16384;
-pub const FREQ_A1: f32 = 55.0;
-#[cfg(feature = "ml")]
-pub const FREQ_A1_MIDI_KEY_ID: i32 = 33;
-pub const UPSCALE_FACTOR: u16 = 1;
-pub const BUCKETS_PER_SEMITONE: u16 = 3 * UPSCALE_FACTOR;
-pub const BUCKETS_PER_OCTAVE: u16 = 12 * BUCKETS_PER_SEMITONE;
-pub const OCTAVES: u8 = 7;
-pub const SPARSITY_QUANTILE: f32 = 0.999;
-pub const Q: f32 = 10.0 / UPSCALE_FACTOR as f32;
-pub const GAMMA: f32 = 5.3 * Q;
-
-const VQT_PARAMETERS: VqtParameters = VqtParameters {
-    sr: SR as f32,
-    n_fft: N_FFT,
-    range: VqtRange {
-        min_freq: FREQ_A1,
-        buckets_per_octave: BUCKETS_PER_OCTAVE,
-        octaves: OCTAVES,
-    },
-    sparsity_quantile: SPARSITY_QUANTILE,
-    quality: Q,
-    gamma: GAMMA,
-};
-
-const FPS: u32 = 33;
+pub const BUFSIZE: usize = 2 * 16384;
 
 fn handle_lifetime_events_system(
     mut lifetime_events: EventReader<AppLifecycle>,
@@ -233,15 +204,6 @@ fn main() -> AppExit {
 
     use std::{process::exit, sync::mpsc};
 
-    use bevy::{
-        audio,
-        log::LogPlugin,
-        render::{
-            settings::{WgpuFeatures, WgpuSettings},
-            RenderPlugin,
-        },
-    };
-
     // env_logger::init();
 
     if !microphone_permission_granted("android.permission.RECORD_AUDIO") {
@@ -267,7 +229,9 @@ fn main() -> AppExit {
             android_activity::WindowManagerFlags::empty(),
         );
 
-    let vqt = pitchvis_analysis::vqt::Vqt::new(&VQT_PARAMETERS);
+    let vqt_parameters: VqtParameters = VqtParameters::default();
+
+    let vqt = pitchvis_analysis::vqt::Vqt::new(&vqt_parameters);
 
     // let (audio_control_channel_tx, audio_control_channel_rx) = mpsc::channel::<AudioControl>();
     let mut ring_buffer = pitchvis_audio::RingBuffer {
@@ -289,7 +253,7 @@ fn main() -> AppExit {
     let mut audio_stream = AudioStreamBuilder::default()
         .set_direction::<Input>()
         .set_performance_mode(PerformanceMode::LowLatency)
-        .set_sample_rate(SR as i32)
+        .set_sample_rate(vqt_parameters.sr as i32)
         // TODO: support all microphone channels if `Mono` does not mix them down
         .set_channel_count::<Mono>()
         .set_format::<f32>()
@@ -306,7 +270,7 @@ fn main() -> AppExit {
 
     let update_vqt_system = vqt_system::update_vqt_to_system(BUFSIZE);
     let update_analysis_state_system = analysis_system::update_analysis_state_to_system();
-    let update_display_system = display_system::update_display_to_system(&VQT_PARAMETERS.range);
+    let update_display_system = display_system::update_display_to_system(&vqt_parameters.range);
 
     let mut app = App::new();
     app.add_plugins((
@@ -333,11 +297,11 @@ fn main() -> AppExit {
         Material2dPlugin::<display_system::material::NoisyColorMaterial>::default(),
     ))
     .insert_resource(vqt_system::VqtResource(vqt))
-    .insert_resource(vqt_system::VqtResultResource::new(&VQT_PARAMETERS.range))
+    .insert_resource(vqt_system::VqtResultResource::new(&vqt_parameters.range))
     .insert_resource(audio_system::AudioBufferResource(ring_buffer))
     .insert_resource(analysis_system::AnalysisStateResource(
         pitchvis_analysis::analysis::AnalysisState::new(
-            VQT_PARAMETERS.range.clone(),
+            vqt_parameters.range.clone(),
             pitchvis_analysis::analysis::AnalysisParameters::default(),
         ),
     ))
@@ -345,13 +309,13 @@ fn main() -> AppExit {
     // .insert_resource(AudioControlChannelResource(audio_control_channel_tx))
     .insert_resource(SettingsState {
         display_mode: display_system::DisplayMode::PitchnamesCalmness,
-        fps_limit: Some(FPS),
+        fps_limit: None,
     })
     .insert_resource(ActiveTouches::default())
     .add_systems(
         Startup,
         (
-            display_system::setup_display_to_system(&VQT_PARAMETERS.range),
+            display_system::setup_display_to_system(&vqt_parameters.range),
             setup_fps_counter,
             setup_bloom_ui,
             setup_analysis_text,

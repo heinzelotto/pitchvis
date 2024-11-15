@@ -26,9 +26,6 @@ use pitchvis_audio::AudioStream;
 
 const BUFSIZE: usize = 2 * 16384;
 
-// Default FPS when FPS limiting is on. Else FPS is limited by screen refresh rate.
-const FPS: u32 = 30;
-
 /// This enum is used to control the audio stream. It is sent to the audio thread via a channel. This allows us to control the audio stream from the bevy thread.
 // enum AudioControl {
 //     Play,
@@ -42,11 +39,11 @@ const FPS: u32 = 30;
 pub fn main_fun() -> Result<()> {
     env_logger::init();
 
-    let VQT_PARAMETERS: VqtParameters = VqtParameters::default();
+    let vqt_parameters: VqtParameters = VqtParameters::default();
 
-    let audio_stream = pitchvis_audio::new_audio_stream(VQT_PARAMETERS.sr as u32, BUFSIZE).unwrap();
+    let audio_stream = pitchvis_audio::new_audio_stream(vqt_parameters.sr as u32, BUFSIZE).unwrap();
 
-    let vqt = pitchvis_analysis::vqt::Vqt::new(&VQT_PARAMETERS);
+    let vqt = pitchvis_analysis::vqt::Vqt::new(&vqt_parameters);
 
     audio_stream.play().unwrap();
 
@@ -54,7 +51,7 @@ pub fn main_fun() -> Result<()> {
     let update_analysis_state_system = analysis_system::update_analysis_state_to_system();
     #[cfg(feature = "ml")]
     let update_ml_system = ml_system::update_ml_to_system();
-    let update_display_system = display_system::update_display_to_system(&VQT_PARAMETERS.range);
+    let update_display_system = display_system::update_display_to_system(&vqt_parameters.range);
 
     #[cfg(feature = "ml")]
     let ml_model_resource = ml_system::MlModelResource(ml_system::MlModel::new("model.pt"));
@@ -78,17 +75,17 @@ pub fn main_fun() -> Result<()> {
         Material2dPlugin::<display_system::material::NoisyColorMaterial>::default(),
     ))
     .insert_resource(vqt_system::VqtResource(vqt))
-    .insert_resource(vqt_system::VqtResultResource::new(&VQT_PARAMETERS.range))
+    .insert_resource(vqt_system::VqtResultResource::new(&vqt_parameters.range))
     .insert_resource(audio_system::AudioBufferResource(audio_stream.ring_buffer))
     .insert_resource(analysis_system::AnalysisStateResource(
         pitchvis_analysis::analysis::AnalysisState::new(
-            VQT_PARAMETERS.range.clone(),
+            vqt_parameters.range.clone(),
             pitchvis_analysis::analysis::AnalysisParameters::default(),
         ),
     ))
     .insert_resource(SettingsState {
         display_mode: display_system::DisplayMode::PitchnamesCalmness,
-        fps_limit: Some(FPS),
+        fps_limit: None,
     })
     .insert_resource(ActiveTouches::default());
 
@@ -98,7 +95,7 @@ pub fn main_fun() -> Result<()> {
         .add_systems(
             Startup,
             (
-                display_system::setup_display_to_system(&VQT_PARAMETERS.range),
+                display_system::setup_display_to_system(&vqt_parameters.range),
                 setup_fps_counter,
                 setup_bloom_ui,
                 setup_analysis_text,
