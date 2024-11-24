@@ -3,21 +3,40 @@
 
 use std::time::Duration;
 
-use pitchvis_analysis::{analysis::AnalysisState, util::*};
+use pitchvis_analysis::{
+    analysis::{AnalysisParameters, AnalysisState},
+    util::*,
+    vqt::{VqtParameters, VqtRange},
+};
+use pitchvis_audio::{new_audio_stream, AudioStream};
+use pitchvis_colors::calculate_color;
 use serialport::SerialPort;
 
 // increasing BUCKETS_PER_SEMITONE or Q will improve frequency resolution at cost of time resolution,
 // increasing GAMMA will improve time resolution at lower frequencies.
-pub const SR: usize = 22050;
-pub const BUFSIZE: usize = 2 * SR;
+pub const SR: u32 = 22050;
+pub const BUFSIZE: usize = 2 * SR as usize;
 pub const N_FFT: usize = 2 * 16384;
 pub const FREQ_A1: f32 = 55.0;
-pub const BUCKETS_PER_SEMITONE: usize = 3;
-pub const BUCKETS_PER_OCTAVE: usize = 12 * BUCKETS_PER_SEMITONE;
-pub const OCTAVES: usize = 5;
+pub const BUCKETS_PER_SEMITONE: u16 = 3;
+pub const BUCKETS_PER_OCTAVE: u16 = 12 * BUCKETS_PER_SEMITONE;
+pub const OCTAVES: u8 = 5;
 pub const SPARSITY_QUANTILE: f32 = 0.999;
 pub const Q: f32 = 10.0;
 pub const GAMMA: f32 = 5.3 * Q;
+
+const VQT_PARAMETERS: VqtParameters = VqtParameters {
+    sr: SR as f32,
+    n_fft: N_FFT,
+    range: VqtRange {
+        min_freq: FREQ_A1,
+        octaves: OCTAVES,
+        buckets_per_octave: BUCKETS_PER_OCTAVE,
+    },
+    sparsity_quantile: SPARSITY_QUANTILE,
+    quality: Q,
+    gamma: GAMMA,
+};
 
 const FPS: u64 = 25;
 
@@ -45,16 +64,16 @@ struct VqtResult {
 }
 
 impl VqtResult {
-    pub fn new(octaves: usize, buckets_per_octave: usize) -> Self {
+    pub fn new(range: &VqtRange) -> Self {
         Self {
-            x_vqt: vec![0.0; octaves * buckets_per_octave],
+            x_vqt: vec![0.0; range.n_buckets()],
             gain: 1.0,
         }
     }
 }
 
 fn update_serial(
-    buckets_per_octave: usize,
+    range: &VqtRange,
     analysis_state: &AnalysisState,
     serial_port: &mut dyn SerialPort,
 ) {
@@ -73,10 +92,12 @@ fn update_serial(
             .iter()
             .enumerate()
             .flat_map(|(idx, size)| {
-                let (mut r, mut g, mut b) = pitchvis_analysis::color_mapping::calculate_color(
-                    buckets_per_octave,
-                    ((idx + (buckets_per_octave - 3 * (buckets_per_octave / 12))) as f32)
-                        % buckets_per_octave as f32,
+                let (mut r, mut g, mut b) = calculate_color(
+                    range.buckets_per_octave,
+                    ((idx
+                        + (range.buckets_per_octave - 3 * (range.buckets_per_octave / 12)) as usize)
+                        as f32)
+                        % range.buckets_per_octave as f32,
                     COLORS,
                     GRAY_LEVEL,
                     EASING_POW,
@@ -111,40 +132,32 @@ pub fn main() {
         .timeout(std::time::Duration::from_secs(10)) // TODO: ???
         .open()
         .expect("Failed to open port");
-    let audio_stream = pitchvis_audio::audio::AudioStream::new(SR, BUFSIZE).unwrap();
-    let mut vqt = pitchvis_analysis::vqt::Vqt::new(
-        SR,
-        N_FFT,
-        FREQ_A1,
-        BUCKETS_PER_OCTAVE,
-        OCTAVES,
-        SPARSITY_QUANTILE,
-        Q,
-        GAMMA,
-    );
-    let mut vqt_result = VqtResult::new(OCTAVES, BUCKETS_PER_OCTAVE);
-    let mut analysis_state = AnalysisState::new(
-        OCTAVES * BUCKETS_PER_OCTAVE,
-        pitchvis_analysis::analysis::SPECTROGRAM_LENGTH,
-    );
+    let audio_stream = new_audio_stream(SR, BUFSIZE).unwrap();
+
+    let vqt = pitchvis_analysis::vqt::Vqt::new(&VQT_PARAMETERS);
+    let mut vqt_result = VqtResult::new(&VQT_PARAMETERS.range);
+    let mut analysis_state =
+        AnalysisState::new(VQT_PARAMETERS.range, AnalysisParameters::default());
 
     audio_stream.play().unwrap();
 
+    let mut start_time = std::time::Instant::now();
     loop {
-        let start_time = std::time::Instant::now();
-
         let (x, gain) = {
-            let mut x = vec![0.0_f32; vqt.n_fft];
+            let mut x = vec![0.0_f32; VQT_PARAMETERS.n_fft];
             let rb = audio_stream.ring_buffer.lock().unwrap();
-            x.copy_from_slice(&rb.buf[(BUFSIZE - vqt.n_fft)..]);
+            x.copy_from_slice(&rb.buf[(BUFSIZE - VQT_PARAMETERS.n_fft)..]);
             (x, rb.gain)
         };
         vqt_result.x_vqt = vqt.calculate_vqt_instant_in_db(&x);
         vqt_result.gain = gain;
-        analysis_state.preprocess(&vqt_result.x_vqt, OCTAVES, BUCKETS_PER_OCTAVE);
-        update_serial(BUCKETS_PER_OCTAVE, &analysis_state, serial_port.as_mut());
 
         let elapsed = start_time.elapsed();
+        start_time = std::time::Instant::now();
+
+        analysis_state.preprocess(&vqt_result.x_vqt, elapsed);
+        update_serial(&VQT_PARAMETERS.range, &analysis_state, serial_port.as_mut());
+
         let sleep_time = Duration::from_millis(1000 / FPS).saturating_sub(elapsed);
         std::thread::sleep(sleep_time);
     }

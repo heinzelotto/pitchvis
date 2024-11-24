@@ -4570,9 +4570,10 @@ name = "pitchvis_serial"
 version = "0.1.0"
 dependencies = [
  "find_peaks",
- "itertools 0.10.5",
+ "itertools 0.13.0",
  "pitchvis_analysis",
  "pitchvis_audio",
+ "pitchvis_colors",
  "serialport",
 ]
 

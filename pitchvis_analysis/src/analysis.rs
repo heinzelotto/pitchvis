@@ -290,7 +290,7 @@ impl AnalysisState {
             self.range.buckets_per_octave,
         )
         .iter()
-        .filter(|p| **p <= self.params.highest_bassnote as usize)
+        .filter(|p| **p <= self.params.highest_bassnote)
         .chain(
             find_peaks(
                 &self.params.peak_config,
@@ -298,7 +298,7 @@ impl AnalysisState {
                 self.range.buckets_per_octave,
             )
             .iter()
-            .filter(|p| **p > self.params.highest_bassnote as usize),
+            .filter(|p| **p > self.params.highest_bassnote),
         )
         .cloned()
         .collect();
