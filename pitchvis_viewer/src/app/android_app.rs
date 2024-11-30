@@ -192,6 +192,7 @@ impl AudioInputCallback for AudioCallback {
         // }
 
         rb.latency_ms = stream.calculate_latency_millis().ok().map(|x| x as f32);
+        rb.chunk_size_ms = data.len() as f32 / stream.get_sample_rate() as f32 * 1000.0;
 
         DataCallbackResult::Continue
     }
@@ -238,6 +239,7 @@ fn main() -> AppExit {
         buf: Vec::new(),
         gain: 0.0,
         latency_ms: None,
+        chunk_size_ms: 0.0,
     };
     ring_buffer.buf.resize(BUFSIZE, 0f32);
     let ring_buffer = std::sync::Mutex::from(ring_buffer);

@@ -108,6 +108,22 @@ pub fn setup_fps_counter(mut commands: Commands) {
                         },
                     },
                     TextSection {
+                        value: "\nAudio chunk size: ".into(),
+                        style: TextStyle {
+                            font_size: 16.0,
+                            color: Color::WHITE,
+                            ..default()
+                        },
+                    },
+                    TextSection {
+                        value: "N/A".into(),
+                        style: TextStyle {
+                            font_size: 16.0,
+                            color: Color::WHITE,
+                            ..default()
+                        },
+                    },
+                    TextSection {
                         value: "\nVQT latency: ".into(),
                         style: TextStyle {
                             font_size: 16.0,
@@ -179,7 +195,8 @@ pub fn update_fps_text_system(
         } else {
             text.sections[3].value = "N/A".into();
         }
-        text.sections[5].value = format!("{}ms", vqt.0.delay.as_millis());
+        text.sections[5].value = format!("{:.2}ms", audio_buffer.0.lock().unwrap().chunk_size_ms);
+        text.sections[7].value = format!("{}ms", vqt.0.delay.as_millis());
     }
 }
 

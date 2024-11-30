@@ -16,6 +16,7 @@ pub struct RingBuffer {
     pub buf: Vec<f32>,
     pub gain: f32,
     pub latency_ms: Option<f32>,
+    pub chunk_size_ms: f32,
 }
 
 pub trait AudioStream {
