@@ -27,6 +27,6 @@ pub struct Params {
 
 impl Material2d for NoisyColorMaterial {
     fn fragment_shader() -> ShaderRef {
-        "shaders/noisy_color_2d.wgsl".into()
+        "shaders/noisy_color_rings_2d.wgsl".into()
     }
 }

@@ -104,35 +104,12 @@ fn smooth_circle_boundary(color: vec4<f32>, uv: vec2<f32>) -> vec4<f32> {
 @group(2) @binding(0) var<uniform> material_color: vec4<f32>;
 @group(2) @binding(1) var<uniform> params: vec4<f32>;
 
-// @group(0) @binding(1) var<uniform> globals: Globals;
-
 const PI = 3.14159265359;
 
-fn petal(uv_inp: vec2<f32>) -> f32 {
-    var uv = uv_inp;
-
-    // to make sure that the petal is contained in [0, PI/4]
-    let rotate_22 = mat2x2<f32>(0.9239, -0.3827, 0.3827, 0.9239);
-    uv = rotate_22 * uv;
-
-    uv.x -= 0.5;
-    uv.x += 0.5;
-    uv.y /= uv.x*uv.x*1.0;
-    uv.x -= 0.5;
-    let c = 0.5;
-    return 1.0-smoothstep(c-0.01, c, length(uv));
-}
-
-fn flower(uv: vec2<f32>, num_petals: f32) -> f32 {
-    let theta = atan2(uv.y, uv.x);
-    let theta_01 = ((theta/(2*PI)+1.0) - trunc((theta/(2*PI) + 1.0)));
+fn ring(uv: vec2<f32>) -> f32 {
     let r = length(uv);
-
-    let angle_repeated_clamped = (theta_01*num_petals - trunc(theta_01 * num_petals))/num_petals * 2.0 * PI;
-
-    let uv_repeated_clamped = vec2<f32>(r*cos(angle_repeated_clamped), r*sin(angle_repeated_clamped));
-
-    return petal(uv_repeated_clamped);
+    let f = sin(r*sqrt(r)*PI*1.0);
+    return f*f;
 }
 
 @fragment
@@ -142,26 +119,16 @@ fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
     // goes from 250 to 350
     let time_periodic = 250.0 + time - floor(time/100.0)*100.0;
 
-    // time stretched by calmness, high calmness => slow time
-    let transition_fast_slow = clamp((0.67-calmness)*(0.67-calmness), 0.0, 1.0);
-    let t = time_periodic * transition_fast_slow / 2.0;
-    let rot_t = mat2x2<f32>(cos(t), -sin(t), sin(t), cos(t));
-    let uv = rot_t * (mesh.uv * 2.0 - 1.0);
+    let uv = mesh.uv * 2.0 - 1.0;
 
-    let f_noise_raw: f32 = simplexNoise3(vec3<f32>(mesh.uv *3.3, time*0.8));
+    let f_noise_raw: f32 = simplexNoise3(vec3<f32>(mesh.uv *4.3, time*0.8));
     let f_noise: f32 = clamp(f_noise_raw-0.15, 0.0, 1.0);
     let white = vec3<f32>(1.0, 1.0, 1.0);
 
-    // ~3 to 9 petals, higher calmness => more petals
-    let num_petals = trunc(clamp(calmness - 0.30, 0.0, 1.0) * 2.0 * 8.0 + 3.0);
-    let f_flower = flower(uv, num_petals);
+    let f_ring = ring(uv);
+    let ring_color = vec4<f32>(mix(material_color.rgb, white, f_noise*calmness*f_ring), material_color.a*f_ring);
 
-    // high calmness^3 => some white sparkles
-    let flower_color = vec4<f32>(mix(material_color.rgb, white, f_noise*calmness*calmness*calmness*f_flower), material_color.a*f_flower);
-
-    let f_base = smooth_circle_boundary(material_color, uv);
-
-    // high calmness^2 => more flower, less opaque circle
-    let flower_strength = clamp(calmness * 1.65, 0.0, 1.0)*clamp(calmness * 1.65, 0.0, 1.0);
-    return mix(f_base, flower_color, flower_strength);
+    // high 1-(1-calmness)^3 => more full disk, less ring
+    let ring_strength = clamp(1.0-calmness * 1.65, 0.0, 1.0)*clamp(1.0-calmness * 1.65, 0.0, 1.0)*clamp(1.0-calmness * 1.65, 0.0, 1.0);
+    return smooth_circle_boundary(mix(material_color, ring_color, ring_strength), uv);
 }
