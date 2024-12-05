@@ -278,7 +278,7 @@ fn spawn_camera(commands: &mut Commands) {
 
 fn spawn_text(commands: &mut Commands, range: &VqtRange, asset_server: Res<AssetServer>) {
     let text_font = TextFont {
-        font: asset_server.load("fonts/FreeSans.ttf"),
+        font: asset_server.load("fonts/DejaVuSans.ttf"),
         font_size: 40.0,
         ..Default::default()
     };

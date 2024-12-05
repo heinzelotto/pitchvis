@@ -1,7 +1,10 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Mutex;
+#[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
+#[cfg(target_arch = "wasm32")]
+use web_time::Instant;
 
 use crate::analysis_system::AnalysisStateResource;
 use crate::audio_system::AudioBufferResource;
