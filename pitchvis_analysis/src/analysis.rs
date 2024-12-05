@@ -311,7 +311,7 @@ impl AnalysisState {
                 if peaks.contains(&i) {
                     *x
                 } else {
-                    x_vqt_smoothed[i] / 5.0
+                    0.0 //x_vqt_smoothed[i] / 5.0
                 }
             })
             .collect::<Vec<f32>>();

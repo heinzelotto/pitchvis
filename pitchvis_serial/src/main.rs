@@ -22,8 +22,8 @@ pub const BUCKETS_PER_SEMITONE: u16 = 3;
 pub const BUCKETS_PER_OCTAVE: u16 = 12 * BUCKETS_PER_SEMITONE;
 pub const OCTAVES: u8 = 5;
 pub const SPARSITY_QUANTILE: f32 = 0.999;
-pub const Q: f32 = 10.0;
-pub const GAMMA: f32 = 5.3 * Q;
+pub const Q: f32 = 1.8;
+pub const GAMMA: f32 = 4.8 * Q;
 
 const VQT_PARAMETERS: VqtParameters = VqtParameters {
     sr: SR as f32,
@@ -38,7 +38,7 @@ const VQT_PARAMETERS: VqtParameters = VqtParameters {
     gamma: GAMMA,
 };
 
-const FPS: u64 = 25;
+const FPS: u64 = 30;
 
 // color calculation constants
 pub const COLORS: [[f32; 3]; 12] = [
@@ -72,13 +72,75 @@ impl VqtResult {
     }
 }
 
+// fn update_serial(
+//     range: &VqtRange,
+//     analysis_state: &AnalysisState,
+//     serial_port: &mut dyn SerialPort,
+// ) {
+//     let k_max = arg_max(&analysis_state.x_vqt_peakfiltered);
+//     let max_size = analysis_state.x_vqt_peakfiltered[k_max];
+
+//     // special value to indicate begin of data
+//     let mut output: Vec<u8> = vec![0xFF];
+//     // 16 bit number of RGB triples to follow
+//     let num_triples: u16 = analysis_state.x_vqt_peakfiltered.len().try_into().unwrap();
+//     output.push((num_triples / 256) as u8);
+//     output.push((num_triples % 256) as u8);
+//     output.extend(
+//         analysis_state
+//             .x_vqt_peakfiltered
+//             .iter()
+//             .enumerate()
+//             .flat_map(|(idx, size)| {
+//                 let (mut r, mut g, mut b) = calculate_color(
+//                     range.buckets_per_octave,
+//                     ((idx
+//                         + (range.buckets_per_octave - 3 * (range.buckets_per_octave / 12)) as usize)
+//                         as f32)
+//                         % range.buckets_per_octave as f32,
+//                     COLORS,
+//                     GRAY_LEVEL,
+//                     EASING_POW,
+//                 );
+
+//                 let color_coefficient = 1.0 - (1.0 - size / max_size).powf(0.18);
+//                 r *= color_coefficient;
+//                 g *= color_coefficient;
+//                 b *= color_coefficient;
+
+//                 [(r * 254.0) as u8, (g * 254.0) as u8, (b * 254.0) as u8]
+//             }),
+//     );
+//     println!("output: {:02x?}", &output);
+
+//     serial_port
+//         .write_all(output.as_slice())
+//         .expect("Write failed!");
+//     serial_port.flush().expect("Flush failed!");
+// }
+
 fn update_serial(
     range: &VqtRange,
+    vqt_result: &VqtResult,
     analysis_state: &AnalysisState,
     serial_port: &mut dyn SerialPort,
 ) {
-    let k_max = arg_max(&analysis_state.x_vqt_peakfiltered);
-    let max_size = analysis_state.x_vqt_peakfiltered[k_max];
+    let vqt = &vqt_result.x_vqt;
+
+    let mut x = vec![0.0_f32; range.n_buckets()];
+    for p in analysis_state.peaks_continuous.iter() {
+        let lower = p.center.floor() as usize;
+        x[lower] = p.size * (1.0 - p.center.fract().powf(1.9));
+        if lower < range.n_buckets() - 1 {
+            x[lower + 1] = p.size * p.center.fract().powf(1.9);
+        }
+        // if *p > 0 {
+        //     x[*p-1] = vqt[*p-1];
+        // }
+    }
+
+    let k_max = arg_max(&x);
+    let max_size = x[k_max];
 
     // special value to indicate begin of data
     let mut output: Vec<u8> = vec![0xFF];
@@ -86,31 +148,24 @@ fn update_serial(
     let num_triples: u16 = analysis_state.x_vqt_peakfiltered.len().try_into().unwrap();
     output.push((num_triples / 256) as u8);
     output.push((num_triples % 256) as u8);
-    output.extend(
-        analysis_state
-            .x_vqt_peakfiltered
-            .iter()
-            .enumerate()
-            .flat_map(|(idx, size)| {
-                let (mut r, mut g, mut b) = calculate_color(
-                    range.buckets_per_octave,
-                    ((idx
-                        + (range.buckets_per_octave - 3 * (range.buckets_per_octave / 12)) as usize)
-                        as f32)
-                        % range.buckets_per_octave as f32,
-                    COLORS,
-                    GRAY_LEVEL,
-                    EASING_POW,
-                );
+    output.extend(x.iter().enumerate().flat_map(|(idx, size)| {
+        let (mut r, mut g, mut b) = calculate_color(
+            range.buckets_per_octave,
+            ((idx + (range.buckets_per_octave - 3 * (range.buckets_per_octave / 12)) as usize)
+                as f32)
+                % range.buckets_per_octave as f32,
+            COLORS,
+            GRAY_LEVEL,
+            EASING_POW,
+        );
 
-                let color_coefficient = 1.0 - (1.0 - size / max_size).powf(0.18);
-                r *= color_coefficient;
-                g *= color_coefficient;
-                b *= color_coefficient;
+        let color_coefficient = 1.0 - (1.0 - size / max_size); //.powf(0.18);
+        r *= color_coefficient;
+        g *= color_coefficient;
+        b *= color_coefficient;
 
-                [(r * 254.0) as u8, (g * 254.0) as u8, (b * 254.0) as u8]
-            }),
-    );
+        [(r * 254.0) as u8, (g * 254.0) as u8, (b * 254.0) as u8]
+    }));
     println!("output: {:02x?}", &output);
 
     serial_port
@@ -156,7 +211,12 @@ pub fn main() {
         start_time = std::time::Instant::now();
 
         analysis_state.preprocess(&vqt_result.x_vqt, elapsed);
-        update_serial(&VQT_PARAMETERS.range, &analysis_state, serial_port.as_mut());
+        update_serial(
+            &VQT_PARAMETERS.range,
+            &vqt_result,
+            &analysis_state,
+            serial_port.as_mut(),
+        );
 
         let sleep_time = Duration::from_millis(1000 / FPS).saturating_sub(elapsed);
         std::thread::sleep(sleep_time);
