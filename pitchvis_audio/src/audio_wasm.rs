@@ -278,6 +278,7 @@ pub async fn async_new_audio_stream(sr: u32, buf_size: usize) -> Result<WasmAudi
         buf: Vec::new(),
         gain: 0.0,
         latency_ms: None,
+        chunk_size_ms: 0.0,
     };
     ring_buffer.buf.resize(buf_size, 0f32);
     let ring_buffer = std::sync::Mutex::from(ring_buffer);
@@ -307,6 +308,7 @@ pub async fn async_new_audio_stream(sr: u32, buf_size: usize) -> Result<WasmAudi
             rb.gain = agc.gain();
         }
         trace!("gain: {}", agc.gain());
+        rb.chunk_size_ms = data.len() as f32 / sr as f32 * 1000.0;
     };
 
     let stream = build_input_stream_raw(
