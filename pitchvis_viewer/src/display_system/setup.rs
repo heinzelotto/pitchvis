@@ -1,14 +1,11 @@
 use super::util::calculate_spiral_points;
 use super::CylinderEntityListResource;
 use super::{material::NoisyColorMaterial, LineList, PitchBall, PitchNameText, Spectrum};
+use bevy::core_pipeline::bloom::{Bloom, BloomPrefilter};
 use bevy::{
-    core_pipeline::{
-        bloom::{BloomCompositeMode, BloomPrefilterSettings, BloomSettings},
-        tonemapping::Tonemapping,
-    },
+    core_pipeline::{bloom::BloomCompositeMode, tonemapping::Tonemapping},
     math::vec3,
     prelude::*,
-    sprite::MaterialMesh2dBundle,
 };
 use itertools::Itertools;
 use nalgebra::{Rotation3, Vector3};
@@ -28,6 +25,7 @@ pub fn setup_display(
     mut noisy_color_materials: ResMut<Assets<NoisyColorMaterial>>,
     mut cylinder_entities: ResMut<CylinderEntityListResource>,
     range: &VqtRange,
+    asset_server: Res<AssetServer>,
 ) {
     assert!(range.buckets_per_octave % 12 == 0);
 
@@ -63,7 +61,7 @@ pub fn setup_display(
 
     spawn_camera(&mut commands);
 
-    spawn_text(&mut commands, range);
+    spawn_text(&mut commands, range, asset_server);
 }
 
 fn spawn_pitch_balls(
@@ -83,17 +81,14 @@ fn spawn_pitch_balls(
 
         commands.spawn((
             PitchBall(idx),
-            MaterialMesh2dBundle {
-                mesh: meshes.add(Rectangle::new(20.0, 20.0)).into(),
-                material: noisy_color_materials.add(noisy_color_material),
-                transform: Transform::from_xyz(*x * 1.0, *y * 1.0, -0.01), // needs to be slightly behind the 2d camera
-                visibility: if idx % 17 == 0 {
-                    // 12 * 7 = 84 and 17 * 5 = 85, so we get a curved 5-star
-                    Visibility::Visible
-                } else {
-                    Visibility::Hidden
-                },
-                ..default()
+            Mesh2d(meshes.add(Rectangle::new(20.0, 20.0)).into()),
+            MeshMaterial2d(noisy_color_materials.add(noisy_color_material)),
+            Transform::from_xyz(*x * 1.0, *y * 1.0, -0.01), // needs to be slightly behind the 2d camera
+            if idx % 17 == 0 {
+                // 12 * 7 = 84 and 17 * 5 = 85, so we get a curved 5-star
+                Visibility::Visible
+            } else {
+                Visibility::Hidden
             },
         ));
     }
@@ -131,13 +126,14 @@ fn spawn_bass_spiral(
             commands
                 .spawn((
                     BassCylinder,
-                    MaterialMesh2dBundle {
-                        mesh: meshes.add(Rectangle::new(0.05, h + 0.01)).into(),
-                        material: color_materials.add(Color::srgb(0.8, 0.7, 0.6)),
-                        transform,
-                        visibility: Visibility::Hidden,
-                        ..default()
-                    },
+                    Mesh2d(meshes.add(Rectangle::new(0.05, h + 0.01)).into()),
+                    MeshMaterial2d(color_materials.add(ColorMaterial {
+                        color: Color::srgb(0.8, 0.7, 0.6),
+                        alpha_mode: bevy::sprite::AlphaMode2d::Blend,
+                        texture: None,
+                    })),
+                    transform,
+                    Visibility::Hidden,
                 ))
                 .id(),
         );
@@ -163,17 +159,18 @@ fn spawn_spider_net(
             )
         })
         .collect();
-    commands.spawn(MaterialMesh2dBundle {
-        mesh: meshes
-            .add(Mesh::from(LineList {
-                lines: line_list,
-                thickness: 0.05,
-            }))
-            .into(),
-        material: color_materials.add(Color::srgb(0.3, 0.3, 0.3)),
-        transform: Transform::from_xyz(0.0, 0.0, -13.0),
-        ..default()
-    });
+    commands.spawn((
+        Mesh2d(meshes.add(Mesh::from(LineList {
+            lines: line_list,
+            thickness: 0.05,
+        }))),
+        MeshMaterial2d(color_materials.add(ColorMaterial {
+            color: Color::srgb(0.3, 0.3, 0.3),
+            alpha_mode: bevy::sprite::AlphaMode2d::Blend,
+            texture: None,
+        })),
+        Transform::from_xyz(0.0, 0.0, -13.0),
+    ));
 
     // draw spiral
     let spiral_mesh = LineList {
@@ -184,12 +181,11 @@ fn spawn_spider_net(
             .collect::<Vec<(Vec3, Vec3)>>(),
         thickness: 0.05,
     };
-    commands.spawn(MaterialMesh2dBundle {
-        mesh: meshes.add(spiral_mesh).into(),
-        material: color_materials.add(Color::srgb(0.3, 0.3, 0.3)),
-        transform: Transform::from_xyz(0.0, 0.0, -13.0),
-        ..default()
-    });
+    commands.spawn((
+        Mesh2d(meshes.add(spiral_mesh).into()),
+        MeshMaterial2d(color_materials.add(Color::srgb(0.3, 0.3, 0.3))),
+        Transform::from_xyz(0.0, 0.0, -13.0),
+    ));
 }
 
 fn spawn_spectrum(
@@ -208,19 +204,20 @@ fn spawn_spectrum(
     };
     commands.spawn((
         Spectrum,
-        MaterialMesh2dBundle {
-            mesh: meshes.add(spectrum_mesh).into(),
-            material: color_materials.add(Color::srgb(0.25, 0.85, 0.20)),
-            transform: Transform::from_xyz(-12.0, 3.0, -13.0),
-            visibility: Visibility::Hidden,
-            ..default()
-        },
+        Mesh2d(meshes.add(spectrum_mesh).into()),
+        MeshMaterial2d(color_materials.add(ColorMaterial {
+            color: Color::srgb(0.25, 0.85, 0.20),
+            alpha_mode: bevy::sprite::AlphaMode2d::Blend,
+            texture: None,
+        })),
+        Transform::from_xyz(-12.0, 3.0, -13.0),
+        Visibility::Hidden,
     ));
 }
 
 fn spawn_light(commands: &mut Commands) {
-    commands.spawn(PointLightBundle {
-        point_light: PointLight {
+    commands.spawn((
+        PointLight {
             intensity: 10500.0,
             // Shadows makes some Android devices segfault, this is under investigation
             // https://github.com/bevyengine/bevy/issues/8214
@@ -228,11 +225,10 @@ fn spawn_light(commands: &mut Commands) {
             shadows_enabled: true,
             ..default()
         },
-        transform: Transform::from_xyz(0.0, 0.0, 9.0),
-        ..default()
-    });
-    commands.spawn(PointLightBundle {
-        point_light: PointLight {
+        Transform::from_xyz(0.0, 0.0, 9.0),
+    ));
+    commands.spawn((
+        PointLight {
             intensity: 10500.0,
             //  Shadows makes some Android devices segfault, this is under investigation
             //https://github.com/bevyengine/bevy/issues/8214
@@ -240,47 +236,52 @@ fn spawn_light(commands: &mut Commands) {
             shadows_enabled: true,
             ..default()
         },
-        transform: Transform::from_xyz(0.0, 0.0, -29.0),
-        ..default()
-    });
+        Transform::from_xyz(0.0, 0.0, -29.0),
+    ));
 }
 
 fn spawn_camera(commands: &mut Commands) {
     // spawn a camera2dbundle with coordinates that match those of the 3d camera at the z=0 plane
     commands.spawn((
-        Camera2dBundle {
-            camera: Camera {
-                // needed for bloom
-                hdr: true,
-                // renders after / on top of the main camera
-                order: 1,
-                clear_color: ClearColorConfig::Custom(Color::srgb(0.23, 0.23, 0.25)),
-                ..default()
-            },
-            tonemapping: Tonemapping::SomewhatBoringDisplayTransform,
-            projection: OrthographicProjection {
-                scaling_mode: bevy::render::camera::ScalingMode::FixedVertical(38.0 * 0.414_213_57),
-                scale: 1.00,
-                ..default()
-            },
+        Camera2d,
+        Camera {
+            // needed for bloom
+            hdr: true,
+            // renders after / on top of the main camera
+            order: 1,
+            clear_color: ClearColorConfig::Custom(Color::srgb(0.23, 0.23, 0.25)),
             ..default()
         },
+        Tonemapping::SomewhatBoringDisplayTransform,
+        OrthographicProjection {
+            scaling_mode: bevy::render::camera::ScalingMode::FixedVertical {
+                viewport_height: 38.0 * 0.414_213_57,
+            },
+            scale: 1.00,
+            ..OrthographicProjection::default_2d()
+        },
         // TODO: make bloom removable based on display mode
-        BloomSettings {
+        Bloom {
             intensity: 0.0,
             low_frequency_boost: 1.0,
             low_frequency_boost_curvature: 1.0,
             high_pass_frequency: 0.52,
-            prefilter_settings: BloomPrefilterSettings {
+            prefilter: BloomPrefilter {
                 threshold: 0.17,
                 threshold_softness: 0.82,
             },
             composite_mode: BloomCompositeMode::Additive,
+            ..Default::default()
         },
     ));
 }
 
-fn spawn_text(commands: &mut Commands, range: &VqtRange) {
+fn spawn_text(commands: &mut Commands, range: &VqtRange, asset_server: Res<AssetServer>) {
+    let text_font = TextFont {
+        font: asset_server.load("fonts/FreeSans.ttf"),
+        font_size: 40.0,
+        ..Default::default()
+    };
     let text_spiral_points = calculate_spiral_points(range.octaves, 12);
     for (idx, (x, y, _z)) in text_spiral_points[text_spiral_points.len() - 12..]
         .iter()
@@ -291,22 +292,13 @@ fn spawn_text(commands: &mut Commands, range: &VqtRange) {
         // squash it a bit in y direction and make it a bit larger in x direction to fit C and F# better
         let (x, y) = (x * (0.85 + 0.025 * x.abs()), y * (0.85 + 0.025 * x.abs()));
         commands.spawn((
-            Text2dBundle {
-                text: Text::from_section(
-                    PITCH_NAMES[pitch_idx],
-                    TextStyle {
-                        font_size: 40.0,
-                        color: Color::srgb(r, g, b),
-                        ..default()
-                    },
-                )
-                .with_justify(JustifyText::Center),
-                // needs to be slightly behind the 2d camera and the balls
-                transform: Transform::from_xyz(x, y, -0.02).with_scale(vec3(0.02, 0.02, 1.0)),
-                visibility: Visibility::Visible,
-                ..default()
-            },
             PitchNameText,
+            Text2d::new(PITCH_NAMES[pitch_idx]),
+            TextColor(Color::srgb(r, g, b)),
+            text_font.clone(),
+            TextLayout::new_with_justify(JustifyText::Center),
+            Transform::from_xyz(x, y, -0.02).with_scale(vec3(0.02, 0.02, 1.0)),
+            Visibility::Visible,
         ));
     }
 }

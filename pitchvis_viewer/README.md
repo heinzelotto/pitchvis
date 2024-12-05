@@ -8,7 +8,7 @@ To run the desktop app, run the pitchvis executable
 
 If you have trained a model.pt using `pitchvis_train`, it can be run with machine learning base frequency emphasis:
 
-`LD_LIBRARY_PATH="$LIBTORCH/lib" LIBTORCH_STATIC=0 cargo r --features bevy/dynamic_linking,ml --non-web-release --bin pitchvis`
+`LD_LIBRARY_PATH="$LIBTORCH/lib" LIBTORCH_STATIC=0 cargo r --release --features bevy/dynamic_linking,ml --bin pitchvis`
 
 Press <kbd>Space</kbd> to cycle through view modes.
 

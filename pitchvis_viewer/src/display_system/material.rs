@@ -4,7 +4,7 @@ use bevy::{
     prelude::*,
     reflect::TypePath,
     render::render_resource::{AsBindGroup, ShaderRef, ShaderType},
-    sprite::Material2d,
+    sprite::{AlphaMode2d, Material2d},
 };
 
 #[derive(Asset, TypePath, AsBindGroup, Debug, Clone)]
@@ -28,5 +28,9 @@ pub struct Params {
 impl Material2d for NoisyColorMaterial {
     fn fragment_shader() -> ShaderRef {
         "shaders/noisy_color_rings_2d.wgsl".into()
+    }
+
+    fn alpha_mode(&self) -> bevy::sprite::AlphaMode2d {
+        AlphaMode2d::Blend
     }
 }

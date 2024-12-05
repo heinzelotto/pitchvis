@@ -14,7 +14,7 @@ pub fn update_analysis_state_to_system(
           time: Res<Time>| {
         analysis_state.0.preprocess(
             &vqt_result.x_vqt,
-            Duration::from_secs_f64(time.delta_seconds_f64()),
+            Duration::from_secs_f64(time.delta_secs_f64()),
         );
     }
 }

@@ -7,7 +7,7 @@ edition = "2021"
 [features]
 ml = ["dep:tch"]
 
-[package.metadata.wasm-pack.profile.release]
+[package.metadata.wasm-pack.profile.web-release]
 wasm-opt = ['-Oz']
 
 [lib]
@@ -22,7 +22,7 @@ path = "src/main.rs"
 anyhow = "1.0"
 itertools = "0.13.0"
 log = "0.4.17"
-bevy = { version = "0.14.2", features = ["tonemapping_luts"] }
+bevy = { version = "0.15.0", features = ["tonemapping_luts"] }
 nalgebra = "0.33.2"
 pitchvis_analysis = { path = "../pitchvis_analysis" }
 pitchvis_audio = { path = "../pitchvis_audio" }
@@ -33,7 +33,7 @@ dagc = { version = "0.1.0", path = "../dagc_fork" }            # FIXME: fork and
 android-activity = { version = "0.6.0", features = ["native-activity"] }
 jni = "0.21.0"
 ndk-context = "0.1.1"
-bevy_winit = "0.14.2"
+bevy_winit = "0.15.0"
 oboe = "0.6.1"
 nix = { version = "0.29.0", features = ["time"] }
 

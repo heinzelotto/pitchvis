@@ -22,10 +22,7 @@ module.exports = {
         }),
         new WasmPackPlugin({
             crateDirectory: path.resolve(__dirname, ".."),
-            // can't use custom profile yet https://github.com/rustwasm/wasm-pack/pull/1428
-            // extraArgs: "--profile web-release",
-	        // forceMode: "development", // to make sure no --profile=release is passed to wasm-pack
-	        forceMode: "production",
+            extraArgs: "--profile web-release",
             // extraArgs: "--no-opt", // for testing
             outDir: "wasm/pkg",
         }),

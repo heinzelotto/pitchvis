@@ -4,13 +4,12 @@ mod update;
 mod util;
 
 use bevy::{
-    core_pipeline::bloom::BloomSettings,
+    core_pipeline::bloom::Bloom,
     prelude::*,
     render::{
         mesh::{Indices, PrimitiveTopology},
         render_asset::RenderAssetUsages,
     },
-    sprite::Mesh2dHandle,
 };
 use material::NoisyColorMaterial;
 
@@ -51,13 +50,15 @@ pub fn setup_display_to_system(
     ResMut<Assets<ColorMaterial>>,
     ResMut<Assets<NoisyColorMaterial>>,
     ResMut<CylinderEntityListResource>,
+    Res<AssetServer>,
 ) {
     let range = range.clone();
     move |commands: Commands,
           meshes: ResMut<Assets<Mesh>>,
           color_materials: ResMut<Assets<ColorMaterial>>,
           noisy_color_materials: ResMut<Assets<NoisyColorMaterial>>,
-          cylinder_entities: ResMut<CylinderEntityListResource>| {
+          cylinder_entities: ResMut<CylinderEntityListResource>,
+          asset_server: Res<AssetServer>| {
         setup::setup_display(
             commands,
             meshes,
@@ -65,6 +66,7 @@ pub fn setup_display_to_system(
             noisy_color_materials,
             cylinder_entities,
             &range,
+            asset_server,
         )
     }
 }
@@ -81,11 +83,15 @@ pub fn update_display_to_system(
             &PitchBall,
             &mut Visibility,
             &mut Transform,
-            &mut Handle<NoisyColorMaterial>,
+            &mut MeshMaterial2d<NoisyColorMaterial>,
         )>,
-        Query<(&BassCylinder, &mut Visibility, &mut Handle<ColorMaterial>)>,
+        Query<(
+            &BassCylinder,
+            &mut Visibility,
+            &mut MeshMaterial2d<ColorMaterial>,
+        )>,
         Query<(&PitchNameText, &mut Visibility)>,
-        Query<(&mut Visibility, &Mesh2dHandle, &mut Transform), With<Spectrum>>,
+        Query<(&mut Visibility, &Mesh2d, &mut Transform), With<Spectrum>>,
     )>,
     ResMut<Assets<ColorMaterial>>,
     ResMut<Assets<NoisyColorMaterial>>,
@@ -95,11 +101,7 @@ pub fn update_display_to_system(
     Res<CylinderEntityListResource>,
     Res<SettingsState>,
     Res<Time>,
-    Query<(
-        &Camera,
-        Option<&mut BloomSettings>,
-        Ref<OrthographicProjection>,
-    )>,
+    Query<(&Camera, Option<&mut Bloom>, Ref<OrthographicProjection>)>,
 ) {
     let range = range.clone();
     move |set: ParamSet<(
@@ -107,11 +109,15 @@ pub fn update_display_to_system(
             &PitchBall,
             &mut Visibility,
             &mut Transform,
-            &mut Handle<NoisyColorMaterial>,
+            &mut MeshMaterial2d<NoisyColorMaterial>,
         )>,
-        Query<(&BassCylinder, &mut Visibility, &mut Handle<ColorMaterial>)>,
+        Query<(
+            &BassCylinder,
+            &mut Visibility,
+            &mut MeshMaterial2d<ColorMaterial>,
+        )>,
         Query<(&PitchNameText, &mut Visibility)>,
-        Query<(&mut Visibility, &Mesh2dHandle, &mut Transform), With<Spectrum>>,
+        Query<(&mut Visibility, &Mesh2d, &mut Transform), With<Spectrum>>,
     )>,
           color_materials: ResMut<Assets<ColorMaterial>>,
           noisy_color_materials: ResMut<Assets<NoisyColorMaterial>>,
@@ -121,11 +127,7 @@ pub fn update_display_to_system(
           cylinder_entities: Res<CylinderEntityListResource>,
           settings_state: Res<SettingsState>,
           run_time: Res<Time>,
-          camera: Query<(
-        &Camera,
-        Option<&mut BloomSettings>,
-        Ref<OrthographicProjection>,
-    )>| {
+          camera: Query<(&Camera, Option<&mut Bloom>, Ref<OrthographicProjection>)>| {
         update::update_display(
             &range,
             set,

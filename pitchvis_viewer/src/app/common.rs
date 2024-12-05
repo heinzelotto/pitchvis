@@ -7,8 +7,8 @@ use crate::analysis_system::AnalysisStateResource;
 use crate::audio_system::AudioBufferResource;
 use crate::display_system;
 use crate::vqt_system::VqtResource;
+use bevy::core_pipeline::bloom::Bloom;
 use bevy::core_pipeline::bloom::BloomCompositeMode;
-use bevy::core_pipeline::bloom::BloomSettings;
 use bevy::diagnostic::DiagnosticsStore;
 use bevy::diagnostic::FrameTimeDiagnosticsPlugin;
 use bevy::input::keyboard::KeyboardInput;
@@ -26,178 +26,144 @@ pub struct SettingsState {
 #[derive(Component)]
 pub struct FpsRoot;
 
-/// Marker to find the text entity so we can update it
-#[derive(Component)]
-pub struct FpsText;
-
 pub fn setup_fps_counter(mut commands: Commands) {
+    let text_font = TextFont {
+        font_size: 16.0,
+        ..default()
+    };
+
     // create our UI root node
     // this is the wrapper/container for the text
-    let root = commands
+    commands
         .spawn((
             FpsRoot,
-            NodeBundle {
-                // give it a dark background for readability
-                background_color: BackgroundColor(Color::BLACK.with_alpha(0.5)),
-                // make it "always on top" by setting the Z index to maximum
-                // we want it to be displayed over all other UI
-                z_index: ZIndex::Global(i32::MAX),
-                style: Style {
-                    position_type: PositionType::Absolute,
-                    // position it at the top-right corner
-                    // 1% away from the top window edge
-                    left: Val::Percent(1.),
-                    // right: Val::Percent(1.),
-                    top: Val::Percent(1.),
-                    // set bottom/left to Auto, so it can be
-                    // automatically sized depending on the text
-                    bottom: Val::Auto,
-                    right: Val::Auto,
-                    // give it some padding for readability
-                    padding: UiRect::all(Val::Px(4.0)),
-                    ..Default::default()
-                },
-                visibility: Visibility::Visible,
-                ..Default::default()
+            Text::default(),
+            text_font.clone(),
+            Node {
+                position_type: PositionType::Absolute,
+                left: Val::Percent(1.),
+                top: Val::Percent(1.),
+                // set bottom/left to Auto, so it can be
+                // automatically sized depending on the text
+                // bottom: Val::Auto,
+                // right: Val::Auto,
+                // give it some padding for readability
+                padding: UiRect::all(Val::Px(4.0)),
+                ..default()
             },
+            // give it a dark background for readability
+            BackgroundColor(Color::BLACK.with_alpha(0.5)),
+            // make it "always on top" by setting the Z index to maximum
+            // we want it to be displayed over all other UI
+            ZIndex(i32::MAX),
+            Visibility::Visible,
         ))
-        .id();
-    // create our text
-    let text_fps = commands
-        .spawn((
-            FpsText,
-            TextBundle {
-                // use two sections, so it is easy to update just the number
-                text: Text::from_sections([
-                    TextSection {
-                        value: "FPS (F/long press to cycle): ".into(),
-                        style: TextStyle {
-                            font_size: 16.0,
-                            color: Color::WHITE,
-                            // if you want to use your game's font asset,
-                            // uncomment this and provide the handle:
-                            // font: my_font_handle
-                            ..default()
-                        },
-                    },
-                    TextSection {
-                        value: " N/A".into(),
-                        style: TextStyle {
-                            font_size: 16.0,
-                            color: Color::WHITE,
-                            // if you want to use your game's font asset,
-                            // uncomment this and provide the handle:
-                            // font: my_font_handle
-                            ..default()
-                        },
-                    },
-                    TextSection {
-                        value: "\nAudio latency: ".into(),
-                        style: TextStyle {
-                            font_size: 16.0,
-                            color: Color::WHITE,
-                            ..default()
-                        },
-                    },
-                    TextSection {
-                        value: "N/A".into(),
-                        style: TextStyle {
-                            font_size: 16.0,
-                            color: Color::WHITE,
-                            ..default()
-                        },
-                    },
-                    TextSection {
-                        value: "\nAudio chunk size: ".into(),
-                        style: TextStyle {
-                            font_size: 16.0,
-                            color: Color::WHITE,
-                            ..default()
-                        },
-                    },
-                    TextSection {
-                        value: "N/A".into(),
-                        style: TextStyle {
-                            font_size: 16.0,
-                            color: Color::WHITE,
-                            ..default()
-                        },
-                    },
-                    TextSection {
-                        value: "\nVQT latency: ".into(),
-                        style: TextStyle {
-                            font_size: 16.0,
-                            color: Color::WHITE,
-                            ..default()
-                        },
-                    },
-                    TextSection {
-                        value: "N/A".into(),
-                        style: TextStyle {
-                            font_size: 16.0,
-                            color: Color::WHITE,
-                            ..default()
-                        },
-                    },
-                    // TODO: add section for analysis smoothing latency
-                ]),
-                ..Default::default()
-            },
-        ))
-        .id();
-    commands.entity(root).push_children(&[text_fps]);
+        .with_children(|builder| {
+            builder.spawn((
+                TextSpan::new("FPS (F/long press to cycle): "),
+                TextColor(Color::WHITE),
+                text_font.clone(),
+            ));
+            builder.spawn((
+                TextSpan::new(" N/A"),
+                TextColor(Color::WHITE),
+                text_font.clone(),
+            ));
+            builder.spawn((
+                TextSpan::new("\nAudio latency: "),
+                TextColor(Color::WHITE),
+                text_font.clone(),
+            ));
+            builder.spawn((
+                TextSpan::new("N/A"),
+                TextColor(Color::WHITE),
+                text_font.clone(),
+            ));
+            builder.spawn((
+                TextSpan::new("\nAudio chunk size: "),
+                TextColor(Color::WHITE),
+                text_font.clone(),
+            ));
+            builder.spawn((
+                TextSpan::new("N/A"),
+                TextColor(Color::WHITE),
+                text_font.clone(),
+            ));
+            builder.spawn((
+                TextSpan::new("\nVQT latency: "),
+                TextColor(Color::WHITE),
+                text_font.clone(),
+            ));
+            builder.spawn((
+                TextSpan::new("N/A"),
+                TextColor(Color::WHITE),
+                text_font.clone(),
+            ));
+            // TODO: add section for analysis smoothing latency
+        });
 }
 
 pub fn update_fps_text_system(
     diagnostics: Res<DiagnosticsStore>,
-    mut query: Query<&mut Text, With<FpsText>>,
+    query: Query<Entity, With<FpsRoot>>,
+    mut writer: TextUiWriter,
     settings: Res<SettingsState>,
     audio_buffer: Res<AudioBufferResource>,
     vqt: Res<VqtResource>,
 ) {
-    for mut text in &mut query {
-        // try to get a "smoothed" FPS value from Bevy
-        if let Some(value) = diagnostics
-            .get(&FrameTimeDiagnosticsPlugin::FPS)
-            .and_then(|fps| fps.smoothed())
-        {
-            // Format the number as to leave space for 4 digits, just in case,
-            // right-aligned and rounded. This helps readability when the
-            // number changes rapidly.
-            text.sections[1].value = format!("{value:>4.0}");
+    let entity = query.single();
 
-            // Let's make it extra fancy by changing the color of the
-            // text according to the FPS value:
-            text.sections[1].style.color = if value >= 120.0 {
-                // Above 120 FPS, use green color
-                Color::srgb(0.0, 1.0, 0.0)
-            } else if value >= 60.0 {
-                // Between 60-120 FPS, gradually transition from yellow to green
-                Color::srgb((1.0 - (value - 60.0) / (120.0 - 60.0)) as f32, 1.0, 0.0)
-            } else if value >= 30.0 {
-                // Between 30-60 FPS, gradually transition from red to yellow
-                Color::srgb(1.0, ((value - 30.0) / (60.0 - 30.0)) as f32, 0.0)
-            } else {
-                // Below 30 FPS, use red color
-                Color::srgb(1.0, 0.0, 0.0)
-            }
+    // try to get a "smoothed" FPS value from Bevy
+    if let Some(value) = diagnostics
+        .get(&FrameTimeDiagnosticsPlugin::FPS)
+        .and_then(|fps| fps.smoothed())
+    {
+        // Format the number as to leave space for 4 digits, just in case,
+        // right-aligned and rounded. This helps readability when the
+        // number changes rapidly.
+        *writer.text(entity, 2) = format!("{value:>4.0}");
+
+        // // Let's make it extra fancy by changing the color of the
+        // // text according to the FPS value:
+        *writer.color(entity, 2) = if value >= 120.0 {
+            // Above 120 FPS, use green color
+            TextColor(Color::srgb(0.0, 1.0, 0.0))
+        } else if value >= 60.0 {
+            // Between 60-120 FPS, gradually transition from yellow to green
+            TextColor(Color::srgb(
+                (1.0 - (value - 60.0) / (120.0 - 60.0)) as f32,
+                1.0,
+                0.0,
+            ))
+        } else if value >= 30.0 {
+            // Between 30-60 FPS, gradually transition from red to yellow
+            TextColor(Color::srgb(
+                1.0,
+                ((value - 30.0) / (60.0 - 30.0)) as f32,
+                0.0,
+            ))
         } else {
-            // display "N/A" if we can't get a FPS measurement
-            // add an extra space to preserve alignment
-            text.sections[1].value = " N/A".into();
-            text.sections[1].style.color = Color::WHITE;
+            // Below 30 FPS, use red color
+            TextColor(Color::srgb(1.0, 0.0, 0.0))
         }
-        if let Some(fps_limit) = settings.fps_limit {
-            text.sections[1].value.push_str(&format!("/{}", fps_limit));
-        }
-        if let Some(latency_ms) = audio_buffer.0.lock().unwrap().latency_ms {
-            text.sections[3].value = format!("{:.2}ms", latency_ms);
-        } else {
-            text.sections[3].value = "N/A".into();
-        }
-        text.sections[5].value = format!("{:.2}ms", audio_buffer.0.lock().unwrap().chunk_size_ms);
-        text.sections[7].value = format!("{}ms", vqt.0.delay.as_millis());
+    } else {
+        // display "N/A" if we can't get a FPS measurement
+        // add an extra space to preserve alignment
+        *writer.text(entity, 2) = " N/A".into();
+        *writer.color(entity, 2) = TextColor(Color::WHITE);
     }
+    if let Some(fps_limit) = settings.fps_limit {
+        (*writer.text(entity, 2)).push_str(&format!("/{}", fps_limit));
+    } else {
+        (*writer.text(entity, 2)).push_str("");
+    }
+    if let Some(latency_ms) = audio_buffer.0.lock().unwrap().latency_ms {
+        *writer.text(entity, 4) = format!("{:.2}ms", latency_ms);
+    } else {
+        *writer.text(entity, 4) = "N/A".into();
+    }
+    *writer.text(entity, 6) = format!("{:.2}ms", audio_buffer.0.lock().unwrap().chunk_size_ms);
+    *writer.text(entity, 8) = format!("{}ms", vqt.0.delay.as_millis());
 }
 
 /// Toggle the FPS counter based on the display mode
@@ -217,76 +183,66 @@ pub fn fps_counter_showhide(
 #[derive(Component)]
 pub struct AnalysisRoot;
 
-/// Marker to find the text entity so we can update it
-#[derive(Component)]
-pub struct AnalysisText;
-
 pub fn setup_analysis_text(mut commands: Commands) {
-    let root = commands
+    let text_font = TextFont {
+        font_size: 16.0,
+        ..default()
+    };
+
+    commands
         .spawn((
             AnalysisRoot,
-            NodeBundle {
-                background_color: BackgroundColor(Color::BLACK.with_alpha(0.5)),
-                z_index: ZIndex::Global(i32::MAX),
-                style: Style {
-                    position_type: PositionType::Absolute,
-                    left: Val::Auto,
-                    top: Val::Auto,
-                    right: Val::Percent(1.),
-                    bottom: Val::Percent(1.),
-                    // give it some padding for readability
-                    padding: UiRect::all(Val::Px(4.0)),
-                    ..Default::default()
-                },
-                visibility: Visibility::Visible,
-                ..Default::default()
+            Text::default(),
+            text_font.clone(),
+            Node {
+                position_type: PositionType::Absolute,
+                right: Val::Percent(1.),
+                bottom: Val::Percent(1.),
+                // set bottom/left to Auto, so it can be
+                // automatically sized depending on the text
+                // bottom: Val::Auto,
+                // right: Val::Auto,
+                // give it some padding for readability
+                padding: UiRect::all(Val::Px(4.0)),
+                ..default()
             },
+            // give it a dark background for readability
+            BackgroundColor(Color::BLACK.with_alpha(0.5)),
+            // make it "always on top" by setting the Z index to maximum
+            // we want it to be displayed over all other UI
+            ZIndex(i32::MAX),
+            Visibility::Visible,
         ))
-        .id();
-    let text_analysis = commands
-        .spawn((
-            AnalysisText,
-            TextBundle {
-                text: Text::from_sections([
-                    TextSection {
-                        value: "Tuning drift: ".into(),
-                        style: TextStyle {
-                            font_size: 16.0,
-                            color: Color::WHITE,
-                            ..default()
-                        },
-                    },
-                    TextSection {
-                        value: " N/A".into(),
-                        style: TextStyle {
-                            font_size: 16.0,
-                            color: Color::WHITE,
-                            ..default()
-                        },
-                    },
-                ]),
-                ..Default::default()
-            },
-        ))
-        .id();
-    commands.entity(root).push_children(&[text_analysis]);
+        .with_children(|builder| {
+            builder.spawn((
+                TextSpan::new("Tuning drift: "),
+                TextColor(Color::WHITE),
+                text_font.clone(),
+            ));
+            builder.spawn((
+                TextSpan::new(" N/A"),
+                TextColor(Color::WHITE),
+                text_font.clone(),
+            ));
+        });
 }
 
 pub fn update_analysis_text_system(
     // TODO: replace with Single in bevy 0.15
-    mut query: Query<&mut Text, With<AnalysisText>>,
+    query: Query<Entity, With<AnalysisRoot>>,
     analysis: Res<AnalysisStateResource>,
+    mut writer: TextUiWriter,
 ) {
-    let inaccuracy = analysis.0.smoothed_tuning_grid_inaccuracy.get().round();
-    let mut text = query.single_mut();
+    let entity = query.single();
 
+    let inaccuracy = analysis.0.smoothed_tuning_grid_inaccuracy.get().round();
     // Format the number as to leave space for 3 digits, just in case,
     // right-aligned and rounded. This helps readability when the
     // number changes rapidly.
-    text.sections[1].value = format!("{inaccuracy:>3.0}");
+    *writer.text(entity, 2) = format!("{inaccuracy:>3.0}");
 
     let inaccuracy_abs = inaccuracy.abs();
-    text.sections[1].style.color = if inaccuracy_abs <= 10.0 {
+    *writer.color(entity, 2) = TextColor(if inaccuracy_abs <= 10.0 {
         Color::srgb(0.0, 1.0, 0.0)
     } else if inaccuracy_abs <= 20.0 {
         Color::srgb((inaccuracy_abs - 10.0) / (20.0 - 10.0), 1.0, 0.0)
@@ -294,7 +250,7 @@ pub fn update_analysis_text_system(
         Color::srgb(1.0, 1.0 - (inaccuracy_abs - 20.0) / (30.0 - 20.0), 0.0)
     } else {
         Color::srgb(1.0, 0.0, 0.0)
-    };
+    });
 }
 
 /// Toggle the FPS counter based on the display mode
@@ -315,8 +271,32 @@ pub fn analysis_text_showhide(
 #[derive(Component)]
 pub struct BloomSettingsText;
 
+pub fn setup_bloom_ui(mut commands: Commands) {
+    // UI
+    commands.spawn((
+        BloomSettingsText,
+        Text::new(""),
+        TextColor(Color::WHITE),
+        TextFont {
+            font_size: 16.0,
+            ..default()
+        },
+        Node {
+            position_type: PositionType::Absolute,
+            bottom: Val::Px(12.0),
+            left: Val::Px(12.0),
+            ..default()
+        },
+        // give it a dark background for readability
+        BackgroundColor(Color::BLACK.with_alpha(0.5)),
+        // make it "always on top" by setting the Z index to maximum
+        // we want it to be displayed over all other UI
+        ZIndex(i32::MAX),
+    ));
+}
+
 pub fn update_bloom_settings(
-    mut camera: Query<(Entity, Option<&mut BloomSettings>), With<Camera>>,
+    mut camera: Query<(Entity, Option<&mut Bloom>), With<Camera>>,
     mut text: Query<(&mut Text, &mut Visibility), With<BloomSettingsText>>,
     keycode: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
@@ -331,7 +311,7 @@ pub fn update_bloom_settings(
     }
 
     let bloom_settings = camera.single_mut();
-    let text = &mut text.0.sections[0].value;
+    let text = &mut text.0 .0;
 
     if let (_, Some(mut bloom_settings)) = bloom_settings {
         *text = "BloomSettings\n".to_string();
@@ -357,14 +337,14 @@ pub fn update_bloom_settings(
         ));
         text.push_str(&format!(
             "(Y/H) Threshold: {}\n",
-            bloom_settings.prefilter_settings.threshold
+            bloom_settings.prefilter.threshold
         ));
         text.push_str(&format!(
             "(U/J) Threshold softness: {}\n",
-            bloom_settings.prefilter_settings.threshold_softness
+            bloom_settings.prefilter.threshold_softness
         ));
 
-        let dt = time.delta_seconds();
+        let dt = time.delta_secs();
 
         if keycode.pressed(KeyCode::KeyA) {
             bloom_settings.intensity -= dt / 10.0;
@@ -407,46 +387,22 @@ pub fn update_bloom_settings(
         }
 
         if keycode.pressed(KeyCode::KeyH) {
-            bloom_settings.prefilter_settings.threshold -= dt;
+            bloom_settings.prefilter.threshold -= dt;
         }
         if keycode.pressed(KeyCode::KeyY) {
-            bloom_settings.prefilter_settings.threshold += dt;
+            bloom_settings.prefilter.threshold += dt;
         }
-        bloom_settings.prefilter_settings.threshold =
-            bloom_settings.prefilter_settings.threshold.max(0.0);
+        bloom_settings.prefilter.threshold = bloom_settings.prefilter.threshold.max(0.0);
 
         if keycode.pressed(KeyCode::KeyJ) {
-            bloom_settings.prefilter_settings.threshold_softness -= dt / 10.0;
+            bloom_settings.prefilter.threshold_softness -= dt / 10.0;
         }
         if keycode.pressed(KeyCode::KeyU) {
-            bloom_settings.prefilter_settings.threshold_softness += dt / 10.0;
+            bloom_settings.prefilter.threshold_softness += dt / 10.0;
         }
-        bloom_settings.prefilter_settings.threshold_softness = bloom_settings
-            .prefilter_settings
-            .threshold_softness
-            .clamp(0.0, 1.0);
+        bloom_settings.prefilter.threshold_softness =
+            bloom_settings.prefilter.threshold_softness.clamp(0.0, 1.0);
     }
-}
-
-pub fn setup_bloom_ui(mut commands: Commands) {
-    // UI
-    commands.spawn((
-        BloomSettingsText,
-        TextBundle::from_section(
-            "",
-            TextStyle {
-                font_size: 16.0,
-                color: Color::WHITE,
-                ..default()
-            },
-        )
-        .with_style(Style {
-            position_type: PositionType::Absolute,
-            bottom: Val::Px(12.0),
-            left: Val::Px(12.0),
-            ..default()
-        }),
-    ));
 }
 
 #[cfg(not(target_arch = "wasm32"))]

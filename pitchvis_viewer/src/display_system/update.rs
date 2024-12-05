@@ -2,7 +2,7 @@ use super::{
     material::NoisyColorMaterial, util::bin_to_spiral, BassCylinder, CylinderEntityListResource,
     DisplayMode, LineList, PitchBall, PitchNameText, Spectrum,
 };
-use bevy::{core_pipeline::bloom::BloomSettings, prelude::*, sprite::Mesh2dHandle};
+use bevy::{core_pipeline::bloom::Bloom, prelude::*};
 use itertools::Itertools;
 use std::collections::HashMap;
 
@@ -27,11 +27,15 @@ pub fn update_display(
             &PitchBall,
             &mut Visibility,
             &mut Transform,
-            &mut Handle<NoisyColorMaterial>,
+            &mut MeshMaterial2d<NoisyColorMaterial>,
         )>,
-        Query<(&BassCylinder, &mut Visibility, &mut Handle<ColorMaterial>)>,
+        Query<(
+            &BassCylinder,
+            &mut Visibility,
+            &mut MeshMaterial2d<ColorMaterial>,
+        )>,
         Query<(&PitchNameText, &mut Visibility)>,
-        Query<(&mut Visibility, &Mesh2dHandle, &mut Transform), With<Spectrum>>,
+        Query<(&mut Visibility, &Mesh2d, &mut Transform), With<Spectrum>>,
     )>,
     mut color_materials: ResMut<Assets<ColorMaterial>>,
     mut noisy_color_materials: ResMut<Assets<NoisyColorMaterial>>,
@@ -43,7 +47,7 @@ pub fn update_display(
     run_time: Res<Time>,
     mut camera: Query<(
         &Camera,
-        Option<&mut BloomSettings>,
+        Option<&mut Bloom>,
         Ref<OrthographicProjection>, // Ref because we want to check `is_changed` later
     )>,
 ) {
@@ -92,7 +96,7 @@ fn fade_pitch_balls(
         &PitchBall,
         &mut Visibility,
         &mut Transform,
-        &mut Handle<NoisyColorMaterial>,
+        &mut MeshMaterial2d<NoisyColorMaterial>,
     )>,
     noisy_color_materials: &mut ResMut<Assets<NoisyColorMaterial>>,
     run_time: &Res<Time>,
@@ -136,7 +140,7 @@ fn update_pitch_balls(
         &PitchBall,
         &mut Visibility,
         &mut Transform,
-        &mut Handle<NoisyColorMaterial>,
+        &mut MeshMaterial2d<NoisyColorMaterial>,
     )>,
     noisy_color_materials: &mut ResMut<Assets<NoisyColorMaterial>>,
     run_time: &Res<Time>,
@@ -183,7 +187,7 @@ fn update_pitch_balls(
             let color_mat = noisy_color_materials
                 .get_mut(&*color)
                 .expect("ball color material");
-            color_mat.params.time = run_time.elapsed_seconds();
+            color_mat.params.time = run_time.elapsed_secs();
             // color_mat.color = Color::srgb(
             //     r * color_coefficient,
             //     g * color_coefficient,
@@ -255,11 +259,7 @@ fn update_pitch_balls(
 }
 
 fn update_bloom(
-    camera: &mut Query<(
-        &Camera,
-        Option<&mut BloomSettings>,
-        Ref<OrthographicProjection>,
-    )>,
+    camera: &mut Query<(&Camera, Option<&mut Bloom>, Ref<OrthographicProjection>)>,
     analysis_state: &AnalysisState,
 ) {
     if let (_, Some(mut bloom_settings), _) = camera.single_mut() {
@@ -269,7 +269,11 @@ fn update_bloom(
 }
 
 fn update_bass_spiral(
-    mut bass_cylinders: Query<(&BassCylinder, &mut Visibility, &mut Handle<ColorMaterial>)>,
+    mut bass_cylinders: Query<(
+        &BassCylinder,
+        &mut Visibility,
+        &mut MeshMaterial2d<ColorMaterial>,
+    )>,
     materials: &mut ResMut<Assets<ColorMaterial>>,
     cylinder_entities: &Res<CylinderEntityListResource>,
     peaks_continuous: &[ContinuousPeak],
@@ -335,12 +339,8 @@ fn update_bass_spiral(
 }
 
 fn update_spectrum(
-    mut spectrum: Query<(&mut Visibility, &Mesh2dHandle, &mut Transform), With<Spectrum>>,
-    camera: &mut Query<(
-        &Camera,
-        Option<&mut BloomSettings>,
-        Ref<OrthographicProjection>,
-    )>,
+    mut spectrum: Query<(&mut Visibility, &Mesh2d, &mut Transform), With<Spectrum>>,
+    camera: &mut Query<(&Camera, Option<&mut Bloom>, Ref<OrthographicProjection>)>,
     meshes: &mut ResMut<Assets<Mesh>>,
     settings_state: &Res<SettingsState>,
     vqt_result: &Res<VqtResultResource>,

@@ -8,6 +8,7 @@ pub fn calculate_spiral_points(octaves: u8, buckets_per_octave: u16) -> Vec<(f32
 
 pub fn bin_to_spiral(buckets_per_octave: u16, x: f32) -> (f32, f32, f32) {
     //let radius = 1.5 * (0.5 + (x / buckets_per_octave as f32).powf(0.75));
+    // TODO: ?could be improved to space higher octaves a little more apart
     let radius = 2.0 * (0.3 + (x / buckets_per_octave as f32).powf(0.75));
     #[allow(clippy::erasing_op)]
     let (transl_y, transl_x) = ((x + (buckets_per_octave - 0 * (buckets_per_octave / 12)) as f32)

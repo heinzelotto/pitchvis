@@ -3,6 +3,7 @@ use bevy::asset::AssetMetaCheck;
 use bevy::diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin};
 use bevy::prelude::*;
 use bevy::sprite::Material2dPlugin;
+use bevy::window::PresentMode;
 use bevy::winit::{UpdateMode, WinitSettings};
 use pitchvis_analysis::analysis::{AnalysisParameters, AnalysisState};
 use wasm_bindgen::prelude::*;
@@ -76,12 +77,29 @@ pub async fn main_fun() -> Result<(), JsValue> {
 
     App::new()
         .add_plugins((
-            DefaultPlugins.set(AssetPlugin {
-                // needed for the Progressive Web App not to fail looking for a nonexisting
-                // .wasm.meta file when offline
-                meta_check: AssetMetaCheck::Never,
-                ..default()
-            }),
+            DefaultPlugins
+                .set(AssetPlugin {
+                    // needed for the Progressive Web App not to fail looking for a nonexisting
+                    // .wasm.meta file when offline
+                    meta_check: AssetMetaCheck::Never,
+                    ..default()
+                })
+                .set(WindowPlugin {
+                    primary_window: Some(Window {
+                        title: "PitchVis".into(),
+                        name: Some("bevy.app".into()),
+                        resolution: (500., 300.).into(),
+                        present_mode: PresentMode::AutoVsync,
+                        // Tells Wasm to use the canvas with the id "pitchviscanvas" as the main window
+                        canvas: Some("#pitchviscanvas".into()),
+                        // Tells Wasm to resize the window according to the available canvas
+                        fit_canvas_to_parent: true,
+                        // Tells Wasm not to override default event handling, like F5, Ctrl+R etc.
+                        prevent_default_event_handling: false,
+                        ..default()
+                    }),
+                    ..default()
+                }),
             LogDiagnosticsPlugin::default(),
             FrameTimeDiagnosticsPlugin::default(),
             Material2dPlugin::<NoisyColorMaterial>::default(),
