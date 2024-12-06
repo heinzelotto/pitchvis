@@ -3,9 +3,11 @@ live analysis of musical pitches in an audio signal and a nice visualization
 
 Watch a demo video here:
 
-[![Pitchvis Demo Video](https://img.youtube.com/vi/II08E3yqUiY/sddefault.jpg)](https://youtu.be/II08E3yqUiY)
+[![Pitchvis Demo Video](https://img.youtube.com/vi/KTpUtYRGAX4/sddefault.jpg)](https://youtu.be/KTpUtYRGAX4)
 
 Get the Android App here: https://play.google.com/store/apps/details?id=org.p1graph.pitchvis
+
+More resources on the [Website](https://www.p1graph.org/pitchvis/)
 
 # instructions
 
