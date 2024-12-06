@@ -62,7 +62,7 @@ pub fn main_fun() -> Result<()> {
             .set(WindowPlugin {
                 primary_window: Some(Window {
                     // present_mode: PresentMode::Immediate,
-                    title: "Pitchvis".to_string(),
+                    title: "PitchVis".to_string(),
                     ..default()
                 }),
                 ..default()
