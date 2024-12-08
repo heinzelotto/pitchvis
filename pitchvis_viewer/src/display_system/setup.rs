@@ -273,6 +273,10 @@ fn spawn_camera(commands: &mut Commands) {
             composite_mode: BloomCompositeMode::Additive,
             ..Default::default()
         },
+        // MSAA makes some Android devices panic, this is under investigation
+        // https://github.com/bevyengine/bevy/issues/8229
+        #[cfg(target_os = "android")]
+        Msaa::Off,
     ));
 }
 

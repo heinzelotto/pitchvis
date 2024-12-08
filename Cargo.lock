@@ -4811,7 +4811,7 @@ dependencies = [
  "android-activity",
  "anyhow",
  "bevy",
- "bevy_winit",
+ "bevy_window",
  "dagc 0.1.0",
  "env_logger 0.11.5",
  "itertools 0.13.0",

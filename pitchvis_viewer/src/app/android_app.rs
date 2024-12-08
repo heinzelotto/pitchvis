@@ -60,18 +60,18 @@ fn handle_lifetime_events_system(
                 log::warn!("Application suspended, exiting.");
 
                 // For now, just quit.
-                // FIXME: also doesn't seem to work, the app is not exiting
                 exit.send(AppExit::Success);
 
-                // This is a workaround to exit the app, but it's not clean.
-                // And it also doesn't work. This Event is only received when _reopening_ the app.
+                // This is a workaround to exit the app, but it's not clean. One of them seems to
+                // work after the change from native-activity to game-activity and since update to
+                // bevy 0.15.
                 std::process::exit(0);
             }
             // On `Resumed``, audio can continue playing
             AppLifecycle::WillResume => {
                 // audio_control_tx.0.send(AudioControl::Play).unwrap();
             }
-            // `Started` is the only other event for now, more to come in the next Bevy version
+            // `Idle`, `Running`
             _ => (),
         }
     }
@@ -210,7 +210,7 @@ fn main() -> AppExit {
     if !microphone_permission_granted("android.permission.RECORD_AUDIO") {
         log::info!("requesting microphone permission");
         request_microphone_permission(
-            bevy_winit::ANDROID_APP
+            bevy_window::ANDROID_APP
                 .get()
                 .expect("Bevy must be setup with the #[bevy_main] macro on Android"),
             "android.permission.RECORD_AUDIO",
@@ -222,7 +222,7 @@ fn main() -> AppExit {
     }
 
     // keep screen awake. This is a bitflags! enum, the second argument is an empty bitflags mask
-    bevy_winit::ANDROID_APP
+    bevy_window::ANDROID_APP
         .get()
         .expect("Bevy must be setup with the #[bevy_main] macro on Android")
         .set_window_flags(
@@ -280,7 +280,7 @@ fn main() -> AppExit {
             .set(WindowPlugin {
                 primary_window: Some(Window {
                     //resizable: false,
-                    mode: bevy::window::WindowMode::BorderlessFullscreen,
+                    mode: bevy::window::WindowMode::BorderlessFullscreen(MonitorSelection::Primary),
                     ..default()
                 }),
                 ..default()
@@ -340,11 +340,6 @@ fn main() -> AppExit {
             update_bloom_settings.after(update_analysis_state_system),
         ),
     );
-
-    // MSAA makes some Android devices panic, this is under investigation
-    // https://github.com/bevyengine/bevy/issues/8229
-    #[cfg(target_os = "android")]
-    app.insert_resource(Msaa::Off);
 
     app.run()
 }

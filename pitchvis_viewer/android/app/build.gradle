@@ -8,10 +8,10 @@ android {
 
     defaultConfig {
         applicationId "org.p1graph.pitchvis"
-        minSdk 24
+        minSdk 29
         targetSdk 34
-        versionCode 8 // Change to a higher number for each new release
-        versionName "1.6" // Change to a higher number for each new release
+        versionCode 18 // Change to a higher number for each new release
+        versionName "1.18" // Change to a higher number for each new release
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -48,6 +48,11 @@ android {
 }
 
 dependencies {
-
+    implementation libs.appcompat
+    implementation libs.material
+    implementation libs.games.activity
+    testImplementation libs.junit
+    androidTestImplementation libs.ext.junit
+    androidTestImplementation libs.espresso.core
 }
 
