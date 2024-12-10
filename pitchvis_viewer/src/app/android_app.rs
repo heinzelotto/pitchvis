@@ -6,6 +6,8 @@ use bevy::log::LogPlugin;
 use bevy::prelude::*;
 use bevy::sprite::Material2dPlugin;
 use bevy::window::AppLifecycle;
+use bevy::winit::UpdateMode;
+use bevy::winit::WinitSettings;
 use jni::{
     objects::{JObject, JValue},
     sys::{jobject, jstring},
@@ -19,7 +21,7 @@ use oboe::{
 use super::common::analysis_text_showhide;
 use super::common::close_on_esc;
 use super::common::fps_counter_showhide;
-use super::common::frame_limiter_system;
+use super::common::set_frame_limiter_system;
 use super::common::setup_analysis_text;
 use super::common::setup_bloom_ui;
 use super::common::setup_fps_counter;
@@ -28,6 +30,7 @@ use super::common::update_bloom_settings;
 use super::common::update_fps_text_system;
 use super::common::user_input_system;
 use super::common::ActiveTouches;
+use super::common::CurrentFpsLimit;
 use super::common::SettingsState;
 use crate::analysis_system;
 use crate::audio_system;
@@ -38,7 +41,8 @@ use pitchvis_analysis::vqt::VqtParameters;
 #[cfg_attr(not(feature = "ml"), link(name = "c++_shared"))]
 extern "C" {}
 
-pub const BUFSIZE: usize = 2 * 16384;
+const BUFSIZE: usize = 2 * 16384;
+const DEFAULT_FPS: u32 = 60;
 
 fn handle_lifetime_events_system(
     mut lifetime_events: EventReader<AppLifecycle>,
@@ -309,11 +313,21 @@ fn main() -> AppExit {
     ))
     .insert_resource(display_system::CylinderEntityListResource(Vec::new()))
     // .insert_resource(AudioControlChannelResource(audio_control_channel_tx))
+    .insert_resource(ActiveTouches::default())
     .insert_resource(SettingsState {
         display_mode: display_system::DisplayMode::PitchnamesCalmness,
-        fps_limit: None,
+        fps_limit: Some(DEFAULT_FPS),
     })
-    .insert_resource(ActiveTouches::default())
+    .insert_resource(CurrentFpsLimit(Some(DEFAULT_FPS)))
+    .insert_resource(WinitSettings {
+        focused_mode: UpdateMode::reactive(std::time::Duration::from_secs_f32(
+            1.0 / DEFAULT_FPS as f32,
+        )),
+        // we also use reactive in unfocused mode since otherwise it seems to break in split screen mode
+        unfocused_mode: UpdateMode::reactive(std::time::Duration::from_secs_f32(
+            1.0 / DEFAULT_FPS as f32,
+        )),
+    })
     .add_systems(
         Startup,
         (
@@ -327,7 +341,7 @@ fn main() -> AppExit {
         Update,
         (
             close_on_esc,
-            frame_limiter_system,
+            set_frame_limiter_system,
             update_vqt_system,
             user_input_system,
             handle_lifetime_events_system,

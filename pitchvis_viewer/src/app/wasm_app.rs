@@ -10,12 +10,14 @@ use wasm_bindgen::prelude::*;
 
 use super::common::analysis_text_showhide;
 use super::common::fps_counter_showhide;
+use super::common::set_frame_limiter_system;
 use super::common::setup_analysis_text;
 use super::common::setup_fps_counter;
 use super::common::update_analysis_text_system;
 use super::common::update_fps_text_system;
 use super::common::user_input_system;
 use super::common::ActiveTouches;
+use super::common::CurrentFpsLimit;
 use super::common::SettingsState;
 use super::common::{close_on_esc, setup_bloom_ui, update_bloom_settings};
 use crate::analysis_system::{self, AnalysisStateResource};
@@ -27,36 +29,7 @@ use pitchvis_analysis::vqt::{Vqt, VqtParameters};
 use pitchvis_audio::AudioStream;
 
 pub const BUFSIZE: usize = 2 * 16384;
-
-#[derive(Resource)]
-struct CurrentFpsLimit(pub Option<u32>);
-
-fn set_frame_limiter_system(
-    mut current_limit: ResMut<CurrentFpsLimit>,
-    mut winit_settings: ResMut<WinitSettings>,
-    settings: Res<SettingsState>,
-) {
-    if settings.fps_limit != current_limit.0 {
-        current_limit.0 = settings.fps_limit;
-        *winit_settings = match settings.fps_limit {
-            Some(fps) => WinitSettings {
-                focused_mode: UpdateMode::Reactive {
-                    wait: std::time::Duration::from_millis(1000 / fps as u64),
-                    react_to_device_events: true,
-                    react_to_user_events: true,
-                    react_to_window_events: true,
-                },
-                unfocused_mode: UpdateMode::Reactive {
-                    wait: std::time::Duration::from_millis(1000 / fps as u64),
-                    react_to_device_events: true,
-                    react_to_user_events: true,
-                    react_to_window_events: true,
-                },
-            },
-            None => WinitSettings::game(),
-        };
-    }
-}
+const DEFAULT_FPS: u32 = 60;
 
 // wasm main function
 #[wasm_bindgen]
@@ -117,10 +90,19 @@ pub async fn main_fun() -> Result<(), JsValue> {
             fps_limit: None,
         })
         .insert_resource(ActiveTouches::default())
-        .insert_resource(CurrentFpsLimit(None))
-        // hacky way to limit FPS. Only works when the user is not moving the mouse.
-        // And if we set the react_ arguments to false, the FPS limit is all wonky.
-        .insert_resource(WinitSettings::game())
+        .insert_resource(SettingsState {
+            display_mode: display_system::DisplayMode::PitchnamesCalmness,
+            fps_limit: Some(DEFAULT_FPS),
+        })
+        .insert_resource(CurrentFpsLimit(Some(DEFAULT_FPS)))
+        .insert_resource(WinitSettings {
+            focused_mode: UpdateMode::reactive(std::time::Duration::from_secs_f32(
+                1.0 / DEFAULT_FPS as f32,
+            )),
+            unfocused_mode: UpdateMode::reactive(std::time::Duration::from_secs_f32(
+                1.0 / DEFAULT_FPS as f32,
+            )),
+        })
         .add_systems(
             Startup,
             (

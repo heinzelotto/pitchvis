@@ -3,11 +3,13 @@ use bevy::asset::AssetMetaCheck;
 use bevy::diagnostic::FrameTimeDiagnosticsPlugin;
 use bevy::prelude::*;
 use bevy::sprite::Material2dPlugin;
+use bevy::winit::UpdateMode;
+use bevy::winit::WinitSettings;
 
 use super::common::analysis_text_showhide;
 use super::common::close_on_esc;
 use super::common::fps_counter_showhide;
-use super::common::frame_limiter_system;
+use super::common::set_frame_limiter_system;
 use super::common::setup_analysis_text;
 use super::common::setup_bloom_ui;
 use super::common::setup_fps_counter;
@@ -16,6 +18,7 @@ use super::common::update_bloom_settings;
 use super::common::update_fps_text_system;
 use super::common::user_input_system;
 use super::common::ActiveTouches;
+use super::common::CurrentFpsLimit;
 use super::common::SettingsState;
 use crate::analysis_system;
 use crate::audio_system;
@@ -25,6 +28,7 @@ use pitchvis_analysis::vqt::VqtParameters;
 use pitchvis_audio::AudioStream;
 
 const BUFSIZE: usize = 2 * 16384;
+const DEFAULT_FPS: u32 = 60;
 
 /// This enum is used to control the audio stream. It is sent to the audio thread via a channel. This allows us to control the audio stream from the bevy thread.
 // enum AudioControl {
@@ -83,11 +87,20 @@ pub fn main_fun() -> Result<()> {
             pitchvis_analysis::analysis::AnalysisParameters::default(),
         ),
     ))
+    .insert_resource(ActiveTouches::default())
     .insert_resource(SettingsState {
         display_mode: display_system::DisplayMode::PitchnamesCalmness,
-        fps_limit: None,
+        fps_limit: Some(DEFAULT_FPS),
     })
-    .insert_resource(ActiveTouches::default());
+    .insert_resource(CurrentFpsLimit(Some(DEFAULT_FPS)))
+    .insert_resource(WinitSettings {
+        focused_mode: UpdateMode::reactive(std::time::Duration::from_secs_f32(
+            1.0 / DEFAULT_FPS as f32,
+        )),
+        unfocused_mode: UpdateMode::reactive(std::time::Duration::from_secs_f32(
+            1.0 / DEFAULT_FPS as f32,
+        )),
+    });
 
     #[cfg(feature = "ml")]
     app.insert_resource(ml_model_resource);
@@ -113,7 +126,7 @@ pub fn main_fun() -> Result<()> {
                 update_bloom_settings.after(update_analysis_state_system),
                 update_analysis_text_system.after(update_analysis_state_system),
                 analysis_text_showhide,
-                frame_limiter_system,
+                set_frame_limiter_system,
                 update_display_system.after(update_analysis_state_system),
             ),
         );

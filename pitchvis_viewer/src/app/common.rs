@@ -1,3 +1,5 @@
+use bevy::winit::UpdateMode;
+use bevy::winit::WinitSettings;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -23,6 +25,32 @@ use bevy::prelude::*;
 pub struct SettingsState {
     pub display_mode: display_system::DisplayMode,
     pub fps_limit: Option<u32>,
+}
+#[derive(Resource)]
+pub struct CurrentFpsLimit(pub Option<u32>);
+
+pub fn set_frame_limiter_system(
+    mut current_limit: ResMut<CurrentFpsLimit>,
+    mut winit_settings: ResMut<WinitSettings>,
+    settings: Res<SettingsState>,
+) {
+    if settings.fps_limit != current_limit.0 {
+        current_limit.0 = settings.fps_limit;
+        *winit_settings = match settings.fps_limit {
+            Some(fps) => WinitSettings {
+                focused_mode: UpdateMode::reactive(std::time::Duration::from_secs_f32(
+                    1.0 / fps as f32,
+                )),
+                unfocused_mode: UpdateMode::reactive(std::time::Duration::from_secs_f32(
+                    1.0 / fps as f32,
+                )),
+            },
+            None => WinitSettings {
+                focused_mode: UpdateMode::Continuous,
+                unfocused_mode: UpdateMode::Continuous,
+            },
+        };
+    }
 }
 
 /// Marker to find the container entity so we can show/hide the FPS counter
@@ -405,16 +433,6 @@ pub fn update_bloom_settings(
         }
         bloom_settings.prefilter.threshold_softness =
             bloom_settings.prefilter.threshold_softness.clamp(0.0, 1.0);
-    }
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-pub fn frame_limiter_system(settings: Res<SettingsState>) {
-    if let Some(fps) = settings.fps_limit {
-        use std::{thread, time};
-        thread::sleep(time::Duration::from_micros(
-            (1_000_000 / fps as u64).saturating_sub(5_000),
-        ));
     }
 }
 
