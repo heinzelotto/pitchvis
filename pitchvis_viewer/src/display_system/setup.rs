@@ -1,6 +1,6 @@
 use super::util::calculate_spiral_points;
-use super::CylinderEntityListResource;
 use super::{material::NoisyColorMaterial, LineList, PitchBall, PitchNameText, Spectrum};
+use super::{CylinderEntityListResource, SpiderNetSegment, CLEAR_COLOR_NEUTRAL};
 use bevy::core_pipeline::bloom::{Bloom, BloomPrefilter};
 use bevy::{
     core_pipeline::{bloom::BloomCompositeMode, tonemapping::Tonemapping},
@@ -160,6 +160,7 @@ fn spawn_spider_net(
         })
         .collect();
     commands.spawn((
+        SpiderNetSegment,
         Mesh2d(meshes.add(Mesh::from(LineList {
             lines: line_list,
             thickness: 0.05,
@@ -182,6 +183,7 @@ fn spawn_spider_net(
         thickness: 0.05,
     };
     commands.spawn((
+        SpiderNetSegment,
         Mesh2d(meshes.add(spiral_mesh).into()),
         MeshMaterial2d(color_materials.add(Color::srgb(0.3, 0.3, 0.3))),
         Transform::from_xyz(0.0, 0.0, -13.0),
@@ -249,7 +251,7 @@ fn spawn_camera(commands: &mut Commands) {
             hdr: true,
             // renders after / on top of the main camera
             order: 1,
-            clear_color: ClearColorConfig::Custom(Color::srgb(0.23, 0.23, 0.25)),
+            clear_color: CLEAR_COLOR_NEUTRAL,
             ..default()
         },
         Tonemapping::SomewhatBoringDisplayTransform,

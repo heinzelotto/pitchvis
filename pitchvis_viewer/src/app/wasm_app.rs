@@ -5,18 +5,22 @@ use bevy::prelude::*;
 use bevy::sprite::Material2dPlugin;
 use bevy::window::PresentMode;
 use bevy::winit::{UpdateMode, WinitSettings};
+use bevy_persistent::Persistent;
+use bevy_persistent::StorageFormat;
 use pitchvis_analysis::analysis::{AnalysisParameters, AnalysisState};
 use wasm_bindgen::prelude::*;
 
 use super::common::analysis_text_showhide;
+use super::common::button_showhide;
 use super::common::fps_counter_showhide;
 use super::common::set_frame_limiter_system;
 use super::common::setup_analysis_text;
+use super::common::setup_buttons;
 use super::common::setup_fps_counter;
 use super::common::update_analysis_text_system;
+use super::common::update_button_system;
 use super::common::update_fps_text_system;
 use super::common::user_input_system;
-use super::common::ActiveTouches;
 use super::common::CurrentFpsLimit;
 use super::common::SettingsState;
 use super::common::{close_on_esc, setup_bloom_ui, update_bloom_settings};
@@ -34,6 +38,8 @@ const DEFAULT_FPS: u32 = 60;
 // wasm main function
 #[wasm_bindgen]
 pub async fn main_fun() -> Result<(), JsValue> {
+    let config_dir = PathBuf::from("local").join("configuration");
+
     let vqt_parameters = VqtParameters::default();
 
     let audio_stream = pitchvis_audio::async_new_audio_stream(vqt_parameters.sr as u32, BUFSIZE)
@@ -85,15 +91,19 @@ pub async fn main_fun() -> Result<(), JsValue> {
             AnalysisParameters::default(),
         )))
         .insert_resource(CylinderEntityListResource(Vec::new()))
-        .insert_resource(SettingsState {
-            display_mode: DisplayMode::PitchnamesCalmness,
-            fps_limit: None,
-        })
-        .insert_resource(ActiveTouches::default())
-        .insert_resource(SettingsState {
-            display_mode: display_system::DisplayMode::PitchnamesCalmness,
-            fps_limit: Some(DEFAULT_FPS),
-        })
+        .insert_resource(
+            Persistent::<SettingsState>::builder()
+                .name("settings")
+                .format(StorageFormat::Json)
+                .path(config_dir.join("settings.json"))
+                .default(SettingsState {
+                    display_mode: display_system::DisplayMode::Normal,
+                    visuals_mode: display_system::VisualsMode::Full,
+                    fps_limit: Some(DEFAULT_FPS),
+                })
+                .build()
+                .expect("failed to initialize key bindings"),
+        )
         .insert_resource(CurrentFpsLimit(Some(DEFAULT_FPS)))
         .insert_resource(WinitSettings {
             focused_mode: UpdateMode::reactive(std::time::Duration::from_secs_f32(
@@ -108,6 +118,7 @@ pub async fn main_fun() -> Result<(), JsValue> {
             (
                 display_system::setup_display_to_system(&vqt_parameters.range),
                 setup_fps_counter,
+                setup_buttons,
                 setup_bloom_ui,
                 setup_analysis_text,
             ),
@@ -118,9 +129,11 @@ pub async fn main_fun() -> Result<(), JsValue> {
                 close_on_esc,
                 update_vqt_system,
                 update_analysis_state_system.after(update_vqt_system),
-                user_input_system,
                 update_fps_text_system.after(update_vqt_system),
                 fps_counter_showhide,
+                update_button_system,
+                button_showhide,
+                user_input_system.after(update_button_system),
                 update_bloom_settings.after(update_analysis_state_system),
                 update_analysis_text_system.after(update_analysis_state_system),
                 analysis_text_showhide,

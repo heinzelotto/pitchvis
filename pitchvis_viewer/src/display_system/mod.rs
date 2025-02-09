@@ -11,12 +11,18 @@ use bevy::{
         render_asset::RenderAssetUsages,
     },
 };
+use bevy_persistent::Persistent;
 use material::NoisyColorMaterial;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     analysis_system::AnalysisStateResource, app::SettingsState, vqt_system::VqtResultResource,
 };
 use pitchvis_analysis::vqt::VqtRange;
+
+const CLEAR_COLOR_NEUTRAL: ClearColorConfig =
+    ClearColorConfig::Custom(Color::srgb(0.23, 0.23, 0.25));
+const CLEAR_COLOR_GALAXY: ClearColorConfig = ClearColorConfig::Custom(Color::srgb(0.05, 0.0, 0.05));
 
 #[derive(Component)]
 pub struct PitchBall(usize);
@@ -25,17 +31,27 @@ pub struct PitchBall(usize);
 pub struct BassCylinder;
 
 #[derive(Component)]
+pub struct SpiderNetSegment;
+
+#[derive(Component)]
 pub struct Spectrum;
 
 #[derive(Component)]
 pub struct PitchNameText;
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Serialize, Deserialize)]
 pub enum DisplayMode {
-    PitchnamesCalmness,
-    Calmness,
+    Normal,
     Debugging,
     // TODO: add a state with low display fidelity for weaker devices
+}
+
+// TODO: make use of state transitions
+#[derive(States, Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum VisualsMode {
+    Full,
+    Zen,    // no pitch names
+    Galaxy, // pitch balls only, black background
 }
 
 /// keep an index -> entity mapping for the cylinders
@@ -75,6 +91,7 @@ pub fn setup_display_to_system(
 // us some extra fps opposed to dereferencing all Mut's and passing the inner values, thus marking
 // them changed.
 #[allow(clippy::type_complexity)]
+// TODO: refactor into plugin that owns the settings state, so we can make use of the bevy States transition functionality
 pub fn update_display_to_system(
     range: &VqtRange,
 ) -> impl FnMut(
@@ -92,6 +109,7 @@ pub fn update_display_to_system(
         )>,
         Query<(&PitchNameText, &mut Visibility)>,
         Query<(&mut Visibility, &Mesh2d, &mut Transform), With<Spectrum>>,
+        Query<&mut Visibility, With<SpiderNetSegment>>,
     )>,
     ResMut<Assets<ColorMaterial>>,
     ResMut<Assets<NoisyColorMaterial>>,
@@ -99,9 +117,9 @@ pub fn update_display_to_system(
     Res<AnalysisStateResource>,
     Res<VqtResultResource>,
     Res<CylinderEntityListResource>,
-    Res<SettingsState>,
+    Res<Persistent<SettingsState>>,
     Res<Time>,
-    Query<(&Camera, Option<&mut Bloom>, Ref<OrthographicProjection>)>,
+    Query<(&mut Camera, Option<&mut Bloom>, Ref<OrthographicProjection>)>,
 ) {
     let range = range.clone();
     move |set: ParamSet<(
@@ -118,6 +136,7 @@ pub fn update_display_to_system(
         )>,
         Query<(&PitchNameText, &mut Visibility)>,
         Query<(&mut Visibility, &Mesh2d, &mut Transform), With<Spectrum>>,
+        Query<&mut Visibility, With<SpiderNetSegment>>,
     )>,
           color_materials: ResMut<Assets<ColorMaterial>>,
           noisy_color_materials: ResMut<Assets<NoisyColorMaterial>>,
@@ -125,9 +144,9 @@ pub fn update_display_to_system(
           analysis_state: Res<AnalysisStateResource>,
           vqt_result: Res<VqtResultResource>,
           cylinder_entities: Res<CylinderEntityListResource>,
-          settings_state: Res<SettingsState>,
+          settings_state: Res<Persistent<SettingsState>>,
           run_time: Res<Time>,
-          camera: Query<(&Camera, Option<&mut Bloom>, Ref<OrthographicProjection>)>| {
+          camera: Query<(&mut Camera, Option<&mut Bloom>, Ref<OrthographicProjection>)>| {
         update::update_display(
             &range,
             set,

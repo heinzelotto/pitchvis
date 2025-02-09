@@ -8,6 +8,8 @@ use bevy::sprite::Material2dPlugin;
 use bevy::window::AppLifecycle;
 use bevy::winit::UpdateMode;
 use bevy::winit::WinitSettings;
+use bevy_persistent::Persistent;
+use bevy_persistent::StorageFormat;
 use jni::{
     objects::{JObject, JValue},
     sys::{jobject, jstring},
@@ -17,19 +19,22 @@ use oboe::{
     AudioInputCallback, AudioInputStreamSafe, AudioStream, AudioStreamBuilder, DataCallbackResult,
     Input, InputPreset, Mono, PerformanceMode, SampleRateConversionQuality, SharingMode,
 };
+use std::path::PathBuf;
 
 use super::common::analysis_text_showhide;
+use super::common::button_showhide;
 use super::common::close_on_esc;
 use super::common::fps_counter_showhide;
 use super::common::set_frame_limiter_system;
 use super::common::setup_analysis_text;
 use super::common::setup_bloom_ui;
+use super::common::setup_buttons;
 use super::common::setup_fps_counter;
 use super::common::update_analysis_text_system;
 use super::common::update_bloom_settings;
+use super::common::update_button_system;
 use super::common::update_fps_text_system;
 use super::common::user_input_system;
-use super::common::ActiveTouches;
 use super::common::CurrentFpsLimit;
 use super::common::SettingsState;
 use crate::analysis_system;
@@ -211,6 +216,8 @@ fn main() -> AppExit {
 
     // env_logger::init();
 
+    let config_dir = PathBuf::from("/data/data/org.p1graph.pitchvis/files/");
+
     if !microphone_permission_granted("android.permission.RECORD_AUDIO") {
         log::info!("requesting microphone permission");
         request_microphone_permission(
@@ -313,11 +320,19 @@ fn main() -> AppExit {
     ))
     .insert_resource(display_system::CylinderEntityListResource(Vec::new()))
     // .insert_resource(AudioControlChannelResource(audio_control_channel_tx))
-    .insert_resource(ActiveTouches::default())
-    .insert_resource(SettingsState {
-        display_mode: display_system::DisplayMode::PitchnamesCalmness,
-        fps_limit: Some(DEFAULT_FPS),
-    })
+    .insert_resource(
+        Persistent::<SettingsState>::builder()
+            .name("settings")
+            .format(StorageFormat::Toml)
+            .path(config_dir.join("settings.toml"))
+            .default(SettingsState {
+                display_mode: display_system::DisplayMode::Normal,
+                visuals_mode: display_system::VisualsMode::Full,
+                fps_limit: Some(DEFAULT_FPS),
+            })
+            .build()
+            .expect("failed to initialize key bindings"),
+    )
     .insert_resource(CurrentFpsLimit(Some(DEFAULT_FPS)))
     .insert_resource(WinitSettings {
         focused_mode: UpdateMode::reactive(std::time::Duration::from_secs_f32(
@@ -333,6 +348,7 @@ fn main() -> AppExit {
         (
             display_system::setup_display_to_system(&vqt_parameters.range),
             setup_fps_counter,
+            setup_buttons,
             setup_bloom_ui,
             setup_analysis_text,
         ),
@@ -343,12 +359,14 @@ fn main() -> AppExit {
             close_on_esc,
             set_frame_limiter_system,
             update_vqt_system,
-            user_input_system,
             handle_lifetime_events_system,
             update_analysis_state_system.after(update_vqt_system),
             update_display_system.after(update_analysis_state_system),
             update_fps_text_system.after(update_vqt_system),
             fps_counter_showhide,
+            update_button_system,
+            button_showhide,
+            user_input_system.after(update_button_system),
             update_analysis_text_system.after(update_analysis_state_system),
             analysis_text_showhide,
             update_bloom_settings.after(update_analysis_state_system),

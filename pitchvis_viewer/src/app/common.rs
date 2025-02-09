@@ -1,12 +1,8 @@
 use bevy::winit::UpdateMode;
 use bevy::winit::WinitSettings;
-use std::collections::HashMap;
-use std::sync::Arc;
-use std::sync::Mutex;
-#[cfg(not(target_arch = "wasm32"))]
-use std::time::Instant;
-#[cfg(target_arch = "wasm32")]
-use web_time::Instant;
+use bevy_persistent::Persistent;
+use serde::Deserialize;
+use serde::Serialize;
 
 use crate::analysis_system::AnalysisStateResource;
 use crate::audio_system::AudioBufferResource;
@@ -21,9 +17,10 @@ use bevy::input::mouse::MouseButtonInput;
 use bevy::input::touch::TouchPhase;
 use bevy::prelude::*;
 
-#[derive(Resource)]
+#[derive(Resource, Serialize, Deserialize)]
 pub struct SettingsState {
     pub display_mode: display_system::DisplayMode,
+    pub visuals_mode: display_system::VisualsMode,
     pub fps_limit: Option<u32>,
 }
 #[derive(Resource)]
@@ -32,7 +29,7 @@ pub struct CurrentFpsLimit(pub Option<u32>);
 pub fn set_frame_limiter_system(
     mut current_limit: ResMut<CurrentFpsLimit>,
     mut winit_settings: ResMut<WinitSettings>,
-    settings: Res<SettingsState>,
+    settings: Res<Persistent<SettingsState>>,
 ) {
     if settings.fps_limit != current_limit.0 {
         current_limit.0 = settings.fps_limit;
@@ -138,7 +135,7 @@ pub fn update_fps_text_system(
     diagnostics: Res<DiagnosticsStore>,
     query: Query<Entity, With<FpsRoot>>,
     mut writer: TextUiWriter,
-    settings: Res<SettingsState>,
+    settings: Res<Persistent<SettingsState>>,
     audio_buffer: Res<AudioBufferResource>,
     vqt: Res<VqtResource>,
 ) {
@@ -200,7 +197,7 @@ pub fn update_fps_text_system(
 /// Toggle the FPS counter based on the display mode
 pub fn fps_counter_showhide(
     mut q: Query<&mut Visibility, With<FpsRoot>>,
-    settings: Res<SettingsState>,
+    settings: Res<Persistent<SettingsState>>,
 ) {
     let mut vis = q.single_mut();
     if settings.display_mode == display_system::DisplayMode::Debugging {
@@ -287,7 +284,7 @@ pub fn update_analysis_text_system(
 /// Toggle the FPS counter based on the display mode
 pub fn analysis_text_showhide(
     mut q: Query<&mut Visibility, With<AnalysisRoot>>,
-    settings: Res<SettingsState>,
+    settings: Res<Persistent<SettingsState>>,
 ) {
     // TODO: move all showhides into one system that updates the scene based on the display mode
     let mut vis = q.single_mut();
@@ -331,7 +328,7 @@ pub fn update_bloom_settings(
     mut text: Query<(&mut Text, &mut Visibility), With<BloomSettingsText>>,
     keycode: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
-    settings: Res<SettingsState>,
+    settings: Res<Persistent<SettingsState>>,
 ) {
     let mut text = text.single_mut();
     if settings.display_mode != display_system::DisplayMode::Debugging {
@@ -436,11 +433,176 @@ pub fn update_bloom_settings(
     }
 }
 
+/// Marker to find the container entity so we can show/hide the Buttons
+#[derive(Component)]
+pub struct ButtonRoot;
+
+#[derive(Component)]
+pub enum ButtonAction {
+    VisualsMode,
+    FpsLimit,
+}
+
+#[derive(Component)]
+struct ConsumesPressEvents;
+
+#[derive(Resource, Default)]
+pub struct PressEventConsumed(bool);
+
+pub fn setup_buttons(mut commands: Commands, settings: Res<Persistent<SettingsState>>) {
+    let button_node = Node {
+        justify_content: JustifyContent::Center,
+        align_items: AlignItems::Center,
+        border: UiRect::all(Val::Px(5.0)),
+        padding: UiRect::all(Val::Px(4.0)),
+        margin: UiRect::all(Val::Px(4.0)),
+        ..default()
+    };
+    let text_font = TextFont {
+        font_size: 16.0,
+        ..default()
+    };
+
+    // create our UI root node
+    // this is the wrapper/container for the text
+    commands
+        .spawn((
+            ButtonRoot,
+            Node {
+                position_type: PositionType::Absolute,
+                left: Val::Percent(1.),
+                top: Val::Percent(35.),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                padding: UiRect::all(Val::Px(4.0)),
+                margin: UiRect::all(Val::Px(4.0)),
+                flex_direction: FlexDirection::Column,
+                ..default()
+            },
+            ZIndex(i32::MAX),
+            Visibility::Visible,
+        ))
+        .with_children(|parent| {
+            parent
+                .spawn((
+                    Button,
+                    Node {
+                        ..button_node.clone()
+                    },
+                    BackgroundColor(Color::srgba(0.0, 0.2, 0.0, 0.5)),
+                    BorderColor(Color::srgb(0.0, 0.5, 0.0)),
+                    BorderRadius::MAX,
+                    ButtonAction::VisualsMode,
+                ))
+                .insert(ConsumesPressEvents)
+                .with_child((
+                    Text::new(format!(
+                        "Visuals Mode: {}",
+                        match settings.visuals_mode {
+                            display_system::VisualsMode::Full => "Full",
+                            display_system::VisualsMode::Zen => "Zen",
+                            display_system::VisualsMode::Galaxy => "Galaxy",
+                        }
+                    )),
+                    TextColor(Color::WHITE),
+                    text_font.clone(),
+                ));
+            parent
+                .spawn((
+                    Button,
+                    Node {
+                        ..button_node.clone()
+                    },
+                    BackgroundColor(Color::srgba(0.0, 0.2, 0.0, 0.5)),
+                    BorderColor(Color::srgb(0.0, 0.5, 0.0)),
+                    BorderRadius::MAX,
+                    ButtonAction::FpsLimit,
+                ))
+                .insert(ConsumesPressEvents)
+                .with_child((
+                    Text::new(if let Some(fps_limit) = settings.fps_limit {
+                        format!("FPS Limit: {}", fps_limit)
+                    } else {
+                        format!("FPS Limit: None")
+                    }),
+                    TextColor(Color::WHITE),
+                    text_font.clone(),
+                ));
+        });
+    commands.insert_resource(PressEventConsumed(false));
+}
+
+pub fn update_button_system(
+    interaction_query: Query<
+        (&Interaction, &ButtonAction, &Children),
+        (Changed<Interaction>, With<Button>),
+    >,
+    mut settings: ResMut<Persistent<SettingsState>>,
+    mut text_query: Query<&mut Text>,
+    mut mouse_consumed: ResMut<PressEventConsumed>,
+) {
+    for (interaction, button_action, children) in &interaction_query {
+        if *interaction == Interaction::Pressed {
+            mouse_consumed.0 = true;
+            let mut text = text_query.get_mut(children[0]).unwrap();
+            match button_action {
+                ButtonAction::VisualsMode => {
+                    settings
+                        .update(|settings| {
+                            cycle_visuals_mode(&mut settings.visuals_mode);
+                        })
+                        .expect("failed to update settings");
+                    **text = format!(
+                        "Visuals Mode: {}",
+                        match settings.visuals_mode {
+                            display_system::VisualsMode::Full => "Full",
+                            display_system::VisualsMode::Zen => "Zen",
+                            display_system::VisualsMode::Galaxy => "Galaxy",
+                        }
+                    );
+                }
+                ButtonAction::FpsLimit => {
+                    settings
+                        .update(|settings| {
+                            cycle_fps_limit(&mut settings.fps_limit);
+                        })
+                        .expect("failed to update settings");
+                    if let Some(fps_limit) = settings.fps_limit {
+                        **text = format!("FPS Limit: {}", fps_limit);
+                    } else {
+                        **text = format!("FPS Limit: None");
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Toggle the FPS counter based on the display mode
+pub fn button_showhide(
+    mut q: Query<&mut Visibility, With<ButtonRoot>>,
+    settings: Res<Persistent<SettingsState>>,
+) {
+    let mut vis = q.single_mut();
+    if settings.display_mode == display_system::DisplayMode::Debugging {
+        *vis = Visibility::Visible;
+    } else {
+        *vis = Visibility::Hidden;
+    }
+}
+
 fn cycle_display_mode(mode: &mut display_system::DisplayMode) {
     *mode = match mode {
-        display_system::DisplayMode::PitchnamesCalmness => display_system::DisplayMode::Calmness,
-        display_system::DisplayMode::Calmness => display_system::DisplayMode::Debugging,
-        display_system::DisplayMode::Debugging => display_system::DisplayMode::PitchnamesCalmness,
+        display_system::DisplayMode::Normal => display_system::DisplayMode::Debugging,
+        display_system::DisplayMode::Debugging => display_system::DisplayMode::Normal,
+    }
+}
+
+fn cycle_visuals_mode(mode: &mut display_system::VisualsMode) {
+    *mode = match mode {
+        display_system::VisualsMode::Full => display_system::VisualsMode::Zen,
+        display_system::VisualsMode::Zen => display_system::VisualsMode::Galaxy,
+        display_system::VisualsMode::Galaxy => display_system::VisualsMode::Full,
     }
 }
 
@@ -452,44 +614,26 @@ fn cycle_fps_limit(fps_limit: &mut Option<u32>) {
     };
 }
 
-#[derive(Resource, Default)]
-pub struct ActiveTouches(Arc<Mutex<HashMap<u64, Instant>>>);
-
 pub fn user_input_system(
     mut touch_events: EventReader<TouchInput>,
-    active_touches: Res<ActiveTouches>,
     mut keyboard_input_events: EventReader<KeyboardInput>,
     mut mouse_button_input_events: EventReader<MouseButtonInput>,
-    mut settings: ResMut<SettingsState>,
+    mut settings: ResMut<Persistent<SettingsState>>,
+    mouse_consumed: Res<PressEventConsumed>,
+    mut commands: Commands,
 ) {
-    const LONG_PRESS_DURATION: f32 = 1.0;
-    // trigger fps limit change immediately after long press duration even if touch is still held
-    active_touches.0.lock().unwrap().retain(|_, touch_start| {
-        if touch_start.elapsed().as_secs_f32() >= LONG_PRESS_DURATION {
-            cycle_fps_limit(&mut settings.fps_limit);
-            false
-        } else {
-            true
-        }
-    });
-
     for touch in touch_events.read() {
         match touch.phase {
-            TouchPhase::Started => {
-                active_touches
-                    .0
-                    .lock()
-                    .unwrap()
-                    .insert(touch.id, Instant::now());
-            }
             TouchPhase::Ended => {
-                // trigger display mode change on touch release only
-                let touch_start = active_touches.0.lock().unwrap().remove(&touch.id);
-                if let Some(touch_start) = touch_start {
-                    if touch_start.elapsed().as_secs_f32() < LONG_PRESS_DURATION {
-                        cycle_display_mode(&mut settings.display_mode);
-                    }
+                if !mouse_consumed.0 {
+                    settings
+                        .update(|settings| {
+                            cycle_display_mode(&mut settings.display_mode);
+                        })
+                        .expect("failed to update settings");
                 }
+                // reset the consumed state for the next frame
+                commands.insert_resource(PressEventConsumed(false));
             }
             _ => {}
         }
@@ -499,7 +643,11 @@ pub fn user_input_system(
         if keyboard_input.state.is_pressed() {
             match keyboard_input.key_code {
                 KeyCode::Space => {
-                    cycle_display_mode(&mut settings.display_mode);
+                    settings
+                        .update(|settings| {
+                            cycle_display_mode(&mut settings.display_mode);
+                        })
+                        .expect("failed to update settings");
                 }
                 KeyCode::KeyF => cycle_fps_limit(&mut settings.fps_limit),
                 _ => {}
@@ -512,7 +660,15 @@ pub fn user_input_system(
             #[allow(clippy::single_match)]
             match mouse_button_input.button {
                 MouseButton::Left => {
-                    cycle_display_mode(&mut settings.display_mode);
+                    if !mouse_consumed.0 {
+                        settings
+                            .update(|settings| {
+                                cycle_display_mode(&mut settings.display_mode);
+                            })
+                            .expect("failed to update settings");
+                    }
+                    // reset the consumed state for the next frame
+                    commands.insert_resource(PressEventConsumed(false));
                 }
                 _ => {}
             }

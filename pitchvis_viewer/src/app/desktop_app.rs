@@ -5,19 +5,23 @@ use bevy::prelude::*;
 use bevy::sprite::Material2dPlugin;
 use bevy::winit::UpdateMode;
 use bevy::winit::WinitSettings;
+use bevy_persistent::Persistent;
+use bevy_persistent::StorageFormat;
 
 use super::common::analysis_text_showhide;
+use super::common::button_showhide;
 use super::common::close_on_esc;
 use super::common::fps_counter_showhide;
 use super::common::set_frame_limiter_system;
 use super::common::setup_analysis_text;
 use super::common::setup_bloom_ui;
+use super::common::setup_buttons;
 use super::common::setup_fps_counter;
 use super::common::update_analysis_text_system;
 use super::common::update_bloom_settings;
+use super::common::update_button_system;
 use super::common::update_fps_text_system;
 use super::common::user_input_system;
-use super::common::ActiveTouches;
 use super::common::CurrentFpsLimit;
 use super::common::SettingsState;
 use crate::analysis_system;
@@ -42,6 +46,9 @@ const DEFAULT_FPS: u32 = 60;
 // desktop main function
 pub fn main_fun() -> Result<()> {
     env_logger::init();
+
+    // for config file
+    let config_dir = dirs::config_dir().unwrap().join("pitchvis");
 
     let vqt_parameters: VqtParameters = VqtParameters::default();
 
@@ -87,11 +94,19 @@ pub fn main_fun() -> Result<()> {
             pitchvis_analysis::analysis::AnalysisParameters::default(),
         ),
     ))
-    .insert_resource(ActiveTouches::default())
-    .insert_resource(SettingsState {
-        display_mode: display_system::DisplayMode::PitchnamesCalmness,
-        fps_limit: Some(DEFAULT_FPS),
-    })
+    .insert_resource(
+        Persistent::<SettingsState>::builder()
+            .name("settings")
+            .format(StorageFormat::Toml)
+            .path(config_dir.join("settings.toml"))
+            .default(SettingsState {
+                display_mode: display_system::DisplayMode::Normal,
+                visuals_mode: display_system::VisualsMode::Full,
+                fps_limit: Some(DEFAULT_FPS),
+            })
+            .build()
+            .expect("failed to initialize key bindings"),
+    )
     .insert_resource(CurrentFpsLimit(Some(DEFAULT_FPS)))
     .insert_resource(WinitSettings {
         focused_mode: UpdateMode::reactive(std::time::Duration::from_secs_f32(
@@ -110,6 +125,7 @@ pub fn main_fun() -> Result<()> {
             (
                 display_system::setup_display_to_system(&vqt_parameters.range),
                 setup_fps_counter,
+                setup_buttons,
                 setup_bloom_ui,
                 setup_analysis_text,
             ),
@@ -120,9 +136,11 @@ pub fn main_fun() -> Result<()> {
                 close_on_esc,
                 update_vqt_system,
                 update_analysis_state_system.after(update_vqt_system),
-                user_input_system,
                 update_fps_text_system.after(update_vqt_system),
                 fps_counter_showhide,
+                update_button_system,
+                button_showhide,
+                user_input_system.after(update_button_system),
                 update_bloom_settings.after(update_analysis_state_system),
                 update_analysis_text_system.after(update_analysis_state_system),
                 analysis_text_showhide,

@@ -1,8 +1,10 @@
 use super::{
     material::NoisyColorMaterial, util::bin_to_spiral, BassCylinder, CylinderEntityListResource,
-    DisplayMode, LineList, PitchBall, PitchNameText, Spectrum,
+    DisplayMode, LineList, PitchBall, PitchNameText, Spectrum, SpiderNetSegment, VisualsMode,
+    CLEAR_COLOR_GALAXY, CLEAR_COLOR_NEUTRAL,
 };
 use bevy::{core_pipeline::bloom::Bloom, prelude::*};
+use bevy_persistent::Persistent;
 use itertools::Itertools;
 use std::collections::HashMap;
 
@@ -36,6 +38,7 @@ pub fn update_display(
         )>,
         Query<(&PitchNameText, &mut Visibility)>,
         Query<(&mut Visibility, &Mesh2d, &mut Transform), With<Spectrum>>,
+        Query<&mut Visibility, With<SpiderNetSegment>>,
     )>,
     mut color_materials: ResMut<Assets<ColorMaterial>>,
     mut noisy_color_materials: ResMut<Assets<NoisyColorMaterial>>,
@@ -43,10 +46,10 @@ pub fn update_display(
     analysis_state: Res<AnalysisStateResource>,
     vqt_result: Res<VqtResultResource>,
     cylinder_entities: Res<CylinderEntityListResource>,
-    settings_state: Res<SettingsState>,
+    settings_state: Res<Persistent<SettingsState>>,
     run_time: Res<Time>,
     mut camera: Query<(
-        &Camera,
+        &mut Camera,
         Option<&mut Bloom>,
         Ref<OrthographicProjection>, // Ref because we want to check `is_changed` later
     )>,
@@ -75,6 +78,7 @@ pub fn update_display(
         set.p1(),
         &mut color_materials,
         &cylinder_entities,
+        &settings_state,
         &analysis_state.peaks_continuous,
         range.buckets_per_octave,
     );
@@ -89,6 +93,10 @@ pub fn update_display(
     );
 
     show_hide_pitch_names(set.p2(), &settings_state);
+
+    show_hide_spider_net(set.p4(), &settings_state);
+
+    toggle_background(&mut camera, &settings_state);
 }
 
 fn fade_pitch_balls(
@@ -144,7 +152,7 @@ fn update_pitch_balls(
     )>,
     noisy_color_materials: &mut ResMut<Assets<NoisyColorMaterial>>,
     run_time: &Res<Time>,
-    settings_state: &Res<SettingsState>,
+    settings_state: &Res<Persistent<SettingsState>>,
     analysis_state: &AnalysisState,
     range: &VqtRange,
 ) {
@@ -207,8 +215,7 @@ fn update_pitch_balls(
 
             // set calmness visual effect.
             // FIXME: Usually we see values of 0.75 for very calm notes... Fix this to be more intuitive.
-            if settings_state.display_mode == DisplayMode::PitchnamesCalmness
-                || settings_state.display_mode == DisplayMode::Calmness
+            if settings_state.display_mode == DisplayMode::Normal
                 || settings_state.display_mode == DisplayMode::Debugging
             {
                 color_mat.params.calmness =
@@ -259,7 +266,7 @@ fn update_pitch_balls(
 }
 
 fn update_bloom(
-    camera: &mut Query<(&Camera, Option<&mut Bloom>, Ref<OrthographicProjection>)>,
+    camera: &mut Query<(&mut Camera, Option<&mut Bloom>, Ref<OrthographicProjection>)>,
     analysis_state: &AnalysisState,
 ) {
     if let (_, Some(mut bloom_settings), _) = camera.single_mut() {
@@ -276,6 +283,7 @@ fn update_bass_spiral(
     )>,
     materials: &mut ResMut<Assets<ColorMaterial>>,
     cylinder_entities: &Res<CylinderEntityListResource>,
+    settings_state: &Res<Persistent<SettingsState>>,
     peaks_continuous: &[ContinuousPeak],
     buckets_per_octave: u16,
 ) {
@@ -287,6 +295,9 @@ fn update_bass_spiral(
         if *visibility == Visibility::Visible {
             *visibility = Visibility::Hidden;
         }
+    }
+    if settings_state.visuals_mode == VisualsMode::Galaxy {
+        return;
     }
     // if gain > 1000.0 {
     //     return;
@@ -340,9 +351,9 @@ fn update_bass_spiral(
 
 fn update_spectrum(
     mut spectrum: Query<(&mut Visibility, &Mesh2d, &mut Transform), With<Spectrum>>,
-    camera: &mut Query<(&Camera, Option<&mut Bloom>, Ref<OrthographicProjection>)>,
+    camera: &mut Query<(&mut Camera, Option<&mut Bloom>, Ref<OrthographicProjection>)>,
     meshes: &mut ResMut<Assets<Mesh>>,
-    settings_state: &Res<SettingsState>,
+    settings_state: &Res<Persistent<SettingsState>>,
     vqt_result: &Res<VqtResultResource>,
     range: &VqtRange,
 ) {
@@ -386,17 +397,48 @@ fn update_spectrum(
 
 fn show_hide_pitch_names(
     mut pitch_name_text: Query<(&PitchNameText, &mut Visibility)>,
-    settings_state: &Res<SettingsState>,
+    settings_state: &Res<Persistent<SettingsState>>,
 ) {
     for (_, mut visibility) in &mut pitch_name_text {
-        if settings_state.display_mode == DisplayMode::PitchnamesCalmness
-            || settings_state.display_mode == DisplayMode::Debugging
-        {
+        if settings_state.visuals_mode == VisualsMode::Full {
             *visibility = Visibility::Visible;
         } else {
             *visibility = Visibility::Hidden;
         }
     }
+}
+
+fn show_hide_spider_net(
+    mut spider_net_segments: Query<&mut Visibility, With<SpiderNetSegment>>,
+    settings_state: &Res<Persistent<SettingsState>>, // TODO: ?Changed<SettingsState> possible
+) {
+    let shall_be_visibile = settings_state.visuals_mode == VisualsMode::Full
+        || settings_state.visuals_mode == VisualsMode::Zen;
+    let target_visibility = if shall_be_visibile {
+        Visibility::Visible
+    } else {
+        Visibility::Hidden
+    };
+    let vis = spider_net_segments.iter_mut().next().unwrap();
+    if *vis != target_visibility {
+        for mut visibility in &mut spider_net_segments {
+            *visibility = target_visibility;
+        }
+    }
+}
+
+fn toggle_background(
+    camera: &mut Query<(&mut Camera, Option<&mut Bloom>, Ref<OrthographicProjection>)>,
+    settings_state: &Res<Persistent<SettingsState>>,
+) {
+    let (mut camera, _, _) = camera.single_mut();
+    camera.clear_color = if settings_state.visuals_mode == VisualsMode::Zen
+        || settings_state.visuals_mode == VisualsMode::Full
+    {
+        CLEAR_COLOR_NEUTRAL
+    } else {
+        CLEAR_COLOR_GALAXY
+    };
 }
 
 // #[derive(PartialEq)]
