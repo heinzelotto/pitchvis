@@ -8,6 +8,7 @@ use bevy::winit::{UpdateMode, WinitSettings};
 use bevy_persistent::Persistent;
 use bevy_persistent::StorageFormat;
 use pitchvis_analysis::analysis::{AnalysisParameters, AnalysisState};
+use std::path::PathBuf;
 use wasm_bindgen::prelude::*;
 
 use super::common::analysis_text_showhide;
