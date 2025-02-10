@@ -88,7 +88,7 @@ pub fn setup_fps_counter(mut commands: Commands) {
         ))
         .with_children(|builder| {
             builder.spawn((
-                TextSpan::new("FPS (F/long press to cycle): "),
+                TextSpan::new("FPS: "),
                 TextColor(Color::WHITE),
                 text_font.clone(),
             ));
@@ -649,7 +649,6 @@ pub fn user_input_system(
                         })
                         .expect("failed to update settings");
                 }
-                KeyCode::KeyF => cycle_fps_limit(&mut settings.fps_limit),
                 _ => {}
             }
         }
