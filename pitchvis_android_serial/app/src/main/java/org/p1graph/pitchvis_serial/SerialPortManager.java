@@ -1,4 +1,4 @@
-package co.realfit.agdkcpal;
+package org.p1graph.pitchvis_serial;
 
 import android.content.Context;
 import android.hardware.usb.UsbManager;

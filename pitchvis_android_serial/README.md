@@ -12,5 +12,5 @@ cargo install cargo-ndk
 cargo ndk -t arm64-v8a -o app/src/main/jniLibs/  build
 ./gradlew build
 ./gradlew installDebug
-adb shell am start -n co.realfit.agdkcpal/.MainActivity
+adb shell am start -n org.p1graph.pitchvis_serial/.MainActivity
 ```

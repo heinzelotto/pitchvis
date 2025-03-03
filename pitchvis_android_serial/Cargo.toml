@@ -8,15 +8,17 @@ edition = "2021"
 [dependencies]
 log = "0.4"
 android_logger = "0.11.0"
-android-activity = { version = "0.5", features = ["game-activity"] }
+android-activity = { version = "0.6.0", features = ["game-activity"] }
 atomic_float = "0.1"
 anyhow = "1"
 find_peaks = "0.1.5"
 pitchvis_analysis = { path = "../pitchvis_analysis" }
+pitchvis_audio = { path = "../pitchvis_audio" }
+pitchvis_colors = { path = "../pitchvis_colors" }
 itertools = "0.10.5"
 serialport = "4.2.0"
 #oboe = { version = "0.5.0", features = [ "java-interface", "shared-stdcxx" ] }
-aaudio = "0.1.0"
+oboe = "0.6.1"
 dagc = {version = "0.1.0", path = "../dagc_fork" } # TODO: fork and reference fork as patched dependency
 jni = "0.21.1"
 ndk-context = "0.1.1"

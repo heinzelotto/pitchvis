@@ -1,4 +1,4 @@
-use android_activity::{AndroidApp, InputStatus, MainEvent, PollEvent};
+use android_activity::{AndroidApp};
 //use jni::sys::{jobject, jstring};
 use core::panic;
 use jni::objects::{GlobalRef, JByteArray, JObject, JString, JValue};
@@ -6,8 +6,15 @@ use jni::{
     objects::{JClass, JMethodID, JValueGen},
     JNIEnv, JavaVM,
 };
-use log::{error, info, trace};
+use jni::{
+    sys::{jobject, jstring},
+};
+use log::{info, trace};
 use std::ffi::c_void;
+use oboe::{
+    AudioInputCallback, AudioInputStreamSafe, AudioStream, AudioStreamBuilder, DataCallbackResult,
+    Input, InputPreset, Mono, PerformanceMode, SampleRateConversionQuality, SharingMode,
+};
 //use jni::sys::{JNI_CreateJavaVM, JNI_GetCreatedJavaVMs, JavaVMInitArgs, JavaVMOption, JNI_VERSION_1_6};
 
 // #![no_std]
@@ -15,23 +22,41 @@ use std::ffi::c_void;
 
 use std::time::Duration;
 
-use pitchvis_analysis::{analysis::AnalysisState, util::*};
+use pitchvis_analysis::{
+    analysis::{AnalysisParameters, AnalysisState},
+    util::*,
+    vqt::{VqtParameters, VqtRange},
+};
+use pitchvis_colors::calculate_color;
 // use serialport::SerialPort;
 
 // increasing BUCKETS_PER_SEMITONE or Q will improve frequency resolution at cost of time resolution,
 // increasing GAMMA will improve time resolution at lower frequencies.
-pub const SR: usize = 22050;
-pub const BUFSIZE: usize = 2 * SR;
+pub const SR: u32 = 22050;
+pub const BUFSIZE: usize = 2 * SR as usize;
 pub const N_FFT: usize = 2 * 16384;
 pub const FREQ_A1: f32 = 55.0;
-pub const BUCKETS_PER_SEMITONE: usize = 3;
-pub const BUCKETS_PER_OCTAVE: usize = 12 * BUCKETS_PER_SEMITONE;
-pub const OCTAVES: usize = 5;
+pub const BUCKETS_PER_SEMITONE: u16 = 3;
+pub const BUCKETS_PER_OCTAVE: u16 = 12 * BUCKETS_PER_SEMITONE;
+pub const OCTAVES: u8 = 5;
 pub const SPARSITY_QUANTILE: f32 = 0.999;
-pub const Q: f32 = 10.0;
-pub const GAMMA: f32 = 5.3 * Q;
+pub const Q: f32 = 1.8;
+pub const GAMMA: f32 = 4.8 * Q;
 
-const FPS: u64 = 25;
+const VQT_PARAMETERS: VqtParameters = VqtParameters {
+    sr: SR as f32,
+    n_fft: N_FFT,
+    range: VqtRange {
+        min_freq: FREQ_A1,
+        octaves: OCTAVES,
+        buckets_per_octave: BUCKETS_PER_OCTAVE,
+    },
+    sparsity_quantile: SPARSITY_QUANTILE,
+    quality: Q,
+    gamma: GAMMA,
+};
+
+const FPS: u64 = 30;
 
 // color calculation constants
 pub const COLORS: [[f32; 3]; 12] = [
@@ -57,11 +82,132 @@ struct VqtResult {
 }
 
 impl VqtResult {
-    pub fn new(octaves: usize, buckets_per_octave: usize) -> Self {
+    pub fn new(range: &VqtRange) -> Self {
         Self {
-            x_vqt: vec![0.0; octaves * buckets_per_octave],
+            x_vqt: vec![0.0; range.n_buckets()],
             gain: 1.0,
         }
+    }
+}
+
+fn microphone_permission_granted(perm: &str) -> bool {
+    let ctx = ndk_context::android_context();
+    let jvm = unsafe { JavaVM::from_raw(ctx.vm().cast()) }.unwrap();
+    let mut cth = jvm.attach_current_thread().unwrap();
+
+    let j_permission = cth.new_string(perm).unwrap();
+    let permission_granted = cth
+        .call_method(
+            &unsafe { JObject::from_raw(ctx.context() as jni::sys::jobject) },
+            "checkSelfPermission",
+            "(Ljava/lang/String;)I",
+            &[JValue::try_from(&j_permission).unwrap()],
+        )
+        .unwrap();
+
+    permission_granted.i().unwrap() != -1
+}
+
+pub fn request_microphone_permission(android_app: &AndroidApp, permission: &str) {
+    let jvm = unsafe { JavaVM::from_raw(android_app.vm_as_ptr() as _) }.unwrap();
+    let mut cth = jvm.attach_current_thread().unwrap();
+
+    let j_permission = cth.new_string(permission).unwrap();
+
+    let permissions: Vec<jstring> = vec![j_permission.into_raw()];
+    let permissions_array = cth
+        .new_object_array(
+            permissions.len() as i32,
+            "java/lang/String",
+            JObject::null(),
+        )
+        .unwrap();
+    for (i, permission) in permissions.into_iter().enumerate() {
+        cth.set_object_array_element(&permissions_array, i as i32, unsafe {
+            JObject::from_raw(permission)
+        })
+        .unwrap();
+    }
+
+    let activity = unsafe { JObject::from_raw(android_app.activity_as_ptr() as jobject) };
+    let _res = cth
+        .call_method(
+            activity,
+            "requestPermissions",
+            "([Ljava/lang/String;I)V",
+            &[JValue::Object(&permissions_array), JValue::Int(3)],
+        )
+        .unwrap();
+}
+
+/// This enum is used to control the audio stream. It is sent to the audio thread via a channel. This allows us to control the audio stream from the bevy thread.
+// enum AudioControl {
+//     Play,
+//     Pause,
+// }
+
+// #[derive(Resource)]
+// struct AudioControlChannelResource(std::sync::mpsc::Sender<AudioControl>);
+
+struct AudioCallback {
+    ring_buffer: std::sync::Arc<std::sync::Mutex<pitchvis_audio::RingBuffer>>,
+    agc: dagc::MonoAgc,
+}
+
+impl AudioInputCallback for AudioCallback {
+    type FrameType = (f32, Mono);
+
+    fn on_audio_ready(
+        &mut self,
+        stream: &mut dyn AudioInputStreamSafe,
+        data: &[f32],
+    ) -> DataCallbackResult {
+        // check for invalid samples
+        if let Some(x) = data.iter().find(|x| !x.is_finite()) {
+            log::warn!("bad audio sample encountered: {x}");
+            return DataCallbackResult::Continue;
+        }
+
+        // agc processing
+        let sample_sq_sum = data.iter().map(|x| x.powi(2)).sum::<f32>();
+        self.agc.freeze_gain(sample_sq_sum < 1e-6);
+
+        // update ring buffer
+        let mut rb = self.ring_buffer.lock().expect("locking failed");
+        rb.buf.drain(..data.len());
+        rb.buf.extend_from_slice(data);
+        let begin = rb.buf.len() - data.len();
+        self.agc.process(&mut rb.buf[begin..]);
+        rb.gain = self.agc.gain();
+
+        // calculate latency
+        // use nix::time::{clock_gettime, ClockId};
+        // if let Ok(ts) = stream.get_timestamp(ClockId::CLOCK_MONOTONIC.into()) {
+        //     let app_frame_index = stream.get_frames_read();
+
+        //     // ts is a snapshot. We use the sample rate to calculate the corresponding
+        //     // time of the latest sample we are currently handling.
+        //     let frame_delta = app_frame_index - ts.position;
+        //     let frame_time_delta = frame_delta as f64 / SR as f64 * 1e9;
+        //     let app_frame_in_hardware_time = ts.timestamp + frame_time_delta as i64;
+
+        //     // We assume that the frame we are currently handling is being processed
+        //     // NOW, and calculate the latency by comparing this to the time it originated
+        //     // from the hardware.
+        //     let app_frame_time =
+        //         std::time::Duration::from(clock_gettime(ClockId::CLOCK_MONOTONIC).unwrap())
+        //             .as_nanos();
+        //     let latency_nanos = app_frame_time - app_frame_in_hardware_time as u128;
+
+        //     rb.latency_ms = Some((latency_nanos as f64 / 1e6) as f32);
+        // } else {
+        //     rb.latency_ms = None;
+        // }
+
+        rb.latency_ms = stream.calculate_latency_millis().ok().map(|x| x as f32);
+        rb.chunk_size_ms = data.len() as f32 / stream.get_sample_rate() as f32 * 1000.0;
+
+        DataCallbackResult::Continue
     }
 }
 
@@ -139,7 +285,7 @@ impl SerialPortManager {
             "(Ljava/lang/String;)Ljava/lang/Class;",
         );
         let ble_session_class_name: JObject = env
-            .new_string("co/realfit/agdkcpal/MainActivity")
+            .new_string("org/p1graph/pitchvis_serial/MainActivity")
             .expect("new_string")
             .into();
         // let session_class: JClass = try_call_object_method(env, loader, load_class_method, &[
@@ -163,7 +309,7 @@ impl SerialPortManager {
 
         // Get the class
         //let class = env.find_class("java/lang/String").expect("find_class failed");
-        //let classsss = env.find_class("co/realfit/agdkcpal/MainActivity").expect("find_class failed");
+        //let classsss = env.find_class("org/p1graph/pitchvis_serial/MainActivity").expect("find_class failed");
         //let class: jni::objects::JClass = activity.into();
 
         // Call getSerialPortManager to get the SerialPortManager instance
@@ -171,7 +317,7 @@ impl SerialPortManager {
             .call_static_method(
                 class,
                 "getSerialPortManager",
-                "()Lco/realfit/agdkcpal/SerialPortManager;",
+                "()Lorg/p1graph/pitchvis_serial/SerialPortManager;",
                 &[],
             )
             .expect("call_static_method failed");
@@ -218,12 +364,27 @@ impl SerialPortManager {
 }
 
 fn update_serial(
-    buckets_per_octave: usize,
+    range: &VqtRange,
+    _vqt_result: &VqtResult,
     analysis_state: &AnalysisState,
     serial_port: &mut SerialPortManager,
 ) {
-    let k_max = arg_max(&analysis_state.x_vqt_peakfiltered);
-    let max_size = analysis_state.x_vqt_peakfiltered[k_max];
+    // let vqt = &vqt_result.x_vqt;
+
+    let mut x = vec![0.0_f32; range.n_buckets()];
+    for p in analysis_state.peaks_continuous.iter() {
+        let lower = p.center.floor() as usize;
+        x[lower] = p.size * (1.0 - p.center.fract().powf(1.9));
+        if lower < range.n_buckets() - 1 {
+            x[lower + 1] = p.size * p.center.fract().powf(1.9);
+        }
+        // if *p > 0 {
+        //     x[*p-1] = vqt[*p-1];
+        // }
+    }
+
+    let k_max = arg_max(&x);
+    let max_size = x[k_max];
 
     // special value to indicate begin of data
     let mut output: Vec<u8> = vec![0xFF];
@@ -231,35 +392,26 @@ fn update_serial(
     let num_triples: u16 = analysis_state.x_vqt_peakfiltered.len().try_into().unwrap();
     output.push((num_triples / 256) as u8);
     output.push((num_triples % 256) as u8);
-    output.extend(
-        analysis_state
-            .x_vqt_peakfiltered
-            .iter()
-            .enumerate()
-            .flat_map(|(idx, size)| {
-                let (mut r, mut g, mut b) = pitchvis_analysis::color_mapping::calculate_color(
-                    buckets_per_octave,
-                    ((idx + (buckets_per_octave - 3 * (buckets_per_octave / 12))) as f32)
-                        % buckets_per_octave as f32,
-                    COLORS,
-                    GRAY_LEVEL,
-                    EASING_POW,
-                );
+    output.extend(x.iter().enumerate().flat_map(|(idx, size)| {
+        let (mut r, mut g, mut b) = calculate_color(
+            range.buckets_per_octave,
+            ((idx + (range.buckets_per_octave - 3 * (range.buckets_per_octave / 12)) as usize)
+                as f32)
+                % range.buckets_per_octave as f32,
+            COLORS,
+            GRAY_LEVEL,
+            EASING_POW,
+        );
 
-                let color_coefficient = 1.0 - (1.0 - size / max_size).powf(0.18);
-                r *= color_coefficient;
-                g *= color_coefficient;
-                b *= color_coefficient;
+        let color_coefficient = 1.0 - (1.0 - size / max_size); //.powf(0.18);
+        r *= color_coefficient;
+        g *= color_coefficient;
+        b *= color_coefficient;
 
-                [(r * 254.0) as u8, (g * 254.0) as u8, (b * 254.0) as u8]
-            }),
-    );
+        [(r * 254.0) as u8, (g * 254.0) as u8, (b * 254.0) as u8]
+    }));
     println!("output: {:02x?}", &output);
 
-    // serial_port
-    //     .write_all(output.as_slice())
-    //     .expect("Write failed!");
-    // serial_port.flush().expect("Flush failed!");
     serial_port
         .write_data(output.as_slice())
         .expect("Write failed!");
@@ -286,165 +438,82 @@ fn android_main(app: AndroidApp) {
     let mut serial_port = SerialPortManager::new(app.vm_as_ptr(), app.activity_as_ptr()).unwrap();
     serial_port.open_serial_port().unwrap();
 
-    let mut vqt = pitchvis_analysis::vqt::Vqt::new(
-        SR,
-        N_FFT,
-        FREQ_A1,
-        BUCKETS_PER_OCTAVE,
-        OCTAVES,
-        SPARSITY_QUANTILE,
-        Q,
-        GAMMA,
-    );
-    let mut vqt_result = VqtResult::new(OCTAVES, BUCKETS_PER_OCTAVE);
-    let mut analysis_state = AnalysisState::new(
-        OCTAVES * BUCKETS_PER_OCTAVE,
-        pitchvis_analysis::analysis::SPECTROGRAM_LENGTH,
-    );
+    if !microphone_permission_granted("android.permission.RECORD_AUDIO") {
+        log::info!("requesting microphone permission");
+        request_microphone_permission(
+            &app,
+            "android.permission.RECORD_AUDIO",
+        );
+    }
+    // wait until permission is granted
+    while !microphone_permission_granted("android.permission.RECORD_AUDIO") {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
 
-    //audio_stream.play().unwrap();
+    let vqt = pitchvis_analysis::vqt::Vqt::new(&VQT_PARAMETERS);
+    let mut vqt_result = VqtResult::new(&VQT_PARAMETERS.range);
+    let mut analysis_state =
+        AnalysisState::new(VQT_PARAMETERS.range, AnalysisParameters::default());
 
-    let mut ring_buffer = RingBuffer {
+    // let (audio_control_channel_tx, audio_control_channel_rx) = mpsc::channel::<AudioControl>();
+    let mut ring_buffer = pitchvis_audio::RingBuffer {
         buf: Vec::new(),
         gain: 0.0,
+        latency_ms: None,
+        chunk_size_ms: 0.0,
     };
     ring_buffer.buf.resize(BUFSIZE, 0f32);
     let ring_buffer = std::sync::Mutex::from(ring_buffer);
     let ring_buffer = std::sync::Arc::new(ring_buffer);
-    let mut agc = dagc::MonoAgc::new(0.07, 0.0001).expect("mono-agc creation failed");
-    let ring_buffer_input_thread_clone = ring_buffer.clone();
-    let mut audio_stream = aaudio::AAudioStreamBuilder::new()
-        .unwrap()
-        .set_direction(aaudio::Direction::Input)
-        .set_performance_mode(aaudio::PerformanceMode::LowLatency)
-        .set_sample_rate(SR as i32)
-        .set_format(aaudio::Format::F32)
-        .set_channel_count(1)
-        .set_sharing_mode(aaudio::SharingMode::Exclusive)
-        .set_callbacks(
-            move |_, data: &mut [u8], frames: i32| {
-                let data = unsafe {
-                    std::slice::from_raw_parts_mut(data.as_ptr() as *mut f32, frames as usize * 1)
-                };
-                if let Some(x) = data.iter().find(|x| !x.is_finite()) {
-                    log::warn!("bad audio sample encountered: {x}");
-                    return aaudio::CallbackResult::Continue;
-                }
-                let sample_sq_sum = data.iter().map(|x| x.powi(2)).sum::<f32>();
-                agc.freeze_gain(sample_sq_sum < 1e-6);
 
-                //log::info!("audio callback");
+    let agc = dagc::MonoAgc::new(0.07, 0.0001).expect("mono-agc creation failed");
 
-                let mut rb = ring_buffer_input_thread_clone
-                    .lock()
-                    .expect("locking failed");
-                rb.buf.drain(..data.len());
-                rb.buf.extend_from_slice(data);
-                let begin = rb.buf.len() - data.len();
-                agc.process(&mut rb.buf[begin..]);
-                rb.gain = agc.gain();
+    let callback = AudioCallback {
+        ring_buffer: ring_buffer.clone(),
+        agc,
+    };
 
-                aaudio::CallbackResult::Continue
-            },
-            |_, _| {},
-        )
+    let mut audio_stream = AudioStreamBuilder::default()
+        .set_direction::<Input>()
+        .set_performance_mode(PerformanceMode::LowLatency)
+        .set_sample_rate(VQT_PARAMETERS.sr as i32)
+        // TODO: support all microphone channels if `Mono` does not mix them down
+        .set_channel_count::<Mono>()
+        .set_format::<f32>()
+        .set_sharing_mode(SharingMode::Exclusive)
+        .set_input_preset(InputPreset::Unprocessed)
+        // this will solve bugs on some devices
+        // TODO: is `Best` necessary?
+        .set_sample_rate_conversion_quality(SampleRateConversionQuality::Best)
+        .set_callback(callback)
         .open_stream()
         .unwrap();
 
     audio_stream.request_start().unwrap();
 
-    let mut quit = false;
-    let mut redraw_pending = true;
-    let mut render_state: Option<()> = Default::default();
-
-    while !quit {
-        let start_time = std::time::Instant::now();
-
+    let mut start_time = std::time::Instant::now();
+    loop {
         let (x, gain) = {
-            let mut x = vec![0.0_f32; vqt.n_fft];
+            let mut x = vec![0.0_f32; VQT_PARAMETERS.n_fft];
             let rb = ring_buffer.lock().unwrap();
-            x.copy_from_slice(&rb.buf[(BUFSIZE - vqt.n_fft)..]);
+            x.copy_from_slice(&rb.buf[(BUFSIZE - VQT_PARAMETERS.n_fft)..]);
             (x, rb.gain)
         };
         vqt_result.x_vqt = vqt.calculate_vqt_instant_in_db(&x);
         vqt_result.gain = gain;
-        analysis_state.preprocess(&vqt_result.x_vqt, OCTAVES, BUCKETS_PER_OCTAVE);
-        update_serial(BUCKETS_PER_OCTAVE, &analysis_state, &mut serial_port);
 
         let elapsed = start_time.elapsed();
+        start_time = std::time::Instant::now();
+
+        analysis_state.preprocess(&vqt_result.x_vqt, elapsed);
+        update_serial(
+            &VQT_PARAMETERS.range,
+            &vqt_result,
+            &analysis_state,
+            &mut serial_port,
+        );
+
         let sleep_time = Duration::from_millis(1000 / FPS).saturating_sub(elapsed);
         std::thread::sleep(sleep_time);
-
-        app.poll_events(
-            Some(std::time::Duration::from_millis(5)), /* timeout */
-            |event| {
-                match event {
-                    PollEvent::Wake => {
-                        info!("Early wake up");
-                    }
-                    PollEvent::Timeout => {
-                        info!("Timed out");
-                        // Real app would probably rely on vblank sync via graphics API...
-                        redraw_pending = true;
-                    }
-                    PollEvent::Main(main_event) => {
-                        info!("Main event: {:?}", main_event);
-                        match main_event {
-                            MainEvent::SaveState { saver, .. } => {
-                                saver.store("foo://bar".as_bytes());
-                            }
-                            MainEvent::Pause => {
-                                // if let Err(err) = stream.pause() {
-                                //     log::error!("Failed to pause audio playback: {err}");
-                                // }
-                            }
-                            MainEvent::Resume { loader, .. } => {
-                                if let Some(state) = loader.load() {
-                                    if let Ok(uri) = String::from_utf8(state) {
-                                        info!("Resumed with saved state = {uri:#?}");
-                                    }
-                                }
-
-                                // if let Err(err) = stream.play() {
-                                //     log::error!("Failed to start audio playback: {err}");
-                                // }
-                            }
-                            MainEvent::InitWindow { .. } => {
-                                render_state = Some(());
-                                redraw_pending = true;
-                            }
-                            MainEvent::TerminateWindow { .. } => {
-                                render_state = None;
-                            }
-                            MainEvent::WindowResized { .. } => {
-                                redraw_pending = true;
-                            }
-                            MainEvent::RedrawNeeded { .. } => {
-                                redraw_pending = true;
-                            }
-                            MainEvent::LowMemory => {}
-
-                            MainEvent::Destroy => quit = true,
-                            _ => { /* ... */ }
-                        }
-                    }
-                    _ => {}
-                }
-
-                if redraw_pending {
-                    if let Some(_rs) = render_state {
-                        redraw_pending = false;
-
-                        // Handle input
-                        app.input_events(|event| {
-                            info!("Input Event: {event:?}");
-                            InputStatus::Unhandled
-                        });
-
-                        info!("Render...");
-                    }
-                }
-            },
-        );
     }
 }
