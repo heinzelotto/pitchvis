@@ -208,7 +208,7 @@ fn spawn_spectrum(
         Spectrum,
         Mesh2d(meshes.add(spectrum_mesh).into()),
         MeshMaterial2d(color_materials.add(ColorMaterial {
-            color: Color::srgb(0.25, 0.85, 0.20),
+            color: Color::WHITE,
             alpha_mode: bevy::sprite::AlphaMode2d::Blend,
             texture: None,
         })),

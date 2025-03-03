@@ -3,7 +3,7 @@ use super::{
     DisplayMode, LineList, PitchBall, PitchNameText, Spectrum, SpiderNetSegment, VisualsMode,
     CLEAR_COLOR_GALAXY, CLEAR_COLOR_NEUTRAL,
 };
-use bevy::{core_pipeline::bloom::Bloom, prelude::*};
+use bevy::{color::color_difference, core_pipeline::bloom::Bloom, prelude::*};
 use bevy_persistent::Persistent;
 use itertools::Itertools;
 use std::collections::HashMap;
@@ -378,7 +378,17 @@ fn update_spectrum(
             );
         }
 
-        let spectrum_mesh = LineList {
+        let k_max = arg_max(
+            &vqt_result
+                .x_vqt
+                .iter()
+                .map(|p| p)
+                .cloned()
+                .collect::<Vec<f32>>(),
+        );
+        let max_size = vqt_result.x_vqt[k_max];
+
+        let mut spectrum_mesh: Mesh = LineList {
             lines: vqt_result
                 .x_vqt
                 .iter()
@@ -387,11 +397,37 @@ fn update_spectrum(
                 .tuple_windows()
                 .collect::<Vec<(Vec3, Vec3)>>(),
             thickness: 0.02,
-        };
+        }
+        .into();
+        let colors = (0..(vqt_result.x_vqt.len() - 1))
+            .map(|i| {
+                let (r, g, b) = calculate_color(
+                    range.buckets_per_octave,
+                    ((i as f32)
+                        + 0.5
+                        + (range.buckets_per_octave - 3 * (range.buckets_per_octave / 12)) as f32)
+                        % range.buckets_per_octave as f32,
+                    COLORS,
+                    GRAY_LEVEL,
+                    10.0,
+                );
+                let color_coefficient =
+                    1.0 - (0.5 - vqt_result.x_vqt[i] / max_size / 2.0).powf(0.5);
+                [
+                    [r, g, b, color_coefficient],
+                    [r, g, b, color_coefficient],
+                    [r, g, b, color_coefficient],
+                    [r, g, b, color_coefficient],
+                ]
+            })
+            .flatten()
+            .collect::<Vec<[f32; 4]>>();
+        spectrum_mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colors);
+
         let mesh = meshes
             .get_mut(&mesh_handle.0)
             .expect("spectrum line strip mesh");
-        *mesh = spectrum_mesh.into();
+        *mesh = spectrum_mesh;
     }
 }
 
