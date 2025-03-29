@@ -187,7 +187,13 @@ pub fn main() {
         .timeout(std::time::Duration::from_secs(10)) // TODO: ???
         .open()
         .expect("Failed to open port");
-    let audio_stream = new_audio_stream(SR, BUFSIZE).unwrap();
+
+    let audio_stream = new_audio_stream(SR, BUFSIZE);
+    if audio_stream.is_err() {
+        pitchvis_audio::dump_input_devices();
+        panic!("Failed to open audio stream");
+    }
+    let audio_stream = audio_stream.unwrap();
 
     let vqt = pitchvis_analysis::vqt::Vqt::new(&VQT_PARAMETERS);
     let mut vqt_result = VqtResult::new(&VQT_PARAMETERS.range);

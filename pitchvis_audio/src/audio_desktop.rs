@@ -126,3 +126,19 @@ pub fn new_audio_stream(sr: u32, buf_size: usize) -> Result<DesktopAudioStream> 
         stream,
     })
 }
+
+pub fn dump_input_devices() {
+    let host = cpal::default_host();
+    let devices = host.devices().unwrap();
+    for device in devices {
+        println!("Device {:?}:", device.name().unwrap());
+        dump_supported_input_configs(&device);
+    }
+}
+
+pub fn dump_supported_input_configs(device: &cpal::Device) {
+    let supported_input_configs = device.supported_input_configs().unwrap();
+    for supported_input_config in supported_input_configs {
+        println!("{:?}", supported_input_config);
+    }
+}
