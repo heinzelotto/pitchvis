@@ -8,9 +8,9 @@ use anyhow::Result;
 // TODO: also put the android audio code in this module
 
 #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
-pub use audio_desktop::new_audio_stream;
-#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
 pub use audio_desktop::dump_input_devices;
+#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+pub use audio_desktop::new_audio_stream;
 #[cfg(target_arch = "wasm32")]
 pub use audio_wasm::async_new_audio_stream;
 

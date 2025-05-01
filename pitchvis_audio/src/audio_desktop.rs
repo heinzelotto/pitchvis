@@ -31,20 +31,26 @@ pub fn new_audio_stream(sr: u32, buf_size: usize) -> Result<DesktopAudioStream> 
 
     let host = cpal::default_host();
 
-    // let device = host
-    //     .devices()?
-    //     .find(|d| d.name().unwrap() == "plughw:CARD=USB,DEV=0")
-    //     .unwrap();
+    let device = match host.default_input_device() {
+        Some(dev) => dev,
+        None => {
+            let device_names = host
+                .devices()
+                .expect("device query failed")
+                .enumerate()
+                .map(|(i, d)| format!("{}: {}", i, d.name().expect("has no name")))
+                .join("\n");
 
-    let _device_names = host
-        .devices()
-        .expect("device query failed")
-        .map(|d| d.name().expect("has no name"))
-        .join(" ");
+            println!("No default input device found. Available devices:");
+            println!("{}", device_names);
+            panic!("Quitting due to no default device found.");
+        }
+    };
 
-    // panic!("{:?}", _device_names);
-
-    let device = host.devices().unwrap().next().unwrap();
+    println!(
+        "Default input device chosen: \"{}\"",
+        device.name().unwrap()
+    );
 
     const PREFERRED_BUFFER_SIZE: usize = 256;
     let minimum_supported_buffer_size = device

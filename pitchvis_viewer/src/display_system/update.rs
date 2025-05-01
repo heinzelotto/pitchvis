@@ -3,7 +3,7 @@ use super::{
     DisplayMode, LineList, PitchBall, PitchNameText, Spectrum, SpiderNetSegment, VisualsMode,
     CLEAR_COLOR_GALAXY, CLEAR_COLOR_NEUTRAL,
 };
-use bevy::{color::color_difference, core_pipeline::bloom::Bloom, prelude::*};
+use bevy::{core_pipeline::bloom::Bloom, prelude::*};
 use bevy_persistent::Persistent;
 use itertools::Itertools;
 use std::collections::HashMap;
