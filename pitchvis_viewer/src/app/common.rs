@@ -139,7 +139,7 @@ pub fn update_fps_text_system(
     audio_buffer: Res<AudioBufferResource>,
     vqt: Res<VqtResource>,
 ) {
-    let entity = query.single();
+    let entity = query.single().expect("Failed to get entity.");
 
     // try to get a "smoothed" FPS value from Bevy
     if let Some(value) = diagnostics
@@ -198,13 +198,15 @@ pub fn update_fps_text_system(
 pub fn fps_counter_showhide(
     mut q: Query<&mut Visibility, With<FpsRoot>>,
     settings: Res<Persistent<SettingsState>>,
-) {
-    let mut vis = q.single_mut();
+) -> Result<()> {
+    let mut vis = q.single_mut()?;
     if settings.display_mode == display_system::DisplayMode::Debugging {
         *vis = Visibility::Visible;
     } else {
         *vis = Visibility::Hidden;
     }
+
+    Ok(())
 }
 
 /// Marker to find the container entity so we can show/hide the FPS counter
@@ -260,8 +262,8 @@ pub fn update_analysis_text_system(
     query: Query<Entity, With<AnalysisRoot>>,
     analysis: Res<AnalysisStateResource>,
     mut writer: TextUiWriter,
-) {
-    let entity = query.single();
+) -> Result<()> {
+    let entity = query.single()?;
 
     let inaccuracy = analysis.0.smoothed_tuning_grid_inaccuracy.get().round();
     // Format the number as to leave space for 3 digits, just in case,
@@ -279,20 +281,24 @@ pub fn update_analysis_text_system(
     } else {
         Color::srgb(1.0, 0.0, 0.0)
     });
+
+    Ok(())
 }
 
 /// Toggle the FPS counter based on the display mode
 pub fn analysis_text_showhide(
     mut q: Query<&mut Visibility, With<AnalysisRoot>>,
     settings: Res<Persistent<SettingsState>>,
-) {
+) -> Result<()> {
     // TODO: move all showhides into one system that updates the scene based on the display mode
-    let mut vis = q.single_mut();
+    let mut vis = q.single_mut()?;
     if settings.display_mode == display_system::DisplayMode::Debugging {
         *vis = Visibility::Visible;
     } else {
         *vis = Visibility::Hidden;
     }
+
+    Ok(())
 }
 
 /// Marker to find the text entity so we can update it
@@ -329,16 +335,16 @@ pub fn update_bloom_settings(
     keycode: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
     settings: Res<Persistent<SettingsState>>,
-) {
-    let mut text = text.single_mut();
+) -> Result<()> {
+    let mut text = text.single_mut()?;
     if settings.display_mode != display_system::DisplayMode::Debugging {
         *text.1 = Visibility::Hidden;
-        return;
+        return Ok(());
     } else {
         *text.1 = Visibility::Visible;
     }
 
-    let bloom_settings = camera.single_mut();
+    let bloom_settings = camera.single_mut()?;
     let text = &mut text.0 .0;
 
     if let (_, Some(mut bloom_settings)) = bloom_settings {
@@ -431,6 +437,8 @@ pub fn update_bloom_settings(
         bloom_settings.prefilter.threshold_softness =
             bloom_settings.prefilter.threshold_softness.clamp(0.0, 1.0);
     }
+
+    Ok(())
 }
 
 /// Marker to find the container entity so we can show/hide the Buttons
@@ -582,13 +590,15 @@ pub fn update_button_system(
 pub fn button_showhide(
     mut q: Query<&mut Visibility, With<ButtonRoot>>,
     settings: Res<Persistent<SettingsState>>,
-) {
-    let mut vis = q.single_mut();
+) -> Result<()> {
+    let mut vis = q.single_mut()?;
     if settings.display_mode == display_system::DisplayMode::Debugging {
         *vis = Visibility::Visible;
     } else {
         *vis = Visibility::Hidden;
     }
+
+    Ok(())
 }
 
 fn cycle_display_mode(mode: &mut display_system::DisplayMode) {

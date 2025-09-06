@@ -13,5 +13,5 @@ find_peaks = "0.1.5"
 pitchvis_analysis = { path = "../pitchvis_analysis" }
 pitchvis_audio = { path = "../pitchvis_audio" }
 pitchvis_colors = { path = "../pitchvis_colors" }
-itertools = "0.13.0"
+itertools = "0.14.0"
 serialport = "4.2.0"

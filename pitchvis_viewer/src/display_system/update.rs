@@ -51,16 +51,16 @@ pub fn update_display(
     mut camera: Query<(
         &mut Camera,
         Option<&mut Bloom>,
-        Ref<OrthographicProjection>, // Ref because we want to check `is_changed` later
+        Ref<Projection>, // Ref because we want to check `is_changed` later
     )>,
-) {
+) -> Result<()> {
     fade_pitch_balls(set.p0(), &mut noisy_color_materials, &run_time, range);
 
     // Exit early if there are no detected notes. Note that the below sub-systems will not run
     // until a few frames into the app.
     let analysis_state = &analysis_state.0;
     if analysis_state.peaks_continuous.is_empty() {
-        return;
+        return Ok(());
     }
 
     update_pitch_balls(
@@ -72,7 +72,7 @@ pub fn update_display(
         range,
     );
 
-    update_bloom(&mut camera, analysis_state);
+    update_bloom(&mut camera, analysis_state)?;
 
     update_bass_spiral(
         set.p1(),
@@ -90,13 +90,15 @@ pub fn update_display(
         &settings_state,
         &vqt_result,
         range,
-    );
+    )?;
 
     show_hide_pitch_names(set.p2(), &settings_state);
 
     show_hide_spider_net(set.p4(), &settings_state);
 
-    toggle_background(&mut camera, &settings_state);
+    toggle_background(&mut camera, &settings_state)?;
+
+    Ok(())
 }
 
 fn fade_pitch_balls(
@@ -266,13 +268,15 @@ fn update_pitch_balls(
 }
 
 fn update_bloom(
-    camera: &mut Query<(&mut Camera, Option<&mut Bloom>, Ref<OrthographicProjection>)>,
+    camera: &mut Query<(&mut Camera, Option<&mut Bloom>, Ref<Projection>)>,
     analysis_state: &AnalysisState,
-) {
-    if let (_, Some(mut bloom_settings), _) = camera.single_mut() {
+) -> Result<()> {
+    if let (_, Some(mut bloom_settings), _) = camera.single_mut()? {
         bloom_settings.intensity =
             (analysis_state.smoothed_scene_calmness.get() * 1.3).clamp(0.0, 1.0);
     }
+
+    Ok(())
 }
 
 fn update_bass_spiral(
@@ -351,31 +355,35 @@ fn update_bass_spiral(
 
 fn update_spectrum(
     mut spectrum: Query<(&mut Visibility, &Mesh2d, &mut Transform), With<Spectrum>>,
-    camera: &mut Query<(&mut Camera, Option<&mut Bloom>, Ref<OrthographicProjection>)>,
+    camera: &mut Query<(&mut Camera, Option<&mut Bloom>, Ref<Projection>)>,
     meshes: &mut ResMut<Assets<Mesh>>,
     settings_state: &Res<Persistent<SettingsState>>,
     vqt_result: &Res<VqtResultResource>,
     range: &VqtRange,
-) {
-    let (mut visibility, mesh_handle, mut transform) = spectrum.single_mut();
+) -> Result<()> {
+    let (mut visibility, mesh_handle, mut transform) = spectrum.single_mut()?;
     {
         // set visibility
         if settings_state.display_mode == DisplayMode::Debugging {
             *visibility = Visibility::Visible;
         } else {
             *visibility = Visibility::Hidden;
-            return;
+            return Ok(());
         }
 
         // move to right
-        let (_, _, projection) = camera.single_mut();
+        let (_, _, projection) = camera.single_mut()?;
         {
-            let Rect { max, .. } = projection.area;
-            *transform = Transform::from_xyz(
-                max.x - range.n_buckets() as f32 * 0.022 - 0.2,
-                max.y - 4.2,
-                -13.0,
-            );
+            if let Projection::Orthographic(proj) = &*projection {
+                let Rect { max, .. } = proj.area;
+                *transform = Transform::from_xyz(
+                    max.x - range.n_buckets() as f32 * 0.022 - 0.2,
+                    max.y - 4.2,
+                    -13.0,
+                );
+            } else {
+                panic!("Not an ortographic projection.");
+            }
         }
 
         let k_max = arg_max(
@@ -429,6 +437,8 @@ fn update_spectrum(
             .expect("spectrum line strip mesh");
         *mesh = spectrum_mesh;
     }
+
+    Ok(())
 }
 
 fn show_hide_pitch_names(
@@ -464,10 +474,10 @@ fn show_hide_spider_net(
 }
 
 fn toggle_background(
-    camera: &mut Query<(&mut Camera, Option<&mut Bloom>, Ref<OrthographicProjection>)>,
+    camera: &mut Query<(&mut Camera, Option<&mut Bloom>, Ref<Projection>)>,
     settings_state: &Res<Persistent<SettingsState>>,
-) {
-    let (mut camera, _, _) = camera.single_mut();
+) -> Result<()> {
+    let (mut camera, _, _) = camera.single_mut()?;
     camera.clear_color = if settings_state.visuals_mode == VisualsMode::Zen
         || settings_state.visuals_mode == VisualsMode::Full
     {
@@ -475,6 +485,8 @@ fn toggle_background(
     } else {
         CLEAR_COLOR_GALAXY
     };
+
+    Ok(())
 }
 
 // #[derive(PartialEq)]

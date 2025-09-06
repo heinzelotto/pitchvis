@@ -131,6 +131,7 @@ fn spawn_bass_spiral(
                         color: Color::srgb(0.8, 0.7, 0.6),
                         alpha_mode: bevy::sprite::AlphaMode2d::Blend,
                         texture: None,
+                        ..default()
                     })),
                     transform,
                     Visibility::Hidden,
@@ -169,6 +170,7 @@ fn spawn_spider_net(
             color: Color::srgb(0.3, 0.3, 0.3),
             alpha_mode: bevy::sprite::AlphaMode2d::Blend,
             texture: None,
+            ..default()
         })),
         Transform::from_xyz(0.0, 0.0, -13.0),
     ));
@@ -211,6 +213,7 @@ fn spawn_spectrum(
             color: Color::WHITE,
             alpha_mode: bevy::sprite::AlphaMode2d::Blend,
             texture: None,
+            ..default()
         })),
         Transform::from_xyz(-12.0, 3.0, -13.0),
         Visibility::Hidden,
@@ -255,13 +258,13 @@ fn spawn_camera(commands: &mut Commands) {
             ..default()
         },
         Tonemapping::SomewhatBoringDisplayTransform,
-        OrthographicProjection {
+        Projection::Orthographic(OrthographicProjection {
             scaling_mode: bevy::render::camera::ScalingMode::FixedVertical {
                 viewport_height: 38.0 * 0.414_213_57,
             },
             scale: 1.00,
             ..OrthographicProjection::default_2d()
-        },
+        }),
         // TODO: make bloom removable based on display mode
         Bloom {
             intensity: 0.0,

@@ -119,8 +119,8 @@ pub fn update_display_to_system(
     Res<CylinderEntityListResource>,
     Res<Persistent<SettingsState>>,
     Res<Time>,
-    Query<(&mut Camera, Option<&mut Bloom>, Ref<OrthographicProjection>)>,
-) {
+    Query<(&mut Camera, Option<&mut Bloom>, Ref<Projection>)>,
+) -> Result<()> {
     let range = range.clone();
     move |set: ParamSet<(
         Query<(
@@ -146,7 +146,7 @@ pub fn update_display_to_system(
           cylinder_entities: Res<CylinderEntityListResource>,
           settings_state: Res<Persistent<SettingsState>>,
           run_time: Res<Time>,
-          camera: Query<(&mut Camera, Option<&mut Bloom>, Ref<OrthographicProjection>)>| {
+          camera: Query<(&mut Camera, Option<&mut Bloom>, Ref<Projection>)>| {
         update::update_display(
             &range,
             set,
@@ -159,7 +159,9 @@ pub fn update_display_to_system(
             settings_state,
             run_time,
             camera,
-        );
+        )?;
+
+        Ok(())
     }
 }
 

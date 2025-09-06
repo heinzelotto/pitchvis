@@ -82,7 +82,7 @@ pub fn main_fun() -> Result<()> {
                 meta_check: AssetMetaCheck::Never,
                 ..default()
             }),
-        FrameTimeDiagnosticsPlugin,
+        FrameTimeDiagnosticsPlugin::default(),
         Material2dPlugin::<display_system::material::NoisyColorMaterial>::default(),
     ))
     .insert_resource(vqt_system::VqtResource(vqt))
