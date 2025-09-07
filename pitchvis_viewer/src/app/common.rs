@@ -509,6 +509,7 @@ pub fn setup_buttons(mut commands: Commands, settings: Res<Persistent<SettingsSt
                         match settings.visuals_mode {
                             display_system::VisualsMode::Full => "Full",
                             display_system::VisualsMode::Zen => "Zen",
+                            display_system::VisualsMode::Performance => "Performance",
                             display_system::VisualsMode::Galaxy => "Galaxy",
                         }
                     )),
@@ -565,6 +566,7 @@ pub fn update_button_system(
                         match settings.visuals_mode {
                             display_system::VisualsMode::Full => "Full",
                             display_system::VisualsMode::Zen => "Zen",
+                            display_system::VisualsMode::Performance => "Performance",
                             display_system::VisualsMode::Galaxy => "Galaxy",
                         }
                     );
@@ -611,7 +613,8 @@ fn cycle_display_mode(mode: &mut display_system::DisplayMode) {
 fn cycle_visuals_mode(mode: &mut display_system::VisualsMode) {
     *mode = match mode {
         display_system::VisualsMode::Full => display_system::VisualsMode::Zen,
-        display_system::VisualsMode::Zen => display_system::VisualsMode::Galaxy,
+        display_system::VisualsMode::Zen => display_system::VisualsMode::Performance,
+        display_system::VisualsMode::Performance => display_system::VisualsMode::Galaxy,
         display_system::VisualsMode::Galaxy => display_system::VisualsMode::Full,
     }
 }

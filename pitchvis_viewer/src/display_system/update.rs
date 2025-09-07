@@ -3,13 +3,14 @@ use super::{
     DisplayMode, LineList, PitchBall, PitchNameText, Spectrum, SpiderNetSegment, VisualsMode,
     CLEAR_COLOR_GALAXY, CLEAR_COLOR_NEUTRAL,
 };
-use bevy::{core_pipeline::bloom::Bloom, prelude::*};
+use bevy::{asset::meta::Settings, core_pipeline::bloom::Bloom, prelude::*};
 use bevy_persistent::Persistent;
 use itertools::Itertools;
 use std::collections::HashMap;
 
 use crate::{
-    analysis_system::AnalysisStateResource, app::SettingsState, vqt_system::VqtResultResource,
+    analysis_system::AnalysisStateResource, app::SettingsState, display_system::CLEAR_COLOR_EINK,
+    vqt_system::VqtResultResource,
 };
 use pitchvis_analysis::{
     analysis::{AnalysisState, ContinuousPeak},
@@ -72,7 +73,7 @@ pub fn update_display(
         range,
     );
 
-    update_bloom(&mut camera, analysis_state)?;
+    update_bloom(&mut camera, analysis_state, &settings_state)?;
 
     update_bass_spiral(
         set.p1(),
@@ -231,8 +232,16 @@ fn update_pitch_balls(
 
             // TODO: scale up new notes to make them more prominent
 
+            // scale down balls in Performance Mode
+            let ball_scale_factor = if settings_state.visuals_mode == VisualsMode::Performance {
+                0.5
+            } else {
+                1.0
+            };
+
             // scale and threshold to vanish
-            transform.scale = Vec3::splat(size * PITCH_BALL_SCALE_FACTOR * calmness_scale);
+            transform.scale =
+                Vec3::splat(size * ball_scale_factor * PITCH_BALL_SCALE_FACTOR * calmness_scale);
             if transform.scale.x >= 0.002 {
                 *visibility = Visibility::Visible;
             }
@@ -270,8 +279,13 @@ fn update_pitch_balls(
 fn update_bloom(
     camera: &mut Query<(&mut Camera, Option<&mut Bloom>, Ref<Projection>)>,
     analysis_state: &AnalysisState,
+    settings_state: &SettingsState,
 ) -> Result<()> {
     if let (_, Some(mut bloom_settings), _) = camera.single_mut()? {
+        if settings_state.visuals_mode == VisualsMode::Performance {
+            bloom_settings.intensity = 0.0;
+            return Ok(());
+        }
         bloom_settings.intensity =
             (analysis_state.smoothed_scene_calmness.get() * 1.3).clamp(0.0, 1.0);
     }
@@ -446,10 +460,13 @@ fn show_hide_pitch_names(
     settings_state: &Res<Persistent<SettingsState>>,
 ) {
     for (_, mut visibility) in &mut pitch_name_text {
-        if settings_state.visuals_mode == VisualsMode::Full {
-            *visibility = Visibility::Visible;
-        } else {
-            *visibility = Visibility::Hidden;
+        match settings_state.visuals_mode {
+            VisualsMode::Full | VisualsMode::Performance => {
+                *visibility = Visibility::Visible;
+            }
+            _ => {
+                *visibility = Visibility::Hidden;
+            }
         }
     }
 }
@@ -458,13 +475,11 @@ fn show_hide_spider_net(
     mut spider_net_segments: Query<&mut Visibility, With<SpiderNetSegment>>,
     settings_state: &Res<Persistent<SettingsState>>, // TODO: ?Changed<SettingsState> possible
 ) {
-    let shall_be_visibile = settings_state.visuals_mode == VisualsMode::Full
-        || settings_state.visuals_mode == VisualsMode::Zen;
-    let target_visibility = if shall_be_visibile {
-        Visibility::Visible
-    } else {
-        Visibility::Hidden
+    let target_visibility = match settings_state.visuals_mode {
+        VisualsMode::Full | VisualsMode::Zen | VisualsMode::Performance => Visibility::Visible,
+        _ => Visibility::Hidden,
     };
+
     let vis = spider_net_segments.iter_mut().next().unwrap();
     if *vis != target_visibility {
         for mut visibility in &mut spider_net_segments {
@@ -478,12 +493,9 @@ fn toggle_background(
     settings_state: &Res<Persistent<SettingsState>>,
 ) -> Result<()> {
     let (mut camera, _, _) = camera.single_mut()?;
-    camera.clear_color = if settings_state.visuals_mode == VisualsMode::Zen
-        || settings_state.visuals_mode == VisualsMode::Full
-    {
-        CLEAR_COLOR_NEUTRAL
-    } else {
-        CLEAR_COLOR_GALAXY
+    camera.clear_color = match settings_state.visuals_mode {
+        VisualsMode::Zen | VisualsMode::Full | VisualsMode::Performance => CLEAR_COLOR_NEUTRAL,
+        VisualsMode::Galaxy => CLEAR_COLOR_GALAXY,
     };
 
     Ok(())

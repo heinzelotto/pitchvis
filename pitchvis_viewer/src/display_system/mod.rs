@@ -23,6 +23,7 @@ use pitchvis_analysis::vqt::VqtRange;
 const CLEAR_COLOR_NEUTRAL: ClearColorConfig =
     ClearColorConfig::Custom(Color::srgb(0.23, 0.23, 0.25));
 const CLEAR_COLOR_GALAXY: ClearColorConfig = ClearColorConfig::Custom(Color::srgb(0.05, 0.0, 0.05));
+const CLEAR_COLOR_EINK: ClearColorConfig = ClearColorConfig::Custom(Color::srgb(0.95, 0.95, 0.95));
 
 #[derive(Component)]
 pub struct PitchBall(usize);
@@ -50,8 +51,9 @@ pub enum DisplayMode {
 #[derive(States, Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum VisualsMode {
     Full,
-    Zen,    // no pitch names
-    Galaxy, // pitch balls only, black background
+    Zen,         // no pitch names
+    Performance, // Faster and more precise (TODO: less smoothing)
+    Galaxy,      // pitch balls only, black background
 }
 
 /// keep an index -> entity mapping for the cylinders
