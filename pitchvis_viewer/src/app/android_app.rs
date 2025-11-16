@@ -90,6 +90,108 @@ fn handle_lifetime_events_system(
     }
 }
 
+/// System to hide/show Android navigation bar based on screen lock state
+fn handle_android_ui_visibility(lock_state: Res<ScreenLockState>) {
+    // Only run when lock state changes
+    if !lock_state.is_changed() {
+        return;
+    }
+
+    let android_app = match bevy_window::ANDROID_APP.get() {
+        Some(app) => app,
+        None => {
+            log::warn!("Android app not available");
+            return;
+        }
+    };
+
+    let jvm = match unsafe { JavaVM::from_raw(android_app.vm_as_ptr() as _) } {
+        Ok(jvm) => jvm,
+        Err(e) => {
+            log::error!("Failed to get JavaVM: {:?}", e);
+            return;
+        }
+    };
+
+    let mut env = match jvm.attach_current_thread() {
+        Ok(env) => env,
+        Err(e) => {
+            log::error!("Failed to attach to current thread: {:?}", e);
+            return;
+        }
+    };
+
+    let activity = unsafe { JObject::from_raw(android_app.activity_as_ptr() as jobject) };
+
+    // Get the window from activity
+    let window = match env.call_method(&activity, "getWindow", "()Landroid/view/Window;", &[]) {
+        Ok(window) => window,
+        Err(e) => {
+            log::error!("Failed to get window: {:?}", e);
+            return;
+        }
+    };
+
+    let window = match window.l() {
+        Ok(w) => w,
+        Err(e) => {
+            log::error!("Failed to convert window: {:?}", e);
+            return;
+        }
+    };
+
+    // Get the decor view
+    let decor_view = match env.call_method(
+        &window,
+        "getDecorView",
+        "()Landroid/view/View;",
+        &[],
+    ) {
+        Ok(view) => view,
+        Err(e) => {
+            log::error!("Failed to get decor view: {:?}", e);
+            return;
+        }
+    };
+
+    let decor_view = match decor_view.l() {
+        Ok(v) => v,
+        Err(e) => {
+            log::error!("Failed to convert decor view: {:?}", e);
+            return;
+        }
+    };
+
+    // Set system UI visibility flags
+    // When locked: Hide navigation bar with immersive sticky mode
+    // When unlocked: Show navigation bar normally
+    let flags = if lock_state.0 {
+        // SYSTEM_UI_FLAG_HIDE_NAVIGATION (0x00000002)
+        // SYSTEM_UI_FLAG_FULLSCREEN (0x00000004)
+        // SYSTEM_UI_FLAG_IMMERSIVE_STICKY (0x00001000)
+        // Combined: 0x1006
+        0x1006_i32
+    } else {
+        // SYSTEM_UI_FLAG_VISIBLE (0x00000000)
+        0_i32
+    };
+
+    if let Err(e) = env.call_method(
+        &decor_view,
+        "setSystemUiVisibility",
+        "(I)V",
+        &[JValue::Int(flags)],
+    ) {
+        log::error!("Failed to set system UI visibility: {:?}", e);
+    } else {
+        log::info!(
+            "Screen lock {}: Navigation bar {}",
+            if lock_state.0 { "enabled" } else { "disabled" },
+            if lock_state.0 { "hidden" } else { "shown" }
+        );
+    }
+}
+
 fn microphone_permission_granted(perm: &str) -> bool {
     let ctx = ndk_context::android_context();
     let jvm = unsafe { JavaVM::from_raw(ctx.vm().cast()) }.unwrap();
@@ -381,6 +483,7 @@ fn main() -> AppExit {
             update_analysis_text_system.after(update_analysis_state_system),
             analysis_text_showhide,
             update_screen_lock_indicator,
+            handle_android_ui_visibility,
             update_bloom_settings.after(update_analysis_state_system),
         ),
     );
