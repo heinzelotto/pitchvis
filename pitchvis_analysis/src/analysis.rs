@@ -153,6 +153,9 @@ pub struct AnalysisState {
     /// A buffer for storing a calmness value for each bin in the spectrum.
     pub calmness: Vec<EmaMeasurement>,
 
+    /// A buffer for storing pitch accuracy for each bin (0.0 = off pitch, 1.0 = on pitch)
+    pub pitch_accuracy: Vec<f32>,
+
     /// the smoothed average calmness of all active bins
     pub smoothed_scene_calmness: EmaMeasurement,
 
@@ -210,6 +213,7 @@ impl AnalysisState {
                 EmaMeasurement::new(Some(params.note_calmness_smoothing_duration), 0.0);
                 n_buckets
             ],
+            pitch_accuracy: vec![0.0; n_buckets],
             smoothed_scene_calmness: EmaMeasurement::new(
                 Some(params.scene_calmness_smoothing_duration),
                 0.0,
@@ -350,6 +354,7 @@ impl AnalysisState {
 
         // needs to be run after the continuous peaks have been calculated
         self.update_tuning_inaccuracy(frame_time);
+        self.update_pitch_accuracy();
 
         // TODO: more advanced bass note detection than just taking the first peak (e. g. by
         // promoting frequences through their overtones first), using different peak detection
@@ -428,6 +433,26 @@ impl AnalysisState {
 
         self.smoothed_tuning_grid_inaccuracy
             .update_with_timestep(average_tuning_inaccuracy_in_cents, frame_time);
+    }
+
+    fn update_pitch_accuracy(&mut self) {
+        // Reset all pitch accuracy values to 0.0
+        self.pitch_accuracy.fill(0.0);
+
+        // For each continuous peak, calculate how accurately it's on pitch
+        for p in &self.peaks_continuous {
+            let center_in_semitones = p.center * 12.0 / self.range.buckets_per_octave as f32;
+            // drift is in range [0.0, 0.5], where 0.0 is perfectly on pitch
+            let drift = (center_in_semitones - center_in_semitones.round()).abs();
+            // Convert to accuracy: 1.0 = on pitch, 0.0 = maximally off pitch
+            let accuracy = (1.0 - 2.0 * drift).max(0.0);
+
+            // Assign to the corresponding bin (rounded to integer index)
+            let bin_idx = p.center.round() as usize;
+            if bin_idx < self.pitch_accuracy.len() {
+                self.pitch_accuracy[bin_idx] = accuracy;
+            }
+        }
     }
 }
 

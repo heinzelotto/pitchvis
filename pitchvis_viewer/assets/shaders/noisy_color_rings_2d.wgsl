@@ -116,6 +116,7 @@ fn ring(uv: vec2<f32>) -> f32 {
 fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
     let calmness = params.x;
     let time = params.y;
+    let pitch_accuracy = params.z;
     // goes from 250 to 350
     let time_periodic = 250.0 + time - floor(time/100.0)*100.0;
 
@@ -126,7 +127,7 @@ fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
     let white = vec3<f32>(1.0, 1.0, 1.0);
 
     let f_ring = ring(uv);
-    let ring_color = vec4<f32>(mix(material_color.rgb, white, f_noise*calmness*f_ring), material_color.a*f_ring);
+    let ring_color = vec4<f32>(mix(material_color.rgb, white, f_noise*pitch_accuracy*f_ring), material_color.a*f_ring);
 
     // high 1-(1-calmness)^3 => more full disk, less ring
     let ring_strength = clamp(1.0-calmness * 1.65, 0.0, 1.0)*clamp(1.0-calmness * 1.65, 0.0, 1.0)*clamp(1.0-calmness * 1.65, 0.0, 1.0);
