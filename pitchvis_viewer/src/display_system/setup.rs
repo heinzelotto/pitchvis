@@ -1,12 +1,11 @@
 use super::util::calculate_spiral_points;
 use super::{material::NoisyColorMaterial, LineList, PitchBall, PitchNameText, Spectrum};
 use super::{CylinderEntityListResource, SpiderNetSegment, CLEAR_COLOR_NEUTRAL};
-use bevy::core_pipeline::bloom::{Bloom, BloomPrefilter};
-use bevy::{
-    core_pipeline::{bloom::BloomCompositeMode, tonemapping::Tonemapping},
-    math::vec3,
-    prelude::*,
-};
+use bevy::camera::ScalingMode;
+use bevy::core_pipeline::tonemapping::Tonemapping;
+use bevy::post_process::bloom::{Bloom, BloomCompositeMode, BloomPrefilter};
+use bevy::prelude::*;
+use bevy::render::view::Hdr;
 use itertools::Itertools;
 use nalgebra::{Rotation3, Vector3};
 use std::f32::consts::PI;
@@ -61,7 +60,7 @@ pub fn setup_display(
 
     spawn_camera(&mut commands);
 
-    spawn_text(&mut commands, range, asset_server);
+    spawn_pitch_names_text(&mut commands, range, asset_server);
 }
 
 fn spawn_pitch_balls(
@@ -129,7 +128,7 @@ fn spawn_bass_spiral(
                     Mesh2d(meshes.add(Rectangle::new(0.05, h + 0.01)).into()),
                     MeshMaterial2d(color_materials.add(ColorMaterial {
                         color: Color::srgb(0.8, 0.7, 0.6),
-                        alpha_mode: bevy::sprite::AlphaMode2d::Blend,
+                        alpha_mode: bevy::sprite_render::AlphaMode2d::Blend,
                         texture: None,
                         ..default()
                     })),
@@ -168,7 +167,7 @@ fn spawn_spider_net(
         }))),
         MeshMaterial2d(color_materials.add(ColorMaterial {
             color: Color::srgb(0.3, 0.3, 0.3),
-            alpha_mode: bevy::sprite::AlphaMode2d::Blend,
+            alpha_mode: bevy::sprite_render::AlphaMode2d::Blend,
             texture: None,
             ..default()
         })),
@@ -211,7 +210,7 @@ fn spawn_spectrum(
         Mesh2d(meshes.add(spectrum_mesh).into()),
         MeshMaterial2d(color_materials.add(ColorMaterial {
             color: Color::WHITE,
-            alpha_mode: bevy::sprite::AlphaMode2d::Blend,
+            alpha_mode: bevy::sprite_render::AlphaMode2d::Blend,
             texture: None,
             ..default()
         })),
@@ -249,9 +248,8 @@ fn spawn_camera(commands: &mut Commands) {
     // spawn a camera2dbundle with coordinates that match those of the 3d camera at the z=0 plane
     commands.spawn((
         Camera2d,
+        Hdr, // needed for bloom
         Camera {
-            // needed for bloom
-            hdr: true,
             // renders after / on top of the main camera
             order: 1,
             clear_color: CLEAR_COLOR_NEUTRAL,
@@ -259,7 +257,7 @@ fn spawn_camera(commands: &mut Commands) {
         },
         Tonemapping::SomewhatBoringDisplayTransform,
         Projection::Orthographic(OrthographicProjection {
-            scaling_mode: bevy::render::camera::ScalingMode::FixedVertical {
+            scaling_mode: ScalingMode::FixedVertical {
                 viewport_height: 38.0 * 0.414_213_57,
             },
             scale: 1.00,
@@ -285,9 +283,14 @@ fn spawn_camera(commands: &mut Commands) {
     ));
 }
 
-fn spawn_text(commands: &mut Commands, range: &VqtRange, asset_server: Res<AssetServer>) {
+fn spawn_pitch_names_text(
+    commands: &mut Commands,
+    range: &VqtRange,
+    asset_server: Res<AssetServer>,
+) {
+    let font = asset_server.load("fonts/DejaVuSans.ttf");
     let text_font = TextFont {
-        font: asset_server.load("fonts/DejaVuSans.ttf"),
+        font: font.clone(),
         font_size: 40.0,
         ..Default::default()
     };
@@ -305,7 +308,7 @@ fn spawn_text(commands: &mut Commands, range: &VqtRange, asset_server: Res<Asset
             Text2d::new(PITCH_NAMES[pitch_idx]),
             TextColor(Color::srgb(r, g, b)),
             text_font.clone(),
-            TextLayout::new_with_justify(JustifyText::Center),
+            TextLayout::new_with_justify(Justify::Center),
             Transform::from_xyz(x, y, -0.02).with_scale(vec3(0.02, 0.02, 1.0)),
             Visibility::Visible,
         ));

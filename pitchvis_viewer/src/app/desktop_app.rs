@@ -2,7 +2,7 @@ use anyhow::Result;
 use bevy::asset::AssetMetaCheck;
 use bevy::diagnostic::FrameTimeDiagnosticsPlugin;
 use bevy::prelude::*;
-use bevy::sprite::Material2dPlugin;
+use bevy::sprite_render::Material2dPlugin;
 use bevy::winit::UpdateMode;
 use bevy::winit::WinitSettings;
 use bevy_persistent::Persistent;

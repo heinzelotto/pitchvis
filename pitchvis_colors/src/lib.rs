@@ -112,6 +112,6 @@ pub fn calculate_color(
     *c *= saturation;
     *l = saturation * *l + (1.0 - saturation) * gray_level;
 
-    let pitch_color = base_lcha.to_rgb().map(|rgb| (rgb as f32 / 255.0));
+    let pitch_color = base_lcha.to_rgb().map(|rgb| rgb as f32 / 255.0);
     (pitch_color[0], pitch_color[1], pitch_color[2])
 }

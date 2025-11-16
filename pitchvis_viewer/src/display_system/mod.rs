@@ -4,12 +4,10 @@ mod update;
 mod util;
 
 use bevy::{
-    core_pipeline::bloom::Bloom,
+    asset::RenderAssetUsages,
+    mesh::{Indices, PrimitiveTopology},
+    post_process::bloom::Bloom,
     prelude::*,
-    render::{
-        mesh::{Indices, PrimitiveTopology},
-        render_asset::RenderAssetUsages,
-    },
 };
 use bevy_persistent::Persistent;
 use material::NoisyColorMaterial;

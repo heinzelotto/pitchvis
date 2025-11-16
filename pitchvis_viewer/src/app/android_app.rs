@@ -4,7 +4,7 @@ use bevy::diagnostic::FrameTimeDiagnosticsPlugin;
 use bevy::diagnostic::LogDiagnosticsPlugin;
 use bevy::log::LogPlugin;
 use bevy::prelude::*;
-use bevy::sprite::Material2dPlugin;
+use bevy::sprite_render::Material2dPlugin;
 use bevy::window::AppLifecycle;
 use bevy::winit::UpdateMode;
 use bevy::winit::WinitSettings;
@@ -56,9 +56,9 @@ const BUFSIZE: usize = 2 * 16384;
 const DEFAULT_FPS: u32 = 60;
 
 fn handle_lifetime_events_system(
-    mut lifetime_events: EventReader<AppLifecycle>,
+    mut lifetime_events: MessageReader<AppLifecycle>,
     // audio_control_tx: ResMut<AudioControlChannelResource>,
-    mut exit: EventWriter<AppExit>,
+    mut exit: MessageWriter<AppExit>,
 ) {
     use bevy::window::AppLifecycle;
 
@@ -75,7 +75,7 @@ fn handle_lifetime_events_system(
                 log::warn!("Application suspended, exiting.");
 
                 // For now, just quit.
-                exit.send(AppExit::Success);
+                exit.write(AppExit::Success);
 
                 // This is a workaround to exit the app, but it's not clean. One of them seems to
                 // work after the change from native-activity to game-activity and since update to
@@ -227,7 +227,7 @@ fn main() -> AppExit {
     if !microphone_permission_granted("android.permission.RECORD_AUDIO") {
         log::info!("requesting microphone permission");
         request_microphone_permission(
-            bevy_window::ANDROID_APP
+            bevy::android::ANDROID_APP
                 .get()
                 .expect("Bevy must be setup with the #[bevy_main] macro on Android"),
             "android.permission.RECORD_AUDIO",
@@ -239,7 +239,7 @@ fn main() -> AppExit {
     }
 
     // keep screen awake. This is a bitflags! enum, the second argument is an empty bitflags mask
-    bevy_window::ANDROID_APP
+    bevy::android::ANDROID_APP
         .get()
         .expect("Bevy must be setup with the #[bevy_main] macro on Android")
         .set_window_flags(

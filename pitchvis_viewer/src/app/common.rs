@@ -12,13 +12,13 @@ use crate::analysis_system::AnalysisStateResource;
 use crate::audio_system::AudioBufferResource;
 use crate::display_system;
 use crate::vqt_system::VqtResource;
-use bevy::core_pipeline::bloom::Bloom;
-use bevy::core_pipeline::bloom::BloomCompositeMode;
 use bevy::diagnostic::DiagnosticsStore;
 use bevy::diagnostic::FrameTimeDiagnosticsPlugin;
 use bevy::input::keyboard::KeyboardInput;
 use bevy::input::mouse::MouseButtonInput;
 use bevy::input::touch::TouchPhase;
+use bevy::post_process::bloom::Bloom;
+use bevy::post_process::bloom::BloomCompositeMode;
 use bevy::prelude::*;
 
 #[derive(Resource, Serialize, Deserialize)]
@@ -82,10 +82,12 @@ pub fn set_frame_limiter_system(
 #[derive(Component)]
 pub struct FpsRoot;
 
-pub fn setup_fps_counter(mut commands: Commands) {
+pub fn setup_fps_counter(mut commands: Commands, asset_server: Res<AssetServer>) {
+    let font = asset_server.load("fonts/DejaVuSans.ttf");
     let text_font = TextFont {
+        font: font.clone(),
         font_size: 16.0,
-        ..default()
+        ..Default::default()
     };
 
     // create our UI root node
@@ -101,9 +103,6 @@ pub fn setup_fps_counter(mut commands: Commands) {
                 top: Val::Percent(1.),
                 // give it some padding for readability
                 padding: UiRect::all(Val::Px(4.0)),
-                // ensure the content is aligned properly
-                align_items: AlignItems::Start,
-                justify_content: JustifyContent::Start,
                 ..default()
             },
             // give it a dark background for readability
@@ -226,7 +225,10 @@ pub fn update_fps_text_system(
     } else {
         *writer.text(entity, 4) = "N/A".into();
     }
-    *writer.text(entity, 6) = format!("{:.2}ms", audio_buffer.0.lock().unwrap().chunk_size_ms);
+    *writer.text(entity, 6) = format!(
+        "{:>7}",
+        format!("{:.2}ms", audio_buffer.0.lock().unwrap().chunk_size_ms)
+    );
     *writer.text(entity, 8) = format!("{}ms", vqt.0.delay.as_millis());
 
     let smoothing_duration_ms = settings
@@ -275,12 +277,10 @@ pub fn setup_analysis_text(mut commands: Commands) {
                 right: Val::Percent(1.),
                 bottom: Val::Percent(1.),
                 // give it some padding for readability
-                padding: UiRect::all(Val::Px(4.0)),
-                // ensure the content is aligned properly
-                align_items: AlignItems::Start,
-                justify_content: JustifyContent::Start,
+                // padding: UiRect::all(Val::Px(4.0)),
                 ..default()
             },
+            TextLayout::new_with_justify(Justify::Center),
             // give it a dark background for readability
             BackgroundColor(Color::BLACK.with_alpha(0.5)),
             // make it "always on top" by setting the Z index to maximum
@@ -362,7 +362,7 @@ pub fn setup_screen_lock_indicator(mut commands: Commands) {
             position_type: PositionType::Absolute,
             right: Val::Percent(1.),
             top: Val::Percent(1.),
-            padding: UiRect::all(Val::Px(2.0)),
+            // padding: UiRect::all(Val::Px(2.0)),
             ..default()
         },
         BackgroundColor(Color::BLACK.with_alpha(0.4)),
@@ -376,7 +376,7 @@ pub fn update_screen_lock_indicator(
     mut query: Query<&mut Visibility, With<ScreenLockIndicator>>,
     lock_state: Res<ScreenLockState>,
 ) {
-    if let Ok(mut visibility) = query.get_single_mut() {
+    if let Ok(mut visibility) = query.single_mut() {
         *visibility = if lock_state.0 {
             Visibility::Visible
         } else {
@@ -403,9 +403,7 @@ pub fn setup_bloom_ui(mut commands: Commands) {
             position_type: PositionType::Absolute,
             bottom: Val::Px(12.0),
             left: Val::Px(12.0),
-            padding: UiRect::all(Val::Px(4.0)),
-            align_items: AlignItems::Start,
-            justify_content: JustifyContent::Start,
+            // padding: UiRect::all(Val::Px(4.0)),
             ..default()
         },
         // give it a dark background for readability
@@ -569,7 +567,7 @@ pub fn setup_buttons(mut commands: Commands, settings: Res<Persistent<SettingsSt
                 left: Val::Percent(1.),
                 top: Val::Percent(35.),
                 align_items: AlignItems::Center,
-                justify_content: JustifyContent::Center,
+                justify_content: JustifyContent::Default,
                 padding: UiRect::all(Val::Px(4.0)),
                 margin: UiRect::all(Val::Px(4.0)),
                 flex_direction: FlexDirection::Column,
@@ -586,7 +584,7 @@ pub fn setup_buttons(mut commands: Commands, settings: Res<Persistent<SettingsSt
                         ..button_node.clone()
                     },
                     BackgroundColor(Color::srgba(0.0, 0.2, 0.0, 0.5)),
-                    BorderColor(Color::srgb(0.0, 0.5, 0.0)),
+                    BorderColor::all(Color::srgb(0.0, 0.5, 0.0)),
                     BorderRadius::MAX,
                     ButtonAction::VisualsMode,
                 ))
@@ -611,7 +609,7 @@ pub fn setup_buttons(mut commands: Commands, settings: Res<Persistent<SettingsSt
                         ..button_node.clone()
                     },
                     BackgroundColor(Color::srgba(0.0, 0.2, 0.0, 0.5)),
-                    BorderColor(Color::srgb(0.0, 0.5, 0.0)),
+                    BorderColor::all(Color::srgb(0.0, 0.5, 0.0)),
                     BorderRadius::MAX,
                     ButtonAction::FpsLimit,
                 ))
@@ -632,7 +630,7 @@ pub fn setup_buttons(mut commands: Commands, settings: Res<Persistent<SettingsSt
                         ..button_node.clone()
                     },
                     BackgroundColor(Color::srgba(0.0, 0.2, 0.0, 0.5)),
-                    BorderColor(Color::srgb(0.0, 0.5, 0.0)),
+                    BorderColor::all(Color::srgb(0.0, 0.5, 0.0)),
                     BorderRadius::MAX,
                     ButtonAction::VQTSmoothing,
                 ))
@@ -766,9 +764,9 @@ fn cycle_vqt_smoothing_mode(mode: &mut display_system::VQTSmoothingMode) {
 }
 
 pub fn user_input_system(
-    mut touch_events: EventReader<TouchInput>,
-    mut keyboard_input_events: EventReader<KeyboardInput>,
-    mut mouse_button_input_events: EventReader<MouseButtonInput>,
+    mut touch_events: MessageReader<TouchInput>,
+    mut keyboard_input_events: MessageReader<KeyboardInput>,
+    mut mouse_button_input_events: MessageReader<MouseButtonInput>,
     mut settings: ResMut<Persistent<SettingsState>>,
     mouse_consumed: Res<PressEventConsumed>,
     mut lock_state: ResMut<ScreenLockState>,

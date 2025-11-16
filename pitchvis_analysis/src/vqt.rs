@@ -786,7 +786,7 @@ impl Vqt {
 
         let power: Vec<f32> = x_vqt
             .iter()
-            .map(|z| (z.abs() * z.abs()))
+            .map(|z| z.abs() * z.abs())
             .collect::<Vec<f32>>();
 
         // TODO: harmonic/percussion source separation possible with our one-sided spectrum?
