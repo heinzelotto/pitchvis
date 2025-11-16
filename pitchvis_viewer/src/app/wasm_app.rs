@@ -15,6 +15,7 @@ use super::common::analysis_text_showhide;
 use super::common::button_showhide;
 use super::common::fps_counter_showhide;
 use super::common::set_frame_limiter_system;
+use super::common::set_vqt_smoothing_system;
 use super::common::setup_analysis_text;
 use super::common::setup_buttons;
 use super::common::setup_fps_counter;
@@ -23,6 +24,7 @@ use super::common::update_button_system;
 use super::common::update_fps_text_system;
 use super::common::user_input_system;
 use super::common::CurrentFpsLimit;
+use super::common::CurrentVQTSmoothingMode;
 use super::common::SettingsState;
 use super::common::{close_on_esc, setup_bloom_ui, update_bloom_settings};
 use crate::analysis_system::{self, AnalysisStateResource};
@@ -63,6 +65,7 @@ pub async fn main_fun() -> Result<(), JsValue> {
             display_mode: display_system::DisplayMode::Normal,
             visuals_mode: display_system::VisualsMode::Full,
             fps_limit: Some(DEFAULT_FPS),
+            vqt_smoothing_mode: display_system::VQTSmoothingMode::Default,
         })
         .build()
         .expect("failed to initialize key bindings");
@@ -108,6 +111,7 @@ pub async fn main_fun() -> Result<(), JsValue> {
         .insert_resource(CylinderEntityListResource(Vec::new()))
         .insert_resource(persistent_settings_state)
         .insert_resource(CurrentFpsLimit(Some(DEFAULT_FPS)))
+        .insert_resource(CurrentVQTSmoothingMode(display_system::VQTSmoothingMode::Default))
         .insert_resource(WinitSettings {
             focused_mode: UpdateMode::reactive(std::time::Duration::from_secs_f32(
                 1.0 / DEFAULT_FPS as f32,
@@ -141,6 +145,7 @@ pub async fn main_fun() -> Result<(), JsValue> {
                 update_analysis_text_system.after(update_analysis_state_system),
                 analysis_text_showhide,
                 set_frame_limiter_system,
+                set_vqt_smoothing_system,
                 update_display_system.after(update_analysis_state_system),
             ),
         )
