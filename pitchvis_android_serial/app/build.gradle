@@ -3,13 +3,13 @@ plugins {
 }
 
 android {
-    ndkVersion "26.3.11579264"
-    compileSdk 34
+    ndkVersion "28.2.13676358"
+    compileSdk 36
 
     defaultConfig {
         applicationId "org.p1graph.pitchvis_serial"
         minSdk 29
-        targetSdk 34
+        targetSdk 36
         versionCode 20 // Change to a higher number for each new release
         versionName "1.20" // Change to a higher number for each new release
 

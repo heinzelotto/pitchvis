@@ -285,6 +285,20 @@ fn main() -> AppExit {
     let update_analysis_state_system = analysis_system::update_analysis_state_to_system();
     let update_display_system = display_system::update_display_to_system(&vqt_parameters.range);
 
+    let mut persistent_settings_state = Persistent::<SettingsState>::builder()
+        .name("settings")
+        .format(StorageFormat::Toml)
+        .path(config_dir.join("settings.toml"))
+        .default(SettingsState {
+            display_mode: display_system::DisplayMode::Normal,
+            visuals_mode: display_system::VisualsMode::Full,
+            fps_limit: Some(DEFAULT_FPS),
+        })
+        .build()
+        .expect("failed to initialize key bindings");
+    // Always start in normal mode
+    persistent_settings_state.display_mode = display_system::DisplayMode::Normal;
+
     let mut app = App::new();
     app.add_plugins((
         DefaultPlugins
@@ -320,19 +334,7 @@ fn main() -> AppExit {
     ))
     .insert_resource(display_system::CylinderEntityListResource(Vec::new()))
     // .insert_resource(AudioControlChannelResource(audio_control_channel_tx))
-    .insert_resource(
-        Persistent::<SettingsState>::builder()
-            .name("settings")
-            .format(StorageFormat::Toml)
-            .path(config_dir.join("settings.toml"))
-            .default(SettingsState {
-                display_mode: display_system::DisplayMode::Normal,
-                visuals_mode: display_system::VisualsMode::Full,
-                fps_limit: Some(DEFAULT_FPS),
-            })
-            .build()
-            .expect("failed to initialize key bindings"),
-    )
+    .insert_resource(persistent_settings_state)
     .insert_resource(CurrentFpsLimit(Some(DEFAULT_FPS)))
     .insert_resource(WinitSettings {
         focused_mode: UpdateMode::reactive(std::time::Duration::from_secs_f32(

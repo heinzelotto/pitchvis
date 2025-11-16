@@ -55,3 +55,5 @@ opt-level = "z" # Optimize for size.
 
 [patch.crates-io]
 kiss3d = { git = "https://github.com/heinzelotto/kiss3d" }
+# FIXME: issue with stylus https://github.com/rust-mobile/android-activity/pull/191#issuecomment-3001694234
+android-activity = { git = "https://github.com/damus-io/android-activity", rev = "4ee16f1585e4a75031dc10785163d4b920f95805" }

@@ -55,6 +55,20 @@ pub async fn main_fun() -> Result<(), JsValue> {
     let update_analysis_state_system = analysis_system::update_analysis_state_to_system();
     let update_display_system = display_system::update_display_to_system(&vqt_parameters.range);
 
+    let mut persistent_settings_state = Persistent::<SettingsState>::builder()
+        .name("settings")
+        .format(StorageFormat::Json)
+        .path(config_dir.join("settings.json"))
+        .default(SettingsState {
+            display_mode: display_system::DisplayMode::Normal,
+            visuals_mode: display_system::VisualsMode::Full,
+            fps_limit: Some(DEFAULT_FPS),
+        })
+        .build()
+        .expect("failed to initialize key bindings");
+    // Always start in normal mode
+    persistent_settings_state.display_mode = display_system::DisplayMode::Normal;
+
     App::new()
         .add_plugins((
             DefaultPlugins
@@ -92,19 +106,7 @@ pub async fn main_fun() -> Result<(), JsValue> {
             AnalysisParameters::default(),
         )))
         .insert_resource(CylinderEntityListResource(Vec::new()))
-        .insert_resource(
-            Persistent::<SettingsState>::builder()
-                .name("settings")
-                .format(StorageFormat::Json)
-                .path(config_dir.join("settings.json"))
-                .default(SettingsState {
-                    display_mode: display_system::DisplayMode::Normal,
-                    visuals_mode: display_system::VisualsMode::Full,
-                    fps_limit: Some(DEFAULT_FPS),
-                })
-                .build()
-                .expect("failed to initialize key bindings"),
-        )
+        .insert_resource(persistent_settings_state)
         .insert_resource(CurrentFpsLimit(Some(DEFAULT_FPS)))
         .insert_resource(WinitSettings {
             focused_mode: UpdateMode::reactive(std::time::Duration::from_secs_f32(

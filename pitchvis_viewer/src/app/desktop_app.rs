@@ -67,12 +67,26 @@ pub fn main_fun() -> Result<()> {
     #[cfg(feature = "ml")]
     let ml_model_resource = ml_system::MlModelResource(ml_system::MlModel::new("model.pt"));
 
+    let mut persistent_settings_state = Persistent::<SettingsState>::builder()
+        .name("settings")
+        .format(StorageFormat::Toml)
+        .path(config_dir.join("settings.toml"))
+        .default(SettingsState {
+            display_mode: display_system::DisplayMode::Normal,
+            visuals_mode: display_system::VisualsMode::Full,
+            fps_limit: Some(DEFAULT_FPS),
+        })
+        .build()
+        .expect("failed to initialize key bindings");
+    // Always start in normal mode
+    persistent_settings_state.display_mode = display_system::DisplayMode::Normal;
+
     let mut app = App::new();
     app.add_plugins((
         DefaultPlugins
             .set(WindowPlugin {
                 primary_window: Some(Window {
-                    // present_mode: PresentMode::Immediate,
+                    // present_mode: bevy::window::PresentMode::Immediate,
                     title: "PitchVis".to_string(),
                     ..default()
                 }),
@@ -94,19 +108,7 @@ pub fn main_fun() -> Result<()> {
             pitchvis_analysis::analysis::AnalysisParameters::default(),
         ),
     ))
-    .insert_resource(
-        Persistent::<SettingsState>::builder()
-            .name("settings")
-            .format(StorageFormat::Toml)
-            .path(config_dir.join("settings.toml"))
-            .default(SettingsState {
-                display_mode: display_system::DisplayMode::Normal,
-                visuals_mode: display_system::VisualsMode::Full,
-                fps_limit: Some(DEFAULT_FPS),
-            })
-            .build()
-            .expect("failed to initialize key bindings"),
-    )
+    .insert_resource(persistent_settings_state)
     .insert_resource(CurrentFpsLimit(Some(DEFAULT_FPS)))
     .insert_resource(WinitSettings {
         focused_mode: UpdateMode::reactive(std::time::Duration::from_secs_f32(
