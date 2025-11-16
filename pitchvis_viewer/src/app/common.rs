@@ -378,7 +378,7 @@ pub fn update_screen_lock_indicator(
     mut query: Query<&mut Visibility, With<ScreenLockIndicator>>,
     lock_state: Res<ScreenLockState>,
 ) {
-    if let Ok(mut visibility) = query.get_single_mut() {
+    if let Ok(mut visibility) = query.single_mut() {
         *visibility = if lock_state.0 {
             Visibility::Visible
         } else {
@@ -585,7 +585,7 @@ pub fn setup_buttons(mut commands: Commands, settings: Res<Persistent<SettingsSt
                         ..button_node.clone()
                     },
                     BackgroundColor(Color::srgba(0.0, 0.2, 0.0, 0.5)),
-                    BorderColor(Color::srgb(0.0, 0.5, 0.0)),
+                    BorderColor::all(Color::srgb(0.0, 0.5, 0.0)),
                     BorderRadius::MAX,
                     ButtonAction::VisualsMode,
                 ))
@@ -610,7 +610,7 @@ pub fn setup_buttons(mut commands: Commands, settings: Res<Persistent<SettingsSt
                         ..button_node.clone()
                     },
                     BackgroundColor(Color::srgba(0.0, 0.2, 0.0, 0.5)),
-                    BorderColor(Color::srgb(0.0, 0.5, 0.0)),
+                    BorderColor::all(Color::srgb(0.0, 0.5, 0.0)),
                     BorderRadius::MAX,
                     ButtonAction::FpsLimit,
                 ))
@@ -631,7 +631,7 @@ pub fn setup_buttons(mut commands: Commands, settings: Res<Persistent<SettingsSt
                         ..button_node.clone()
                     },
                     BackgroundColor(Color::srgba(0.0, 0.2, 0.0, 0.5)),
-                    BorderColor(Color::srgb(0.0, 0.5, 0.0)),
+                    BorderColor::all(Color::srgb(0.0, 0.5, 0.0)),
                     BorderRadius::MAX,
                     ButtonAction::VQTSmoothing,
                 ))
@@ -765,9 +765,9 @@ fn cycle_vqt_smoothing_mode(mode: &mut display_system::VQTSmoothingMode) {
 }
 
 pub fn user_input_system(
-    mut touch_events: EventReader<TouchInput>,
-    mut keyboard_input_events: EventReader<KeyboardInput>,
-    mut mouse_button_input_events: EventReader<MouseButtonInput>,
+    mut touch_events: MessageReader<TouchInput>,
+    mut keyboard_input_events: MessageReader<KeyboardInput>,
+    mut mouse_button_input_events: MessageReader<MouseButtonInput>,
     mut settings: ResMut<Persistent<SettingsState>>,
     mouse_consumed: Res<PressEventConsumed>,
     mut lock_state: ResMut<ScreenLockState>,
