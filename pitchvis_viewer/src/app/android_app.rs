@@ -90,45 +90,64 @@ fn handle_lifetime_events_system(
     }
 }
 
+/// Resource to track the last applied UI visibility state
+#[derive(Resource)]
+struct LastUiVisibilityState(bool);
+
 /// System to hide/show Android navigation bar based on screen lock state
 ///
-/// Note: This uses WindowManager flags which are thread-safe, unlike View.setSystemUiVisibility()
-/// which requires the UI thread. The flags are applied when the window is next drawn.
-fn handle_android_ui_visibility(lock_state: Res<ScreenLockState>) {
-    // Only run when lock state changes
-    if !lock_state.is_changed() {
+/// NOTE: This feature is currently disabled due to conflicts with Bevy's BorderlessFullscreen mode.
+/// The app already runs in fullscreen, so additional navigation bar hiding may not be necessary.
+/// Keeping the system here for future investigation if needed.
+fn handle_android_ui_visibility(
+    lock_state: Res<ScreenLockState>,
+    mut last_state: Local<Option<bool>>,
+) {
+    // Check if this is the first run or if state actually changed
+    let is_locked = lock_state.0;
+    if last_state.map_or(false, |prev| prev == is_locked) {
+        // State hasn't changed, skip
         return;
     }
 
-    let is_locked = lock_state.0;
+    log::info!("handle_android_ui_visibility called: locked={}", is_locked);
 
-    let android_app = match bevy_window::ANDROID_APP.get() {
-        Some(app) => app,
-        None => {
-            log::warn!("Android app not available");
-            return;
-        }
-    };
+    // Update our tracking
+    *last_state = Some(is_locked);
 
-    // Use the window flags API which is simpler and thread-safe
-    // FLAG_FULLSCREEN hides the status bar
-    // FLAG_LAYOUT_NO_LIMITS allows content to draw behind system bars
-    if is_locked {
-        android_app.set_window_flags(
-            android_activity::WindowManagerFlags::FULLSCREEN
-                | android_activity::WindowManagerFlags::LAYOUT_NO_LIMITS,
-            android_activity::WindowManagerFlags::FULLSCREEN
-                | android_activity::WindowManagerFlags::LAYOUT_NO_LIMITS,
-        );
-        log::info!("Screen locked: Hiding system UI");
-    } else {
-        android_app.set_window_flags(
-            android_activity::WindowManagerFlags::empty(),
-            android_activity::WindowManagerFlags::FULLSCREEN
-                | android_activity::WindowManagerFlags::LAYOUT_NO_LIMITS,
-        );
-        log::info!("Screen unlocked: Showing system UI");
-    }
+    // DISABLED: Window flag manipulation causes freezing
+    // The app is already in BorderlessFullscreen mode via Bevy, which should
+    // provide adequate fullscreen experience without manual flag manipulation.
+    //
+    // If we need to re-enable this in the future, we should investigate:
+    // 1. Using View.setSystemUiVisibility() via proper UI thread posting
+    // 2. Coordinating with Bevy's window management
+    // 3. Testing on multiple Android versions
+
+    log::info!(
+        "Screen lock {}: Navigation bar control disabled (app already in fullscreen)",
+        if is_locked { "enabled" } else { "disabled" }
+    );
+
+    // let android_app = match bevy_window::ANDROID_APP.get() {
+    //     Some(app) => app,
+    //     None => {
+    //         log::warn!("Android app not available");
+    //         return;
+    //     }
+    // };
+    //
+    // if is_locked {
+    //     android_app.set_window_flags(
+    //         android_activity::WindowManagerFlags::LAYOUT_NO_LIMITS,
+    //         android_activity::WindowManagerFlags::LAYOUT_NO_LIMITS,
+    //     );
+    // } else {
+    //     android_app.set_window_flags(
+    //         android_activity::WindowManagerFlags::empty(),
+    //         android_activity::WindowManagerFlags::LAYOUT_NO_LIMITS,
+    //     );
+    // }
 }
 
 fn microphone_permission_granted(perm: &str) -> bool {
