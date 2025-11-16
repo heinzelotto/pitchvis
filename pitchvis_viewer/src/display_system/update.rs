@@ -9,8 +9,7 @@ use itertools::Itertools;
 use std::collections::HashMap;
 
 use crate::{
-    analysis_system::AnalysisStateResource, app::SettingsState, display_system::CLEAR_COLOR_EINK,
-    vqt_system::VqtResultResource,
+    analysis_system::AnalysisStateResource, app::SettingsState, vqt_system::VqtResultResource,
 };
 use pitchvis_analysis::{
     analysis::{AnalysisState, ContinuousPeak},
@@ -113,15 +112,20 @@ fn fade_pitch_balls(
     run_time: &Res<Time>,
     range: &VqtRange,
 ) {
+    const VISIBILITY_CUTOFF: f32 = 0.019;
+
     let timestep = run_time.delta();
     for (pitch_ball, mut visibility, mut transform, color) in &mut pitch_balls {
-        if *visibility == Visibility::Visible {
+        let mut size = transform.scale / PITCH_BALL_SCALE_FACTOR;
+
+        if size.x * PITCH_BALL_SCALE_FACTOR >= VISIBILITY_CUTOFF {
+            *visibility = Visibility::Visible;
+
             let idx = pitch_ball.0;
             let dropoff_factor_per_30fps_frame =
                 0.85 - 0.15 * (idx as f32 / range.n_buckets() as f32);
             let dropoff_factor = dropoff_factor_per_30fps_frame.powf(30.0 * timestep.as_secs_f32());
 
-            let mut size = transform.scale / PITCH_BALL_SCALE_FACTOR;
             size *= dropoff_factor;
             transform.scale = size * PITCH_BALL_SCALE_FACTOR;
 
@@ -131,22 +135,21 @@ fn fade_pitch_balls(
                 .expect("ball color material");
             color_mat.color = color_mat
                 .color
-                .with_alpha(color_mat.color.alpha() * dropoff_factor);
+                .with_alpha((color_mat.color.alpha() * dropoff_factor).max(0.7));
 
             // also shift shrinking circles slightly to the background so that they are not cluttering newly appearing larger circles
             transform.translation.z -= 0.001 * 30.0 * timestep.as_secs_f32();
 
-            if size.x * PITCH_BALL_SCALE_FACTOR < 0.009 {
+            if size.x * PITCH_BALL_SCALE_FACTOR < VISIBILITY_CUTOFF {
                 *visibility = Visibility::Hidden;
             }
-
         }
     }
 
-        // for (_, mut visibility, _, _) in &mut pitch_balls {
-        //     // FIXME: test how it looks when we only show the balls that are currently active in the vqt analysis
-        //     *visibility = Visibility::Hidden;
-        // }
+    // for (_, mut visibility, _, _) in &mut pitch_balls {
+    //     // FIXME: test how it looks when we only show the balls that are currently active in the vqt analysis
+    //     *visibility = Visibility::Hidden;
+    // }
 }
 
 fn update_pitch_balls(
@@ -252,31 +255,33 @@ fn update_pitch_balls(
     }
     // TODO: ?faster lookup through indexes
 
-    // let mut balls_to_hide = vec![false; pitch_balls.iter().len()];
-    // for (_, ContinuousPeak { center, .. }) in peaks_rounded.iter() {
-    //     // hide all balls that are close to the currently active peaks
-    //     let radius = (range.buckets_per_octave / 12) as f32 * 0.66;
-    //     #[allow(clippy::needless_range_loop)]
-    //     for i in ((center - radius).round().max(0.0) as usize)
-    //         ..=((center + radius)
-    //             .round()
-    //             .min((pitch_balls.iter().len() - 1) as f32) as usize)
-    //     {
-    //         balls_to_hide[i] = true;
-    //     }
-    // }
-    // for (idx, _) in peaks_rounded.iter() {
-    //     // show peaks itself even if they are close to other peaks
-    //     balls_to_hide[*idx] = false;
-    // }
-    // let mut hidden_cnt = 0;
-    // for (pitch_ball, mut visibility, _, _) in &mut pitch_balls {
-    //     if *visibility == Visibility::Visible && balls_to_hide[pitch_ball.0] {
-    //         *visibility = Visibility::Hidden;
-    //         hidden_cnt += 1;
-    //     }
-    // }
-    // log::trace!("Hid {} balls", hidden_cnt);
+    let mut balls_to_hide = vec![false; pitch_balls.iter().len()];
+    for (_, ContinuousPeak { center, .. }) in peaks_rounded.iter() {
+        // hide all balls that are close to the currently active peaks
+        let radius = (range.buckets_per_octave / 12) as f32 * 0.23;
+        #[allow(clippy::needless_range_loop)]
+        for i in ((center - radius).round().max(0.0) as usize)
+            ..=((center + radius)
+                .round()
+                .min((pitch_balls.iter().len() - 1) as f32) as usize)
+        {
+            balls_to_hide[i] = true;
+        }
+    }
+    for (idx, _) in peaks_rounded.iter() {
+        // show peaks itself even if they are close to other peaks
+        balls_to_hide[*idx] = false;
+    }
+    let mut hidden_cnt = 0;
+    for (pitch_ball, mut visibility, _, _) in &mut pitch_balls {
+        if *visibility == Visibility::Visible && balls_to_hide[pitch_ball.0] {
+            *visibility = Visibility::Hidden;
+            hidden_cnt += 1;
+        }
+    }
+    if hidden_cnt > 0 {
+        log::trace!("Hid {} balls", hidden_cnt);
+    }
 }
 
 fn update_bloom(

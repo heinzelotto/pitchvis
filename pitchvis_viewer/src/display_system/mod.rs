@@ -23,7 +23,7 @@ use pitchvis_analysis::vqt::VqtRange;
 const CLEAR_COLOR_NEUTRAL: ClearColorConfig =
     ClearColorConfig::Custom(Color::srgb(0.23, 0.23, 0.25));
 const CLEAR_COLOR_GALAXY: ClearColorConfig = ClearColorConfig::Custom(Color::srgb(0.05, 0.0, 0.05));
-const CLEAR_COLOR_EINK: ClearColorConfig = ClearColorConfig::Custom(Color::srgb(0.95, 0.95, 0.95));
+const _CLEAR_COLOR_EINK: ClearColorConfig = ClearColorConfig::Custom(Color::srgb(0.95, 0.95, 0.95));
 
 #[derive(Component)]
 pub struct PitchBall(usize);
