@@ -409,16 +409,17 @@ impl AnalysisState {
 
     fn update_tuning_inaccuracy(&mut self, frame_time: Duration) {
         let mut inaccuracy_sum = 0.0;
-        let mut amplitude_sum = 0.0;
+        let mut power_sum = 0.0;
         for p in &self.peaks_continuous {
-            amplitude_sum += p.size;
+            let power = p.size * p.size;
+            power_sum += power;
 
             let center_in_semitones = p.center * 12.0 / self.range.buckets_per_octave as f32;
-            inaccuracy_sum += (center_in_semitones - center_in_semitones.round()).abs() * p.size;
+            inaccuracy_sum += (center_in_semitones - center_in_semitones.round()).abs() * power;
         }
 
-        let average_tuning_inaccuracy = if amplitude_sum > 0.0 {
-            inaccuracy_sum / amplitude_sum
+        let average_tuning_inaccuracy = if power_sum > 0.0 {
+            inaccuracy_sum / power_sum
         } else {
             0.0
         };
