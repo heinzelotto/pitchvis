@@ -3,6 +3,10 @@ use bevy::winit::WinitSettings;
 use bevy_persistent::Persistent;
 use serde::Deserialize;
 use serde::Serialize;
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::sync::Mutex;
+use std::time::Instant;
 
 use crate::analysis_system::AnalysisStateResource;
 use crate::audio_system::AudioBufferResource;
@@ -25,6 +29,14 @@ pub struct SettingsState {
 }
 #[derive(Resource)]
 pub struct CurrentFpsLimit(pub Option<u32>);
+
+/// Resource to track screen lock state
+#[derive(Resource)]
+pub struct ScreenLockState(pub bool);
+
+/// Resource to track active touches for long press detection
+#[derive(Resource)]
+pub struct ActiveTouches(pub Arc<Mutex<HashMap<u64, Instant>>>);
 
 pub fn set_frame_limiter_system(
     mut current_limit: ResMut<CurrentFpsLimit>,
@@ -209,9 +221,13 @@ pub fn fps_counter_showhide(
     Ok(())
 }
 
-/// Marker to find the container entity so we can show/hide the FPS counter
+/// Marker to find the container entity so we can show/hide the analysis text
 #[derive(Component)]
 pub struct AnalysisRoot;
+
+/// Marker to find the screen lock indicator
+#[derive(Component)]
+pub struct ScreenLockIndicator;
 
 pub fn setup_analysis_text(mut commands: Commands) {
     let text_font = TextFont {
@@ -285,7 +301,7 @@ pub fn update_analysis_text_system(
     Ok(())
 }
 
-/// Toggle the FPS counter based on the display mode
+/// Toggle the analysis text based on the display mode
 pub fn analysis_text_showhide(
     mut q: Query<&mut Visibility, With<AnalysisRoot>>,
     settings: Res<Persistent<SettingsState>>,
@@ -299,6 +315,45 @@ pub fn analysis_text_showhide(
     }
 
     Ok(())
+}
+
+/// Setup screen lock indicator
+pub fn setup_screen_lock_indicator(mut commands: Commands) {
+    let text_font = TextFont {
+        font_size: 20.0,
+        ..default()
+    };
+
+    commands.spawn((
+        ScreenLockIndicator,
+        Text::new("🔒 SCREEN LOCKED"),
+        TextColor(Color::srgb(1.0, 0.8, 0.0)),
+        text_font,
+        Node {
+            position_type: PositionType::Absolute,
+            right: Val::Percent(1.),
+            top: Val::Percent(1.),
+            padding: UiRect::all(Val::Px(8.0)),
+            ..default()
+        },
+        BackgroundColor(Color::BLACK.with_alpha(0.7)),
+        ZIndex(i32::MAX),
+        Visibility::Hidden,
+    ));
+}
+
+/// Update screen lock indicator visibility
+pub fn update_screen_lock_indicator(
+    mut query: Query<&mut Visibility, With<ScreenLockIndicator>>,
+    lock_state: Res<ScreenLockState>,
+) {
+    if let Ok(mut visibility) = query.get_single_mut() {
+        *visibility = if lock_state.0 {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        };
+    }
 }
 
 /// Marker to find the text entity so we can update it
@@ -633,17 +688,45 @@ pub fn user_input_system(
     mut mouse_button_input_events: EventReader<MouseButtonInput>,
     mut settings: ResMut<Persistent<SettingsState>>,
     mouse_consumed: Res<PressEventConsumed>,
+    mut lock_state: ResMut<ScreenLockState>,
+    active_touches: Res<ActiveTouches>,
     mut commands: Commands,
 ) {
+    const LONG_PRESS_DURATION: f32 = 1.5;
+
+    // Check for long presses that are still held and toggle lock immediately
+    active_touches.0.lock().unwrap().retain(|_, touch_start| {
+        if touch_start.elapsed().as_secs_f32() >= LONG_PRESS_DURATION {
+            lock_state.0 = !lock_state.0;
+            false // Remove from tracking
+        } else {
+            true // Keep tracking
+        }
+    });
+
     for touch in touch_events.read() {
         match touch.phase {
+            TouchPhase::Started => {
+                active_touches
+                    .0
+                    .lock()
+                    .unwrap()
+                    .insert(touch.id, Instant::now());
+            }
             TouchPhase::Ended => {
-                if !mouse_consumed.0 {
-                    settings
-                        .update(|settings| {
-                            cycle_display_mode(&mut settings.display_mode);
-                        })
-                        .expect("failed to update settings");
+                // Check if this was a short press
+                let touch_start = active_touches.0.lock().unwrap().remove(&touch.id);
+                if let Some(touch_start) = touch_start {
+                    if touch_start.elapsed().as_secs_f32() < LONG_PRESS_DURATION {
+                        // Short press - only toggle display mode if not locked and not consumed
+                        if !lock_state.0 && !mouse_consumed.0 {
+                            settings
+                                .update(|settings| {
+                                    cycle_display_mode(&mut settings.display_mode);
+                                })
+                                .expect("failed to update settings");
+                        }
+                    }
                 }
                 // reset the consumed state for the next frame
                 commands.insert_resource(PressEventConsumed(false));
@@ -656,11 +739,18 @@ pub fn user_input_system(
         if keyboard_input.state.is_pressed() {
             match keyboard_input.key_code {
                 KeyCode::Space => {
-                    settings
-                        .update(|settings| {
-                            cycle_display_mode(&mut settings.display_mode);
-                        })
-                        .expect("failed to update settings");
+                    // Only allow space to toggle display mode if not locked
+                    if !lock_state.0 {
+                        settings
+                            .update(|settings| {
+                                cycle_display_mode(&mut settings.display_mode);
+                            })
+                            .expect("failed to update settings");
+                    }
+                }
+                KeyCode::KeyL => {
+                    // Ctrl+L or just L to toggle lock on desktop
+                    lock_state.0 = !lock_state.0;
                 }
                 _ => {}
             }
@@ -669,10 +759,10 @@ pub fn user_input_system(
 
     for mouse_button_input in mouse_button_input_events.read() {
         if mouse_button_input.state.is_pressed() {
-            #[allow(clippy::single_match)]
             match mouse_button_input.button {
                 MouseButton::Left => {
-                    if !mouse_consumed.0 {
+                    // Only allow left click to toggle display mode if not locked and not consumed
+                    if !lock_state.0 && !mouse_consumed.0 {
                         settings
                             .update(|settings| {
                                 cycle_display_mode(&mut settings.display_mode);
@@ -681,6 +771,10 @@ pub fn user_input_system(
                     }
                     // reset the consumed state for the next frame
                     commands.insert_resource(PressEventConsumed(false));
+                }
+                MouseButton::Right => {
+                    // Right click to toggle lock on desktop
+                    lock_state.0 = !lock_state.0;
                 }
                 _ => {}
             }
