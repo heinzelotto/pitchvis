@@ -71,6 +71,8 @@ pub async fn main_fun() -> Result<(), JsValue> {
             fps_limit: Some(DEFAULT_FPS),
             vqt_smoothing_mode: display_system::VQTSmoothingMode::Default,
         })
+        .revertible(true)
+        .revert_to_default_on_deserialization_errors(true)
         .build()
         .expect("failed to initialize key bindings");
     // Always start in normal mode

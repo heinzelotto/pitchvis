@@ -48,8 +48,8 @@ pub struct AnalysisParameters {
     bassline_peak_config: PeakDetectionParameters,
     /// The highest bass note to be considered.
     highest_bassnote: usize,
-    /// The duration over which each VQT bin is smoothed.
-    vqt_smoothing_duration: Duration,
+    /// The duration over which each VQT bin is smoothed, or no smoothing.
+    vqt_smoothing_duration: Option<Duration>,
     /// The duration over which the calmness of a indivitual pitch bin is smoothed.
     note_calmness_smoothing_duration: Duration,
     /// The duration over which the calmness of the scene is smoothed.
@@ -76,7 +76,7 @@ impl Default for AnalysisParameters {
                 min_height: 3.5,
             },
             highest_bassnote: 12 * 2 + 4,
-            vqt_smoothing_duration: Duration::from_millis(90),
+            vqt_smoothing_duration: Some(Duration::from_millis(90)),
             note_calmness_smoothing_duration: Duration::from_millis(4_500),
             scene_calmness_smoothing_duration: Duration::from_millis(1_100),
             tuning_inaccuracy_smoothing_duration: Duration::from_millis(4_000),
@@ -207,15 +207,15 @@ impl AnalysisState {
             _spectrogram_front_idx: 0,
             ml_midi_base_pitches: vec![0.0; 128],
             calmness: vec![
-                EmaMeasurement::new(params.note_calmness_smoothing_duration, 0.0);
+                EmaMeasurement::new(Some(params.note_calmness_smoothing_duration), 0.0);
                 n_buckets
             ],
             smoothed_scene_calmness: EmaMeasurement::new(
-                params.scene_calmness_smoothing_duration,
+                Some(params.scene_calmness_smoothing_duration),
                 0.0,
             ),
             smoothed_tuning_grid_inaccuracy: EmaMeasurement::new(
-                params.tuning_inaccuracy_smoothing_duration,
+                Some(params.tuning_inaccuracy_smoothing_duration),
                 0.0,
             ),
         }
@@ -228,7 +228,7 @@ impl AnalysisState {
     ///
     /// # Parameters:
     /// - `new_duration`: The new smoothing duration to apply.
-    pub fn update_vqt_smoothing_duration(&mut self, new_duration: Duration) {
+    pub fn update_vqt_smoothing_duration(&mut self, new_duration: Option<Duration>) {
         self.params.vqt_smoothing_duration = new_duration;
         for ema in &mut self.x_vqt_smoothed {
             let current_value = ema.get();

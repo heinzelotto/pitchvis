@@ -118,7 +118,7 @@ fn fade_pitch_balls(
         if *visibility == Visibility::Visible {
             let idx = pitch_ball.0;
             let dropoff_factor_per_30fps_frame =
-                0.90 - 0.15 * (idx as f32 / range.n_buckets() as f32);
+                0.85 - 0.15 * (idx as f32 / range.n_buckets() as f32);
             let dropoff_factor = dropoff_factor_per_30fps_frame.powf(30.0 * timestep.as_secs_f32());
 
             let mut size = transform.scale / PITCH_BALL_SCALE_FACTOR;
@@ -136,14 +136,17 @@ fn fade_pitch_balls(
             // also shift shrinking circles slightly to the background so that they are not cluttering newly appearing larger circles
             transform.translation.z -= 0.001 * 30.0 * timestep.as_secs_f32();
 
-            if size.x * PITCH_BALL_SCALE_FACTOR < 0.003 {
+            if size.x * PITCH_BALL_SCALE_FACTOR < 0.009 {
                 *visibility = Visibility::Hidden;
             }
 
-            // FIXME: test how it looks when we only show the balls that are currently active in the vqt analysis
-            // *visibility = Visibility::Hidden;
         }
     }
+
+        // for (_, mut visibility, _, _) in &mut pitch_balls {
+        //     // FIXME: test how it looks when we only show the balls that are currently active in the vqt analysis
+        //     *visibility = Visibility::Hidden;
+        // }
 }
 
 fn update_pitch_balls(

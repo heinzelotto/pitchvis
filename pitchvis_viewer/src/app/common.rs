@@ -230,7 +230,10 @@ pub fn update_fps_text_system(
     *writer.text(entity, 6) = format!("{:.2}ms", audio_buffer.0.lock().unwrap().chunk_size_ms);
     *writer.text(entity, 8) = format!("{}ms", vqt.0.delay.as_millis());
 
-    let smoothing_duration_ms = settings.vqt_smoothing_mode.to_duration().as_millis();
+    let smoothing_duration_ms = settings
+        .vqt_smoothing_mode
+        .to_duration()
+        .map_or(0, |d| d.as_millis());
     *writer.text(entity, 10) = format!("{}ms", smoothing_duration_ms);
 }
 

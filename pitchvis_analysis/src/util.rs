@@ -98,13 +98,13 @@ pub fn test_create_sines(params: &VqtParameters, freqs: &[f32], t_diff: f32) -> 
 /// TODO: keep an eye on how consistent this is across different frame rates.
 #[derive(Debug, Clone)]
 pub struct EmaMeasurement {
-    time_horizon: Duration,
+    time_horizon: Option<Duration>,
     y: f32,
 }
 
 impl EmaMeasurement {
     /// Create a new EmaMeasurement with a given averaging timespan and initial value
-    pub fn new(time_horizon: Duration, value: f32) -> Self {
+    pub fn new(time_horizon: Option<Duration>, value: f32) -> Self {
         Self {
             time_horizon,
             // alpha: 0.86, //(2.0 / (time_horizon.as_secs_f32() + 1.0)),
@@ -113,17 +113,22 @@ impl EmaMeasurement {
     }
 
     pub fn update_with_timestep(&mut self, new_value: f32, timestep: Duration) {
-        let n_horizon = self.time_horizon.as_secs_f32() / timestep.as_secs_f32();
-        let alpha = 2.0 / (n_horizon + 1.0);
-        // let alpha = 1.0 / (n_horizon);
+        if let Some(time_horizon) = self.time_horizon {
+            let n_horizon = time_horizon.as_secs_f32() / timestep.as_secs_f32();
+            let alpha = 2.0 / (n_horizon + 1.0);
+            // let alpha = 1.0 / (n_horizon);
 
-        self.update_with_alpha(new_value, alpha);
-        trace!(
-            "alpha: {alpha:.04}, timestep: {:.02}, new value: {:.02},  EMA: {:.02}",
-            timestep.as_secs_f32(),
-            new_value,
-            &self.y
-        );
+            self.update_with_alpha(new_value, alpha);
+            trace!(
+                "alpha: {alpha:.04}, timestep: {:.02}, new value: {:.02},  EMA: {:.02}",
+                timestep.as_secs_f32(),
+                new_value,
+                &self.y
+            );
+        } else {
+            // no smoothing at all
+            self.y = new_value;
+        }
     }
 
     pub fn update_one_second(&mut self, new_value: f32) {

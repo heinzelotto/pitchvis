@@ -65,12 +65,12 @@ pub enum VQTSmoothingMode {
 }
 
 impl VQTSmoothingMode {
-    pub fn to_duration(self) -> std::time::Duration {
+    pub fn to_duration(self) -> Option<std::time::Duration> {
         match self {
-            VQTSmoothingMode::None => std::time::Duration::from_millis(5),
-            VQTSmoothingMode::Short => std::time::Duration::from_millis(40),
-            VQTSmoothingMode::Default => std::time::Duration::from_millis(90),
-            VQTSmoothingMode::Long => std::time::Duration::from_millis(250),
+            VQTSmoothingMode::None => None,
+            VQTSmoothingMode::Short => Some(std::time::Duration::from_millis(40)),
+            VQTSmoothingMode::Default => Some(std::time::Duration::from_millis(90)),
+            VQTSmoothingMode::Long => Some(std::time::Duration::from_millis(250)),
         }
     }
 }
