@@ -143,7 +143,16 @@ pub fn setup_fps_counter(mut commands: Commands) {
                 TextColor(Color::WHITE),
                 text_font.clone(),
             ));
-            // TODO: add section for analysis smoothing latency
+            builder.spawn((
+                TextSpan::new("\nVQT smoothing: "),
+                TextColor(Color::WHITE),
+                text_font.clone(),
+            ));
+            builder.spawn((
+                TextSpan::new("N/A"),
+                TextColor(Color::WHITE),
+                text_font.clone(),
+            ));
         });
 }
 
@@ -208,6 +217,14 @@ pub fn update_fps_text_system(
     }
     *writer.text(entity, 6) = format!("{:.2}ms", audio_buffer.0.lock().unwrap().chunk_size_ms);
     *writer.text(entity, 8) = format!("{}ms", vqt.0.delay.as_millis());
+
+    let smoothing_mode_str = match settings.vqt_smoothing_mode {
+        display_system::VQTSmoothingMode::None => "None",
+        display_system::VQTSmoothingMode::Default => "Default",
+        display_system::VQTSmoothingMode::Long => "Long",
+    };
+    let smoothing_duration_ms = settings.vqt_smoothing_mode.to_duration().as_millis();
+    *writer.text(entity, 10) = format!("{} ({}ms)", smoothing_mode_str, smoothing_duration_ms);
 }
 
 /// Toggle the FPS counter based on the display mode
