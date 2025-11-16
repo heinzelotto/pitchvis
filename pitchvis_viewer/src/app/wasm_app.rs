@@ -19,12 +19,16 @@ use super::common::set_vqt_smoothing_system;
 use super::common::setup_analysis_text;
 use super::common::setup_buttons;
 use super::common::setup_fps_counter;
+use super::common::setup_screen_lock_indicator;
 use super::common::update_analysis_text_system;
 use super::common::update_button_system;
 use super::common::update_fps_text_system;
+use super::common::update_screen_lock_indicator;
 use super::common::user_input_system;
+use super::common::ActiveTouches;
 use super::common::CurrentFpsLimit;
 use super::common::CurrentVQTSmoothingMode;
+use super::common::ScreenLockState;
 use super::common::SettingsState;
 use super::common::{close_on_esc, setup_bloom_ui, update_bloom_settings};
 use crate::analysis_system::{self, AnalysisStateResource};
@@ -122,6 +126,10 @@ pub async fn main_fun() -> Result<(), JsValue> {
                 1.0 / DEFAULT_FPS as f32,
             )),
         })
+        .insert_resource(ScreenLockState(false))
+        .insert_resource(ActiveTouches(std::sync::Arc::new(std::sync::Mutex::new(
+            std::collections::HashMap::new(),
+        ))))
         .add_systems(
             Startup,
             (
@@ -130,6 +138,7 @@ pub async fn main_fun() -> Result<(), JsValue> {
                 setup_buttons,
                 setup_bloom_ui,
                 setup_analysis_text,
+                setup_screen_lock_indicator,
             ),
         )
         .add_systems(
@@ -146,6 +155,7 @@ pub async fn main_fun() -> Result<(), JsValue> {
                 update_bloom_settings.after(update_analysis_state_system),
                 update_analysis_text_system.after(update_analysis_state_system),
                 analysis_text_showhide,
+                update_screen_lock_indicator,
                 set_frame_limiter_system,
                 set_vqt_smoothing_system,
                 update_display_system.after(update_analysis_state_system),

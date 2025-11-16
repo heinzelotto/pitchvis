@@ -31,13 +31,17 @@ use super::common::setup_analysis_text;
 use super::common::setup_bloom_ui;
 use super::common::setup_buttons;
 use super::common::setup_fps_counter;
+use super::common::setup_screen_lock_indicator;
 use super::common::update_analysis_text_system;
 use super::common::update_bloom_settings;
 use super::common::update_button_system;
 use super::common::update_fps_text_system;
+use super::common::update_screen_lock_indicator;
 use super::common::user_input_system;
+use super::common::ActiveTouches;
 use super::common::CurrentFpsLimit;
 use super::common::CurrentVQTSmoothingMode;
+use super::common::ScreenLockState;
 use super::common::SettingsState;
 use crate::analysis_system;
 use crate::audio_system;
@@ -351,6 +355,10 @@ fn main() -> AppExit {
             1.0 / DEFAULT_FPS as f32,
         )),
     })
+    .insert_resource(ScreenLockState(false))
+    .insert_resource(ActiveTouches(std::sync::Arc::new(std::sync::Mutex::new(
+        std::collections::HashMap::new(),
+    ))))
     .add_systems(
         Startup,
         (
@@ -359,6 +367,7 @@ fn main() -> AppExit {
             setup_buttons,
             setup_bloom_ui,
             setup_analysis_text,
+            setup_screen_lock_indicator,
         ),
     )
     .add_systems(
@@ -378,6 +387,7 @@ fn main() -> AppExit {
             user_input_system.after(update_button_system),
             update_analysis_text_system.after(update_analysis_state_system),
             analysis_text_showhide,
+            update_screen_lock_indicator,
             update_bloom_settings.after(update_analysis_state_system),
         ),
     );
