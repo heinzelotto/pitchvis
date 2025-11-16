@@ -56,6 +56,25 @@ pub enum VisualsMode {
     Galaxy,      // pitch balls only, black background
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum VQTSmoothingMode {
+    None,    // No additional smoothing (5ms)
+    Short,   // Minor smoothing (40ms)
+    Default, // Default smoothing (90ms)
+    Long,    // Longer smoothing (250ms)
+}
+
+impl VQTSmoothingMode {
+    pub fn to_duration(self) -> std::time::Duration {
+        match self {
+            VQTSmoothingMode::None => std::time::Duration::from_millis(5),
+            VQTSmoothingMode::Short => std::time::Duration::from_millis(40),
+            VQTSmoothingMode::Default => std::time::Duration::from_millis(90),
+            VQTSmoothingMode::Long => std::time::Duration::from_millis(250),
+        }
+    }
+}
+
 /// keep an index -> entity mapping for the cylinders
 #[derive(Resource)]
 pub struct CylinderEntityListResource(pub Vec<Entity>);

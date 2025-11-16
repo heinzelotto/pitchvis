@@ -221,6 +221,21 @@ impl AnalysisState {
         }
     }
 
+    /// Updates the VQT smoothing duration parameter.
+    ///
+    /// This recreates the EmaMeasurement objects with the new time horizon while preserving
+    /// their current values.
+    ///
+    /// # Parameters:
+    /// - `new_duration`: The new smoothing duration to apply.
+    pub fn update_vqt_smoothing_duration(&mut self, new_duration: Duration) {
+        self.params.vqt_smoothing_duration = new_duration;
+        for ema in &mut self.x_vqt_smoothed {
+            let current_value = ema.get();
+            *ema = EmaMeasurement::new(new_duration, current_value);
+        }
+    }
+
     /// Preprocesses the given variable-Q transform (VQT) data to compute smoothed, peak-filtered results, and related analyses.
     ///
     /// This function takes in a VQT spectrum, represented by the `x_vqt` parameter, and performs several preprocessing steps:

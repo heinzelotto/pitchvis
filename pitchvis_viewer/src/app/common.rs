@@ -22,9 +22,25 @@ pub struct SettingsState {
     pub display_mode: display_system::DisplayMode,
     pub visuals_mode: display_system::VisualsMode,
     pub fps_limit: Option<u32>,
+    pub vqt_smoothing_mode: display_system::VQTSmoothingMode,
 }
 #[derive(Resource)]
 pub struct CurrentFpsLimit(pub Option<u32>);
+
+#[derive(Resource)]
+pub struct CurrentVQTSmoothingMode(pub display_system::VQTSmoothingMode);
+
+pub fn set_vqt_smoothing_system(
+    mut current_mode: ResMut<CurrentVQTSmoothingMode>,
+    mut analysis_state: ResMut<AnalysisStateResource>,
+    settings: Res<Persistent<SettingsState>>,
+) {
+    if settings.vqt_smoothing_mode != current_mode.0 {
+        current_mode.0 = settings.vqt_smoothing_mode;
+        let new_duration = settings.vqt_smoothing_mode.to_duration();
+        analysis_state.0.update_vqt_smoothing_duration(new_duration);
+    }
+}
 
 pub fn set_frame_limiter_system(
     mut current_limit: ResMut<CurrentFpsLimit>,
@@ -127,7 +143,16 @@ pub fn setup_fps_counter(mut commands: Commands) {
                 TextColor(Color::WHITE),
                 text_font.clone(),
             ));
-            // TODO: add section for analysis smoothing latency
+            builder.spawn((
+                TextSpan::new("\nVQT smoothing: "),
+                TextColor(Color::WHITE),
+                text_font.clone(),
+            ));
+            builder.spawn((
+                TextSpan::new("N/A"),
+                TextColor(Color::WHITE),
+                text_font.clone(),
+            ));
         });
 }
 
@@ -192,6 +217,9 @@ pub fn update_fps_text_system(
     }
     *writer.text(entity, 6) = format!("{:.2}ms", audio_buffer.0.lock().unwrap().chunk_size_ms);
     *writer.text(entity, 8) = format!("{}ms", vqt.0.delay.as_millis());
+
+    let smoothing_duration_ms = settings.vqt_smoothing_mode.to_duration().as_millis();
+    *writer.text(entity, 10) = format!("{}ms", smoothing_duration_ms);
 }
 
 /// Toggle the FPS counter based on the display mode
@@ -449,6 +477,7 @@ pub struct ButtonRoot;
 pub enum ButtonAction {
     VisualsMode,
     FpsLimit,
+    VQTSmoothing,
 }
 
 #[derive(Component)]
@@ -537,6 +566,31 @@ pub fn setup_buttons(mut commands: Commands, settings: Res<Persistent<SettingsSt
                     TextColor(Color::WHITE),
                     text_font.clone(),
                 ));
+            parent
+                .spawn((
+                    Button,
+                    Node {
+                        ..button_node.clone()
+                    },
+                    BackgroundColor(Color::srgba(0.0, 0.2, 0.0, 0.5)),
+                    BorderColor(Color::srgb(0.0, 0.5, 0.0)),
+                    BorderRadius::MAX,
+                    ButtonAction::VQTSmoothing,
+                ))
+                .insert(ConsumesPressEvents)
+                .with_child((
+                    Text::new(format!(
+                        "VQT Smoothing: {}",
+                        match settings.vqt_smoothing_mode {
+                            display_system::VQTSmoothingMode::None => "None",
+                            display_system::VQTSmoothingMode::Short => "Short",
+                            display_system::VQTSmoothingMode::Default => "Default",
+                            display_system::VQTSmoothingMode::Long => "Long",
+                        }
+                    )),
+                    TextColor(Color::WHITE),
+                    text_font.clone(),
+                ));
         });
     commands.insert_resource(PressEventConsumed(false));
 }
@@ -583,6 +637,22 @@ pub fn update_button_system(
                         **text = format!("FPS Limit: None");
                     }
                 }
+                ButtonAction::VQTSmoothing => {
+                    settings
+                        .update(|settings| {
+                            cycle_vqt_smoothing_mode(&mut settings.vqt_smoothing_mode);
+                        })
+                        .expect("failed to update settings");
+                    **text = format!(
+                        "VQT Smoothing: {}",
+                        match settings.vqt_smoothing_mode {
+                            display_system::VQTSmoothingMode::None => "None",
+                            display_system::VQTSmoothingMode::Short => "Short",
+                            display_system::VQTSmoothingMode::Default => "Default",
+                            display_system::VQTSmoothingMode::Long => "Long",
+                        }
+                    );
+                }
             }
         }
     }
@@ -625,6 +695,15 @@ fn cycle_fps_limit(fps_limit: &mut Option<u32>) {
         Some(30) => Some(60),
         _ => None,
     };
+}
+
+fn cycle_vqt_smoothing_mode(mode: &mut display_system::VQTSmoothingMode) {
+    *mode = match mode {
+        display_system::VQTSmoothingMode::None => display_system::VQTSmoothingMode::Short,
+        display_system::VQTSmoothingMode::Short => display_system::VQTSmoothingMode::Default,
+        display_system::VQTSmoothingMode::Default => display_system::VQTSmoothingMode::Long,
+        display_system::VQTSmoothingMode::Long => display_system::VQTSmoothingMode::None,
+    }
 }
 
 pub fn user_input_system(
