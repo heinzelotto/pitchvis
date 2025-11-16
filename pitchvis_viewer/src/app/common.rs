@@ -17,8 +17,8 @@ use bevy::diagnostic::FrameTimeDiagnosticsPlugin;
 use bevy::input::keyboard::KeyboardInput;
 use bevy::input::mouse::MouseButtonInput;
 use bevy::input::touch::TouchPhase;
-use bevy::post_process::bloom::Bloom;
-use bevy::post_process::bloom::BloomCompositeMode;
+// use bevy::post_process::bloom::Bloom;
+// use bevy::post_process::bloom::BloomCompositeMode;
 use bevy::prelude::*;
 
 #[derive(Resource, Serialize, Deserialize)]
@@ -385,146 +385,146 @@ pub fn update_screen_lock_indicator(
     }
 }
 
-/// Marker to find the text entity so we can update it
-#[derive(Component)]
-pub struct BloomSettingsText;
+// /// Marker to find the text entity so we can update it
+// #[derive(Component)]
+// pub struct BloomSettingsText;
 
-pub fn setup_bloom_ui(mut commands: Commands) {
-    // UI
-    commands.spawn((
-        BloomSettingsText,
-        Text::new(""),
-        TextColor(Color::WHITE),
-        TextFont {
-            font_size: 16.0,
-            ..default()
-        },
-        Node {
-            position_type: PositionType::Absolute,
-            bottom: Val::Px(12.0),
-            left: Val::Px(12.0),
-            // padding: UiRect::all(Val::Px(4.0)),
-            ..default()
-        },
-        // give it a dark background for readability
-        BackgroundColor(Color::BLACK.with_alpha(0.5)),
-        // make it "always on top" by setting the Z index to maximum
-        // we want it to be displayed over all other UI
-        ZIndex(i32::MAX),
-    ));
-}
+// pub fn setup_bloom_ui(mut commands: Commands) {
+//     // UI
+//     commands.spawn((
+//         BloomSettingsText,
+//         Text::new(""),
+//         TextColor(Color::WHITE),
+//         TextFont {
+//             font_size: 16.0,
+//             ..default()
+//         },
+//         Node {
+//             position_type: PositionType::Absolute,
+//             bottom: Val::Px(12.0),
+//             left: Val::Px(12.0),
+//             // padding: UiRect::all(Val::Px(4.0)),
+//             ..default()
+//         },
+//         // give it a dark background for readability
+//         BackgroundColor(Color::BLACK.with_alpha(0.5)),
+//         // make it "always on top" by setting the Z index to maximum
+//         // we want it to be displayed over all other UI
+//         ZIndex(i32::MAX),
+//     ));
+// }
 
-pub fn update_bloom_settings(
-    mut camera: Query<(Entity, Option<&mut Bloom>), With<Camera>>,
-    mut text: Query<(&mut Text, &mut Visibility), With<BloomSettingsText>>,
-    keycode: Res<ButtonInput<KeyCode>>,
-    time: Res<Time>,
-    settings: Res<Persistent<SettingsState>>,
-) -> Result<()> {
-    let mut text = text.single_mut()?;
-    if settings.display_mode != display_system::DisplayMode::Debugging {
-        *text.1 = Visibility::Hidden;
-        return Ok(());
-    } else {
-        *text.1 = Visibility::Visible;
-    }
+// pub fn update_bloom_settings(
+//     mut camera: Query<(Entity, Option<&mut Bloom>), With<Camera>>,
+//     mut text: Query<(&mut Text, &mut Visibility), With<BloomSettingsText>>,
+//     keycode: Res<ButtonInput<KeyCode>>,
+//     time: Res<Time>,
+//     settings: Res<Persistent<SettingsState>>,
+// ) -> Result<()> {
+//     let mut text = text.single_mut()?;
+//     if settings.display_mode != display_system::DisplayMode::Debugging {
+//         *text.1 = Visibility::Hidden;
+//         return Ok(());
+//     } else {
+//         *text.1 = Visibility::Visible;
+//     }
 
-    let bloom_settings = camera.single_mut()?;
-    let text = &mut text.0 .0;
+//     let bloom_settings = camera.single_mut()?;
+//     let text = &mut text.0 .0;
 
-    if let (_, Some(mut bloom_settings)) = bloom_settings {
-        *text = "BloomSettings\n".to_string();
-        text.push_str(&format!("(Q/A) Intensity: {}\n", bloom_settings.intensity));
-        text.push_str(&format!(
-            "(W/S) Low-frequency boost: {}\n",
-            bloom_settings.low_frequency_boost
-        ));
-        text.push_str(&format!(
-            "(E/D) Low-frequency boost curvature: {}\n",
-            bloom_settings.low_frequency_boost_curvature
-        ));
-        text.push_str(&format!(
-            "(R/F) High-pass frequency: {}\n",
-            bloom_settings.high_pass_frequency
-        ));
-        text.push_str(&format!(
-            "(T/G) Mode: {}\n",
-            match bloom_settings.composite_mode {
-                BloomCompositeMode::EnergyConserving => "Energy-conserving",
-                BloomCompositeMode::Additive => "Additive",
-            }
-        ));
-        text.push_str(&format!(
-            "(Y/H) Threshold: {}\n",
-            bloom_settings.prefilter.threshold
-        ));
-        text.push_str(&format!(
-            "(U/J) Threshold softness: {}\n",
-            bloom_settings.prefilter.threshold_softness
-        ));
+//     if let (_, Some(mut bloom_settings)) = bloom_settings {
+//         *text = "BloomSettings\n".to_string();
+//         text.push_str(&format!("(Q/A) Intensity: {}\n", bloom_settings.intensity));
+//         text.push_str(&format!(
+//             "(W/S) Low-frequency boost: {}\n",
+//             bloom_settings.low_frequency_boost
+//         ));
+//         text.push_str(&format!(
+//             "(E/D) Low-frequency boost curvature: {}\n",
+//             bloom_settings.low_frequency_boost_curvature
+//         ));
+//         text.push_str(&format!(
+//             "(R/F) High-pass frequency: {}\n",
+//             bloom_settings.high_pass_frequency
+//         ));
+//         text.push_str(&format!(
+//             "(T/G) Mode: {}\n",
+//             match bloom_settings.composite_mode {
+//                 BloomCompositeMode::EnergyConserving => "Energy-conserving",
+//                 BloomCompositeMode::Additive => "Additive",
+//             }
+//         ));
+//         text.push_str(&format!(
+//             "(Y/H) Threshold: {}\n",
+//             bloom_settings.prefilter.threshold
+//         ));
+//         text.push_str(&format!(
+//             "(U/J) Threshold softness: {}\n",
+//             bloom_settings.prefilter.threshold_softness
+//         ));
 
-        let dt = time.delta_secs();
+//         let dt = time.delta_secs();
 
-        if keycode.pressed(KeyCode::KeyA) {
-            bloom_settings.intensity -= dt / 10.0;
-        }
-        if keycode.pressed(KeyCode::KeyQ) {
-            bloom_settings.intensity += dt / 10.0;
-        }
-        bloom_settings.intensity = bloom_settings.intensity.clamp(0.0, 1.0);
+//         if keycode.pressed(KeyCode::KeyA) {
+//             bloom_settings.intensity -= dt / 10.0;
+//         }
+//         if keycode.pressed(KeyCode::KeyQ) {
+//             bloom_settings.intensity += dt / 10.0;
+//         }
+//         bloom_settings.intensity = bloom_settings.intensity.clamp(0.0, 1.0);
 
-        if keycode.pressed(KeyCode::KeyS) {
-            bloom_settings.low_frequency_boost -= dt / 10.0;
-        }
-        if keycode.pressed(KeyCode::KeyW) {
-            bloom_settings.low_frequency_boost += dt / 10.0;
-        }
-        bloom_settings.low_frequency_boost = bloom_settings.low_frequency_boost.clamp(0.0, 1.0);
+//         if keycode.pressed(KeyCode::KeyS) {
+//             bloom_settings.low_frequency_boost -= dt / 10.0;
+//         }
+//         if keycode.pressed(KeyCode::KeyW) {
+//             bloom_settings.low_frequency_boost += dt / 10.0;
+//         }
+//         bloom_settings.low_frequency_boost = bloom_settings.low_frequency_boost.clamp(0.0, 1.0);
 
-        if keycode.pressed(KeyCode::KeyD) {
-            bloom_settings.low_frequency_boost_curvature -= dt / 10.0;
-        }
-        if keycode.pressed(KeyCode::KeyE) {
-            bloom_settings.low_frequency_boost_curvature += dt / 10.0;
-        }
-        bloom_settings.low_frequency_boost_curvature =
-            bloom_settings.low_frequency_boost_curvature.clamp(0.0, 1.0);
+//         if keycode.pressed(KeyCode::KeyD) {
+//             bloom_settings.low_frequency_boost_curvature -= dt / 10.0;
+//         }
+//         if keycode.pressed(KeyCode::KeyE) {
+//             bloom_settings.low_frequency_boost_curvature += dt / 10.0;
+//         }
+//         bloom_settings.low_frequency_boost_curvature =
+//             bloom_settings.low_frequency_boost_curvature.clamp(0.0, 1.0);
 
-        if keycode.pressed(KeyCode::KeyF) {
-            bloom_settings.high_pass_frequency -= dt / 10.0;
-        }
-        if keycode.pressed(KeyCode::KeyR) {
-            bloom_settings.high_pass_frequency += dt / 10.0;
-        }
-        bloom_settings.high_pass_frequency = bloom_settings.high_pass_frequency.clamp(0.0, 1.0);
+//         if keycode.pressed(KeyCode::KeyF) {
+//             bloom_settings.high_pass_frequency -= dt / 10.0;
+//         }
+//         if keycode.pressed(KeyCode::KeyR) {
+//             bloom_settings.high_pass_frequency += dt / 10.0;
+//         }
+//         bloom_settings.high_pass_frequency = bloom_settings.high_pass_frequency.clamp(0.0, 1.0);
 
-        if keycode.pressed(KeyCode::KeyG) {
-            bloom_settings.composite_mode = BloomCompositeMode::Additive;
-        }
-        if keycode.pressed(KeyCode::KeyT) {
-            bloom_settings.composite_mode = BloomCompositeMode::EnergyConserving;
-        }
+//         if keycode.pressed(KeyCode::KeyG) {
+//             bloom_settings.composite_mode = BloomCompositeMode::Additive;
+//         }
+//         if keycode.pressed(KeyCode::KeyT) {
+//             bloom_settings.composite_mode = BloomCompositeMode::EnergyConserving;
+//         }
 
-        if keycode.pressed(KeyCode::KeyH) {
-            bloom_settings.prefilter.threshold -= dt;
-        }
-        if keycode.pressed(KeyCode::KeyY) {
-            bloom_settings.prefilter.threshold += dt;
-        }
-        bloom_settings.prefilter.threshold = bloom_settings.prefilter.threshold.max(0.0);
+//         if keycode.pressed(KeyCode::KeyH) {
+//             bloom_settings.prefilter.threshold -= dt;
+//         }
+//         if keycode.pressed(KeyCode::KeyY) {
+//             bloom_settings.prefilter.threshold += dt;
+//         }
+//         bloom_settings.prefilter.threshold = bloom_settings.prefilter.threshold.max(0.0);
 
-        if keycode.pressed(KeyCode::KeyJ) {
-            bloom_settings.prefilter.threshold_softness -= dt / 10.0;
-        }
-        if keycode.pressed(KeyCode::KeyU) {
-            bloom_settings.prefilter.threshold_softness += dt / 10.0;
-        }
-        bloom_settings.prefilter.threshold_softness =
-            bloom_settings.prefilter.threshold_softness.clamp(0.0, 1.0);
-    }
+//         if keycode.pressed(KeyCode::KeyJ) {
+//             bloom_settings.prefilter.threshold_softness -= dt / 10.0;
+//         }
+//         if keycode.pressed(KeyCode::KeyU) {
+//             bloom_settings.prefilter.threshold_softness += dt / 10.0;
+//         }
+//         bloom_settings.prefilter.threshold_softness =
+//             bloom_settings.prefilter.threshold_softness.clamp(0.0, 1.0);
+//     }
 
-    Ok(())
-}
+//     Ok(())
+// }
 
 /// Marker to find the container entity so we can show/hide the Buttons
 #[derive(Component)]

@@ -30,7 +30,8 @@ use super::common::CurrentFpsLimit;
 use super::common::CurrentVQTSmoothingMode;
 use super::common::ScreenLockState;
 use super::common::SettingsState;
-use super::common::{close_on_esc, setup_bloom_ui, update_bloom_settings};
+use super::common::{close_on_esc, update_bloom_settings};
+// use super::common::setup_bloom_ui;
 use crate::analysis_system::{self, AnalysisStateResource};
 use crate::audio_system::AudioBufferResource;
 use crate::display_system::material::NoisyColorMaterial;
@@ -138,7 +139,7 @@ pub async fn main_fun() -> Result<(), JsValue> {
                 display_system::setup_display_to_system(&vqt_parameters.range),
                 setup_fps_counter,
                 setup_buttons,
-                setup_bloom_ui,
+                // setup_bloom_ui,
                 setup_analysis_text,
                 setup_screen_lock_indicator,
             ),

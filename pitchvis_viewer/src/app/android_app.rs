@@ -28,12 +28,12 @@ use super::common::fps_counter_showhide;
 use super::common::set_frame_limiter_system;
 use super::common::set_vqt_smoothing_system;
 use super::common::setup_analysis_text;
-use super::common::setup_bloom_ui;
+// use super::common::setup_bloom_ui;
 use super::common::setup_buttons;
 use super::common::setup_fps_counter;
 use super::common::setup_screen_lock_indicator;
 use super::common::update_analysis_text_system;
-use super::common::update_bloom_settings;
+// use super::common::update_bloom_settings;
 use super::common::update_button_system;
 use super::common::update_fps_text_system;
 use super::common::update_screen_lock_indicator;
@@ -367,7 +367,7 @@ fn main() -> AppExit {
             display_system::setup_display_to_system(&vqt_parameters.range),
             setup_fps_counter,
             setup_buttons,
-            setup_bloom_ui,
+            // setup_bloom_ui,
             setup_analysis_text,
             setup_screen_lock_indicator,
         ),
@@ -390,7 +390,7 @@ fn main() -> AppExit {
             update_analysis_text_system.after(update_analysis_state_system),
             analysis_text_showhide,
             update_screen_lock_indicator,
-            update_bloom_settings.after(update_analysis_state_system),
+            // update_bloom_settings.after(update_analysis_state_system),
         ),
     );
 
