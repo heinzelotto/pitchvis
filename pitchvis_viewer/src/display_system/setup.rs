@@ -1,11 +1,9 @@
 use super::util::calculate_spiral_points;
 use super::{material::NoisyColorMaterial, LineList, PitchBall, PitchNameText, Spectrum};
 use super::{CylinderEntityListResource, SpiderNetSegment, CLEAR_COLOR_NEUTRAL};
-use bevy::core_pipeline::bloom::{Bloom, BloomPrefilter};
+use bevy::post_process::bloom::{Bloom, BloomPrefilter, BloomCompositeMode};
 use bevy::render::view::Hdr;
 use bevy::{
-    core_pipeline::{bloom::BloomCompositeMode, tonemapping::Tonemapping},
-    math::vec3,
     prelude::*,
 };
 use itertools::Itertools;
