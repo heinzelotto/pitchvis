@@ -99,12 +99,11 @@ pub fn setup_fps_counter(mut commands: Commands) {
                 position_type: PositionType::Absolute,
                 left: Val::Percent(1.),
                 top: Val::Percent(1.),
-                // set bottom/left to Auto, so it can be
-                // automatically sized depending on the text
-                // bottom: Val::Auto,
-                // right: Val::Auto,
                 // give it some padding for readability
                 padding: UiRect::all(Val::Px(4.0)),
+                // ensure the content is aligned properly
+                align_items: AlignItems::Start,
+                justify_content: JustifyContent::Start,
                 ..default()
             },
             // give it a dark background for readability
@@ -275,12 +274,11 @@ pub fn setup_analysis_text(mut commands: Commands) {
                 position_type: PositionType::Absolute,
                 right: Val::Percent(1.),
                 bottom: Val::Percent(1.),
-                // set bottom/left to Auto, so it can be
-                // automatically sized depending on the text
-                // bottom: Val::Auto,
-                // right: Val::Auto,
                 // give it some padding for readability
                 padding: UiRect::all(Val::Px(4.0)),
+                // ensure the content is aligned properly
+                align_items: AlignItems::Start,
+                justify_content: JustifyContent::Start,
                 ..default()
             },
             // give it a dark background for readability
@@ -405,6 +403,9 @@ pub fn setup_bloom_ui(mut commands: Commands) {
             position_type: PositionType::Absolute,
             bottom: Val::Px(12.0),
             left: Val::Px(12.0),
+            padding: UiRect::all(Val::Px(4.0)),
+            align_items: AlignItems::Start,
+            justify_content: JustifyContent::Start,
             ..default()
         },
         // give it a dark background for readability
