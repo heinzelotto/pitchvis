@@ -420,32 +420,36 @@ fn find_peaks(
     vqt: &[f32],
     buckets_per_octave: u16,
 ) -> HashSet<usize> {
-    let padding_length = 1;
-    let mut x_vqt_padded_left = vec![0.0; padding_length];
-    x_vqt_padded_left.extend(vqt.iter());
-    let mut fp = PeakFinder::new(&x_vqt_padded_left);
+    let mut fp = PeakFinder::new(vqt);
     fp.with_min_prominence(peak_config.min_prominence);
     fp.with_min_height(peak_config.min_height);
-    let peaks = fp.find_peaks();
-    let peaks = peaks
-        .iter()
-        .filter(|p| {
-            p.middle_position() >= padding_length + (buckets_per_octave as usize / 12 + 1) / 2
-        }) // we disregard lowest A and surroundings as peaks
-        .map(|p| p.middle_position() - padding_length)
-        .collect::<HashSet<usize>>();
 
+    // Add distance constraint to prevent duplicate peaks for vibrating notes
+    // Minimum separation: 0.4 semitones (prevents doubles while allowing close harmonies)
+    let min_separation_bins = (buckets_per_octave as f32 * 0.4 / 12.0).round() as usize;
+    if min_separation_bins > 0 {
+        fp.with_min_distance(min_separation_bins);
+    }
+
+    let peaks = fp.find_peaks();
+
+    // Filter out lowest A and surroundings (first ~half semitone)
+    let min_bin = (buckets_per_octave as usize / 12 + 1) / 2;
     peaks
+        .iter()
+        .filter(|p| p.middle_position() >= min_bin)
+        .map(|p| p.middle_position())
+        .collect::<HashSet<usize>>()
 }
 
 /// Enhances the detected peaks by estimating the precise center and size of each peak.
 ///
-/// This is done by quadratic interpolation. The problem is that currently the bins are
-/// not equally spaced, and their frequency resolution of higher bins increases. This
-/// means that the shape of the parabola must be adjusted to fit the bin. Currently, I'm
-/// not even sure that at high frequencies the filters cover the entire band of a semitone.
+/// Uses logarithmically-aware quadratic interpolation to account for the non-uniform
+/// (logarithmic) spacing of VQT bins. This is critical for high-frequency accuracy,
+/// where bins are spaced much wider than at low frequencies.
 ///
-/// FIXME: determine the function f(k_bin, vqt[peak-1], vqt[peak], vqt[peak+1])
+/// The algorithm fits a parabola in log-frequency space to the three points around
+/// each peak, then finds the parabola's maximum to estimate sub-bin peak location.
 fn enhance_peaks_continuous(
     discrete_peaks: &HashSet<usize>,
     vqt: &[f32],
@@ -454,26 +458,77 @@ fn enhance_peaks_continuous(
     let mut peaks_continuous: Vec<_> = discrete_peaks
         .iter()
         .filter_map(|p| {
-            // TODO: add test for how this behaves when the values of two neighbor bins are very similar
             let p = *p;
 
             if p < 1 || p > range.n_buckets() - 2 {
-                // FIXME: shift the center by one bin instead of discarding the peak
-                return None;
+                // Edge case: use the discrete peak value directly
+                return Some(ContinuousPeak {
+                    center: p as f32,
+                    size: vqt[p],
+                });
             }
 
-            let x = vqt[p] - vqt[p - 1] + f32::EPSILON;
-            let y = vqt[p] - vqt[p + 1] + f32::EPSILON;
+            // Compute actual frequencies (logarithmically spaced)
+            let bins_per_octave = range.buckets_per_octave as f32;
+            let f_prev = range.min_freq * 2.0_f32.powf((p - 1) as f32 / bins_per_octave);
+            let f_curr = range.min_freq * 2.0_f32.powf(p as f32 / bins_per_octave);
+            let f_next = range.min_freq * 2.0_f32.powf((p + 1) as f32 / bins_per_octave);
 
-            let estimated_precise_center = p as f32 + 1.0 / (1.0 + y / x) - 0.5;
-            let estimated_precise_size = vqt[estimated_precise_center.trunc() as usize + 1]
-                * estimated_precise_center.fract()
-                + vqt[estimated_precise_center.trunc() as usize]
-                    * (1.0 - estimated_precise_center.fract());
+            // Work in log-frequency space where bins are more evenly spaced
+            let log_f = [f_prev.ln(), f_curr.ln(), f_next.ln()];
+            let amplitudes = [vqt[p - 1], vqt[p], vqt[p + 1]];
 
+            // Fit parabola: y = a*x^2 + b*x + c using Lagrange interpolation
+            // The peak is at x_peak = -b / (2*a)
+            let denom = (log_f[0] - log_f[1]) * (log_f[0] - log_f[2]) * (log_f[1] - log_f[2]);
+
+            if denom.abs() < f32::EPSILON {
+                // Degenerate case (shouldn't happen with logarithmic spacing)
+                return Some(ContinuousPeak {
+                    center: p as f32,
+                    size: vqt[p],
+                });
+            }
+
+            // Compute parabola coefficients
+            let a = (log_f[2] * (amplitudes[1] - amplitudes[0])
+                + log_f[0] * (amplitudes[2] - amplitudes[1])
+                + log_f[1] * (amplitudes[0] - amplitudes[2]))
+                / denom;
+
+            let b = (log_f[2].powi(2) * (amplitudes[0] - amplitudes[1])
+                + log_f[0].powi(2) * (amplitudes[1] - amplitudes[2])
+                + log_f[1].powi(2) * (amplitudes[2] - amplitudes[0]))
+                / denom;
+
+            // Find peak in log-frequency space
+            let log_f_peak = if a.abs() < f32::EPSILON {
+                // Nearly linear case, use discrete peak
+                log_f[1]
+            } else {
+                (-b / (2.0 * a)).clamp(log_f[0], log_f[2])
+            };
+
+            // Convert log-frequency back to bin index
+            // f_peak = min_freq * 2^(bin_index / bins_per_octave)
+            // => log2(f_peak / min_freq) = bin_index / bins_per_octave
+            // => bin_index = bins_per_octave * log2(f_peak / min_freq)
+            let f_peak = log_f_peak.exp();
+            let estimated_precise_center =
+                bins_per_octave * (f_peak / range.min_freq).log2();
+
+            // Evaluate parabola at the peak to get amplitude
+            let c = (amplitudes[0] * log_f[1] * log_f[2]
+                - amplitudes[1] * log_f[0] * log_f[2]
+                + amplitudes[2] * log_f[0] * log_f[1])
+                / denom;
+            let estimated_precise_size = a * log_f_peak.powi(2) + b * log_f_peak + c;
+
+            // Clamp to valid range and ensure non-negative amplitude
             Some(ContinuousPeak {
-                center: estimated_precise_center,
-                size: estimated_precise_size,
+                center: estimated_precise_center
+                    .clamp(0.0, range.n_buckets() as f32 - 1.0),
+                size: estimated_precise_size.max(0.0),
             })
         })
         .collect();
