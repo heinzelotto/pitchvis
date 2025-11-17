@@ -282,10 +282,10 @@ fn update_pitch_balls(
                     // Apply tint by mixing with base color
                     let current_color = color_mat.color;
                     color_mat.color = Color::srgba(
-                        (current_color.red() + tint_r * vibrato_tint_strength).clamp(0.0, 1.0),
-                        (current_color.green() + tint_g * vibrato_tint_strength).clamp(0.0, 1.0),
-                        (current_color.blue() + tint_b * vibrato_tint_strength).clamp(0.0, 1.0),
-                        current_color.alpha(),
+                        (current_color.red + tint_r * vibrato_tint_strength).clamp(0.0, 1.0),
+                        (current_color.green + tint_g * vibrato_tint_strength).clamp(0.0, 1.0),
+                        (current_color.blue + tint_b * vibrato_tint_strength).clamp(0.0, 1.0),
+                        current_color.alpha,
                     ).into();
                 }
             }
@@ -357,10 +357,10 @@ fn update_pitch_balls(
             // Apply tuning accuracy to color brightness
             let current_color = color_mat.color;
             color_mat.color = Color::srgba(
-                current_color.red() * tuning_accuracy_boost,
-                current_color.green() * tuning_accuracy_boost,
-                current_color.blue() * tuning_accuracy_boost,
-                current_color.alpha(),
+                current_color.red * tuning_accuracy_boost,
+                current_color.green * tuning_accuracy_boost,
+                current_color.blue * tuning_accuracy_boost,
+                current_color.alpha,
             ).into();
 
             // TODO: scale up new notes to make them more prominent
@@ -761,7 +761,7 @@ fn update_harmonic_lines_and_chord(
     mut chord_display_query: Query<(&mut Text2d, &mut Visibility), With<ChordDisplay>>,
     analysis_state: &AnalysisState,
     meshes: &mut ResMut<Assets<Mesh>>,
-    color_materials: &mut ResMut<Assets<ColorMaterial>>,
+    _color_materials: &mut ResMut<Assets<ColorMaterial>>,
     settings_state: &Res<Persistent<SettingsState>>,
     range: &VqtRange,
 ) {
