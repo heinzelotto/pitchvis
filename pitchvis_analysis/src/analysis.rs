@@ -26,7 +26,7 @@ use log::trace;
 
 use std::{
     cmp::{max, min},
-    collections::HashSet,
+    collections::{HashSet, VecDeque},
     time::Duration,
 };
 
@@ -36,6 +36,80 @@ pub struct PeakDetectionParameters {
     pub min_prominence: f32,
     /// The minimum height of a peak to be considered a peak.
     pub min_height: f32,
+}
+
+#[derive(Debug, Clone)]
+pub struct AttackDetectionParameters {
+    /// Minimum rate of amplitude increase to detect attack (dB/s)
+    pub min_attack_rate: f32,
+    /// Minimum amplitude for attack detection (dB)
+    pub min_attack_amplitude: f32,
+    /// Minimum amplitude jump to detect attack (dB)
+    pub min_attack_delta: f32,
+    /// Cooldown period between attacks on same bin (seconds)
+    pub attack_cooldown: f32,
+    /// Duration of attack phase after onset (seconds)
+    pub attack_phase_duration: f32,
+    /// Decay rate threshold for percussion classification (dB/s)
+    pub percussion_decay_threshold: f32,
+    /// Attack rate threshold for percussion classification (dB/s)
+    pub percussion_attack_threshold: f32,
+}
+
+impl Default for AttackDetectionParameters {
+    fn default() -> Self {
+        Self {
+            min_attack_rate: 50.0,
+            min_attack_amplitude: 38.0,
+            min_attack_delta: 3.0,
+            attack_cooldown: 0.05,
+            attack_phase_duration: 0.05,
+            percussion_decay_threshold: 100.0,
+            percussion_attack_threshold: 200.0,
+        }
+    }
+}
+
+/// Tracks attack state for a single frequency bin
+#[derive(Debug, Clone)]
+pub struct AttackState {
+    /// Time since last attack (in seconds)
+    pub time_since_attack: f32,
+    /// Peak amplitude at time of last attack (dB)
+    pub attack_amplitude: f32,
+    /// Amplitude of previous frame (for rate-of-change detection)
+    pub previous_amplitude: f32,
+    /// Is this bin currently in attack phase? (first ~50ms after onset)
+    pub in_attack_phase: bool,
+    /// Amplitude history for decay rate calculation (last 10 frames)
+    pub amplitude_history: VecDeque<f32>,
+}
+
+impl AttackState {
+    fn new() -> Self {
+        Self {
+            time_since_attack: 1.0, // Start at 1s (no recent attack)
+            attack_amplitude: 0.0,
+            previous_amplitude: 0.0,
+            in_attack_phase: false,
+            amplitude_history: VecDeque::with_capacity(10),
+        }
+    }
+}
+
+/// Represents a detected attack event
+#[derive(Debug, Clone, Copy)]
+pub struct AttackEvent {
+    /// Bin index where attack occurred
+    pub bin_idx: usize,
+    /// Frequency of the attacked note (Hz)
+    pub frequency: f32,
+    /// Attack amplitude (dB)
+    pub amplitude: f32,
+    /// Rate of amplitude increase (dB/s)
+    pub attack_rate: f32,
+    /// Percussion score for this attack (0.0 = melodic, 1.0 = percussive)
+    pub percussion_score: f32,
 }
 
 #[derive(Debug, Clone)]
@@ -67,6 +141,8 @@ pub struct AnalysisParameters {
     /// A harmonic is considered present if its power >= threshold * fundamental_power.
     /// Note: VQT is in dB, so we convert: power = 10^(dB/10)
     harmonic_threshold: f32,
+    /// Attack detection parameters
+    attack_detection_config: AttackDetectionParameters,
 }
 
 impl AnalysisParameters {
@@ -98,6 +174,7 @@ impl Default for AnalysisParameters {
             tuning_inaccuracy_smoothing_duration: Duration::from_millis(4_000),
             // Harmonics need to have at least 30% of fundamental's **power** (not dB!)
             harmonic_threshold: 0.3,
+            attack_detection_config: AttackDetectionParameters::default(),
         }
     }
 }
@@ -191,6 +268,15 @@ pub struct AnalysisState {
     ///
     /// Also, overtones that don't fit to the tuning grid will also impact the inaccuracy.
     pub smoothed_tuning_grid_inaccuracy: EmaMeasurement,
+
+    /// Per-bin attack state tracking (onset detection, percussion classification)
+    pub attack_state: Vec<AttackState>,
+
+    /// Per-bin percussion score (0.0 = melodic, 1.0 = percussive)
+    pub percussion_score: Vec<f32>,
+
+    /// Attack events detected in the current frame (for visualization)
+    pub current_attacks: Vec<AttackEvent>,
 }
 
 impl AnalysisState {
@@ -254,6 +340,9 @@ impl AnalysisState {
                 params.tuning_inaccuracy_smoothing_duration,
                 0.0,
             ),
+            attack_state: vec![AttackState::new(); n_buckets],
+            percussion_score: vec![0.0; n_buckets],
+            current_attacks: Vec::new(),
         }
     }
 
@@ -398,6 +487,10 @@ impl AnalysisState {
 
         self.update_calmness(x_vqt, frame_time);
 
+        // Detect attack events (note onsets) and calculate percussion scores
+        // Uses smoothed VQT for noise rejection
+        self.detect_attacks(&x_vqt_smoothed, frame_time);
+
         // needs to be run after the continuous peaks have been calculated
         self.update_tuning_inaccuracy(frame_time);
 
@@ -506,6 +599,161 @@ impl AnalysisState {
 
         self.smoothed_tuning_grid_inaccuracy
             .update_with_timestep(average_tuning_inaccuracy_in_cents, frame_time);
+    }
+
+    /// Convert bin index to frequency (Hz)
+    pub fn bin_to_frequency(&self, bin_idx: usize) -> f32 {
+        self.range.min_freq * 2.0_f32.powf(bin_idx as f32 / self.range.buckets_per_octave as f32)
+    }
+
+    /// Detect attack events (note onsets) across all frequency bins
+    fn detect_attacks(&mut self, x_vqt_smoothed: &[f32], frame_time: Duration) {
+        let dt = frame_time.as_secs_f32();
+        let params = self.params.attack_detection_config.clone();
+        let min_freq = self.range.min_freq;
+        let buckets_per_octave = self.range.buckets_per_octave;
+
+        self.current_attacks.clear();
+
+        for (bin_idx, state) in self.attack_state.iter_mut().enumerate() {
+            let current_amp = x_vqt_smoothed[bin_idx];
+            let amp_change = current_amp - state.previous_amplitude;
+            let rate_of_change = amp_change / dt.max(0.001);  // dB/s
+
+            // Update time since last attack
+            state.time_since_attack += dt;
+
+            // ATTACK DETECTION CRITERIA
+            let attack_detected =
+                rate_of_change > params.min_attack_rate &&           // Rapid increase
+                current_amp > params.min_attack_amplitude &&         // Above noise floor
+                amp_change > params.min_attack_delta &&              // Minimum delta
+                state.time_since_attack > params.attack_cooldown;    // Cooldown period
+
+            if attack_detected {
+                // Record attack event
+                state.time_since_attack = 0.0;
+                state.attack_amplitude = current_amp;
+                state.in_attack_phase = true;
+
+                // Calculate percussion score inline to avoid borrowing issues
+                let percussion = Self::calculate_percussion_score_static(
+                    state,
+                    rate_of_change,
+                    &params,
+                );
+                self.percussion_score[bin_idx] = percussion;
+
+                // Calculate frequency inline
+                let frequency = min_freq * 2.0_f32.powf(bin_idx as f32 / buckets_per_octave as f32);
+
+                self.current_attacks.push(AttackEvent {
+                    bin_idx,
+                    frequency,
+                    amplitude: current_amp,
+                    attack_rate: rate_of_change,
+                    percussion_score: percussion,
+                });
+            }
+
+            // Exit attack phase after configured duration
+            if state.time_since_attack > params.attack_phase_duration {
+                state.in_attack_phase = false;
+            }
+
+            // Update amplitude history (keep last 10 values)
+            state.amplitude_history.push_back(current_amp);
+            if state.amplitude_history.len() > 10 {
+                state.amplitude_history.pop_front();
+            }
+
+            // Store for next frame
+            state.previous_amplitude = current_amp;
+        }
+
+        // Filter attacks: only keep those that coincide with actual peaks
+        // This reduces false positives from noise
+        let peaks = &self.peaks;
+        let n_buckets = self.range.n_buckets();
+        self.current_attacks.retain(|attack| {
+            let start = attack.bin_idx.saturating_sub(2);
+            let end = (attack.bin_idx + 2).min(n_buckets - 1);
+            (start..=end).any(|b| peaks.contains(&b))
+        });
+    }
+
+    /// Calculate percussion score (static version to avoid borrowing issues)
+    fn calculate_percussion_score_static(
+        state: &AttackState,
+        attack_rate: f32,
+        params: &AttackDetectionParameters,
+    ) -> f32 {
+        let mut percussion_score = 0.0;
+        let mut factor_count = 0;
+
+        // FACTOR 1: Decay Rate
+        // Percussion decays quickly after attack
+        if state.amplitude_history.len() >= 5 {
+            let recent_amps: Vec<f32> = state.amplitude_history.iter()
+                .rev()
+                .take(5)
+                .copied()
+                .collect();
+
+            let decay_rate = Self::calculate_decay_rate_static(&recent_amps);
+
+            // High decay rate = percussive (> 100 dB/s)
+            // Low decay rate = sustained (< 20 dB/s)
+            let decay_factor = (decay_rate / params.percussion_decay_threshold).min(1.0);
+            percussion_score += decay_factor;
+            factor_count += 1;
+        }
+
+        // FACTOR 2: Attack Sharpness
+        // Very sharp attacks (> 200 dB/s) are percussive
+        // Slow attacks (< 50 dB/s) are melodic
+        let attack_factor = ((attack_rate - params.min_attack_rate) /
+                           (params.percussion_attack_threshold - params.min_attack_rate))
+                           .clamp(0.0, 1.0);
+        percussion_score += attack_factor;
+        factor_count += 1;
+
+        // Average all factors
+        if factor_count > 0 {
+            (percussion_score / factor_count as f32).clamp(0.0, 1.0)
+        } else {
+            0.0
+        }
+    }
+
+    /// Calculate decay rate from amplitude history (dB/s) - static version
+    /// Returns positive value for decay (amplitude decreasing)
+    fn calculate_decay_rate_static(amplitudes: &[f32]) -> f32 {
+        if amplitudes.len() < 2 {
+            return 0.0;
+        }
+
+        // Simple linear regression: find slope of amplitude vs. sample index
+        // We approximate time using frame count (assumes ~60 FPS)
+        let n = amplitudes.len() as f32;
+        let frame_duration = 1.0 / 60.0;  // Approximate frame time
+
+        let sum_a: f32 = amplitudes.iter().sum();
+        let sum_t: f32 = (0..amplitudes.len()).map(|i| i as f32 * frame_duration).sum();
+        let sum_ta: f32 = amplitudes.iter().enumerate()
+            .map(|(i, a)| i as f32 * frame_duration * a)
+            .sum();
+        let sum_tt: f32 = (0..amplitudes.len())
+            .map(|i| {
+                let t = i as f32 * frame_duration;
+                t * t
+            })
+            .sum();
+
+        let slope = (n * sum_ta - sum_t * sum_a) / (n * sum_tt - sum_t * sum_t);
+
+        // Return absolute decay rate (negative slope = decay)
+        -slope
     }
 }
 
