@@ -356,7 +356,8 @@ struct PrecomputedFft {
     /// The forward FFT.
     fwd_fft: Arc<dyn Fft<f32>>,
 
-    /// The inverse FFT.
+    /// The inverse FFT (unused after frequency-domain resampling optimization).
+    #[allow(dead_code)]
     inv_fft: Arc<dyn Fft<f32>>,
 }
 
@@ -428,17 +429,19 @@ impl Vqt {
                 .or_insert_with(|| {
                     PrecomputedFft {
                         fwd_fft: planner.plan_fft_forward(cur_unscaled_fft_length),
-                        inv_fft: planner.plan_fft_inverse(cur_unscaled_fft_length), // actually not needed
+                        inv_fft: planner.plan_fft_inverse(cur_unscaled_fft_length), // unused (kept for struct compatibility)
                     }
                 });
 
+            // Note: We no longer need FFTs for the scaled length since resample() now returns
+            // frequency-domain data directly. These are kept for backwards compatibility but unused.
             let cur_scaled_fft_length =
                 unscaled_window.sufficient_n_fft_size / sr_downscaling_factor;
             resample_ffts
                 .entry(cur_scaled_fft_length)
                 .or_insert_with(|| PrecomputedFft {
-                    fwd_fft: planner.plan_fft_forward(cur_scaled_fft_length),
-                    inv_fft: planner.plan_fft_inverse(cur_scaled_fft_length),
+                    fwd_fft: planner.plan_fft_forward(cur_scaled_fft_length), // unused
+                    inv_fft: planner.plan_fft_inverse(cur_scaled_fft_length), // unused
                 });
         }
 
@@ -887,38 +890,67 @@ impl Vqt {
 
     //#yellow
 
-    fn resample(&self, v: &[f32], sr_scaling: usize) -> Vec<f32> {
+    /// Resamples the input signal by performing low-pass filtering and decimation in the
+    /// frequency domain, avoiding redundant IFFT/FFT operations.
+    ///
+    /// This method returns the FFT of the resampled signal directly, which can be immediately
+    /// used for filter bank application without an additional FFT.
+    ///
+    /// # Arguments
+    /// * `v` - Input time-domain signal
+    /// * `sr_scaling` - Downsampling factor
+    ///
+    /// # Returns
+    /// The FFT of the downsampled signal (frequency domain representation)
+    fn resample(&self, v: &[f32], sr_scaling: usize) -> Vec<Complex32> {
         let fft_size = v.len();
+        let new_size = fft_size / sr_scaling;
 
+        // Convert to complex
         let mut x_fft = v
             .iter()
             .map(|f| rustfft::num_complex::Complex32::new(*f, 0.0))
             .collect::<Vec<rustfft::num_complex::Complex32>>();
 
-        let PrecomputedFft {
-            fwd_fft, inv_fft, ..
-        } = self.resample_ffts.get(&v.len()).unwrap();
+        let PrecomputedFft { fwd_fft, .. } = self.resample_ffts.get(&v.len()).unwrap();
 
+        // Forward FFT
         fwd_fft.process(&mut x_fft);
+
+        // Zero out high frequencies (low-pass filter for anti-aliasing)
         #[allow(clippy::needless_range_loop)]
         for i in (1 + fft_size / sr_scaling / 2)..(fft_size - fft_size / sr_scaling / 2) {
             x_fft[i] = num_complex::Complex::zero();
         }
-        inv_fft.process(&mut x_fft);
 
-        x_fft
+        // Decimate in frequency domain by extracting the relevant frequency bins
+        // For a real signal decimated by M, we keep:
+        // - DC to positive Nyquist: bins 0 to new_size/2
+        // - Negative frequencies: bins from (fft_size - new_size/2 + 1) to (fft_size - 1)
+        let cutoff = new_size / 2;
+        let mut result = Vec::with_capacity(new_size);
+
+        // Copy DC and positive frequencies up to Nyquist (inclusive)
+        result.extend_from_slice(&x_fft[0..=cutoff]);
+
+        // Copy negative frequencies (excluding negative Nyquist to avoid duplication)
+        result.extend_from_slice(&x_fft[(fft_size - cutoff + 1)..]);
+
+        // Apply normalization factor
+        // The old code did: FFT[N] → IFFT/N → decimate by M → FFT[N/M]
+        // Mathematical analysis shows: FFT_decimated[k] = FFT_original[k] / M
+        result
             .iter()
-            .step_by(sr_scaling)
-            .map(|z| z.re / fft_size as f32)
-            .collect::<Vec<f32>>()
+            .map(|z| z / sr_scaling as f32)
+            .collect()
     }
     //#
 
     //#pink
 
     /// Calculates the variable-Q Transform (VQT) of the given input signal at a specific time instant.
-    /// The result is given in dB scale. The function performs multiple FFTs on resampled versions of
-    /// the input signal and applies the precomputed VQT kernel to each FFT output to obtain the VQT.
+    /// The result is given in dB scale. The function performs resampling in the frequency domain
+    /// and applies the precomputed VQT kernel to each resampled FFT output to obtain the VQT.
     /// It then converts the results into the dB scale and combines them into a single output vector.
     ///
     /// # Arguments
@@ -927,10 +959,6 @@ impl Vqt {
     /// # Returns
     /// A vector containing the VQT of the input signal in dB scale.
     pub fn calculate_vqt_instant_in_db(&self, x: &[f32]) -> Vec<f32> {
-        // TODO: we are doing a lot of unnecessary ffts here, just because the interface of the resampler
-        // neither allows us to reuse the same frame for subsequent downsamplings, nor allows us to do the
-        // fft ourselves.
-
         // let freqs = (1..10).map(|i| self.params.range.min_freq * 2.0.powf(i as f32 * 7.0 / 12.0) )
         // .collect::<Vec<_>>();
         //     let x = util::test_create_sines(&self.params, &freqs, self.t_diff);
@@ -968,27 +996,19 @@ impl Vqt {
             //     cur_resampling_factor
             // );
 
-            let vv = self.resample(x_selection, *sr_downscaling_factor);
+            // Resample returns frequency-domain data directly (already FFT'd)
+            let x_fft = self.resample(x_selection, *sr_downscaling_factor);
 
-            let mut x_fft = vv
-                .iter()
-                .map(|f| rustfft::num_complex::Complex32::new(*f, 0.0))
-                .collect::<Vec<rustfft::num_complex::Complex32>>();
-            //dbg!(max(&std::iter::zip(x_selection.iter().copied(), vv.iter().copied()).map(|(a, b)| (a-b).abs()).collect::<Vec<f32>>()));
-            //dbg!(std::iter::zip(x_selection.iter().copied(), vv.iter().copied()).take(10).collect::<Vec<(f32,f32)>>());
             assert_eq!(cur_scaled_fft_length, x_fft.len());
             //dbg!(cur_scaled_fft_length);
-            self.resample_ffts
-                .get(&cur_scaled_fft_length)
-                .unwrap()
-                .fwd_fft
-                .process(&mut x_fft); // TODO: just get the fft from the resampler, ?if possible
-                                      // dbg!(
-                                      //     filters.shape(),
-                                      //     x_fft.len(),
-                                      //     offset,
-                                      //     offset + filters.shape().0
-                                      // );
+
+            // Apply filter bank to frequency-domain data
+            // dbg!(
+            //     filters.shape(),
+            //     x_fft.len(),
+            //     offset,
+            //     offset + filters.shape().0
+            // );
             sprs::prod::mul_acc_mat_vec_csr(
                 filter_matrix.view(),
                 x_fft,
@@ -999,7 +1019,7 @@ impl Vqt {
 
         let power: Vec<f32> = x_vqt
             .iter()
-            .map(|z| (z.abs() * z.abs()))
+            .map(|z| z.abs() * z.abs())
             .collect::<Vec<f32>>();
 
         // TODO: harmonic/percussion source separation possible with our one-sided spectrum?
