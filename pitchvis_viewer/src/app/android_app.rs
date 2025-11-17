@@ -1,14 +1,8 @@
 use android_activity::AndroidApp;
-use bevy::asset::AssetMetaCheck;
-use bevy::diagnostic::FrameTimeDiagnosticsPlugin;
 use bevy::diagnostic::LogDiagnosticsPlugin;
 use bevy::log::LogPlugin;
 use bevy::prelude::*;
-use bevy::sprite_render::Material2dPlugin;
 use bevy::window::AppLifecycle;
-use bevy::winit::UpdateMode;
-use bevy::winit::WinitSettings;
-use bevy_persistent::Persistent;
 use bevy_persistent::StorageFormat;
 use jni::{
     objects::{JObject, JValue},
@@ -21,30 +15,11 @@ use oboe::{
 };
 use std::path::PathBuf;
 
-use super::common::analysis_text_showhide;
-use super::common::button_showhide;
-use super::common::close_on_esc;
-use super::common::fps_counter_showhide;
-use super::common::set_frame_limiter_system;
-use super::common::set_vqt_smoothing_system;
-use super::common::setup_analysis_text;
-// use super::common::setup_bloom_ui;
-use super::common::setup_buttons;
-use super::common::setup_fps_counter;
-use super::common::setup_screen_lock_indicator;
-use super::common::update_analysis_text_system;
-// use super::common::update_bloom_settings;
-use super::common::update_button_system;
-use super::common::update_fps_text_system;
-use super::common::update_screen_lock_indicator;
-use super::common::user_input_system;
-use super::common::ActiveTouches;
-use super::common::CurrentFpsLimit;
-use super::common::CurrentVQTSmoothingMode;
-use super::common::ScreenLockState;
-use super::common::SettingsState;
+use super::common::{
+    build_common_app, register_common_update_systems, register_startup_systems, PlatformConfig,
+    PlatformSystems,
+};
 use crate::analysis_system;
-use crate::audio_system;
 use crate::display_system;
 use crate::vqt_system;
 use pitchvis_analysis::vqt::VqtParameters;
@@ -218,12 +193,9 @@ impl AudioInputCallback for AudioCallback {
 fn main() -> AppExit {
     std::env::set_var("RUST_BACKTRACE", "1");
 
-    use std::{process::exit, sync::mpsc};
-
-    // env_logger::init();
-
     let config_dir = PathBuf::from("/data/data/org.p1graph.pitchvis/files/");
 
+    // Android-specific: Request microphone permission
     if !microphone_permission_granted("android.permission.RECORD_AUDIO") {
         log::info!("requesting microphone permission");
         request_microphone_permission(
@@ -238,7 +210,7 @@ fn main() -> AppExit {
         std::thread::sleep(std::time::Duration::from_millis(100));
     }
 
-    // keep screen awake. This is a bitflags! enum, the second argument is an empty bitflags mask
+    // Android-specific: Keep screen awake
     bevy::android::ANDROID_APP
         .get()
         .expect("Bevy must be setup with the #[bevy_main] macro on Android")
@@ -248,10 +220,9 @@ fn main() -> AppExit {
         );
 
     let vqt_parameters: VqtParameters = VqtParameters::default();
-
     let vqt = pitchvis_analysis::vqt::Vqt::new(&vqt_parameters);
 
-    // let (audio_control_channel_tx, audio_control_channel_rx) = mpsc::channel::<AudioControl>();
+    // Android-specific: Setup Oboe audio stream with custom callback
     let mut ring_buffer = pitchvis_audio::RingBuffer {
         buf: Vec::new(),
         gain: 0.0,
@@ -262,7 +233,7 @@ fn main() -> AppExit {
     let ring_buffer = std::sync::Mutex::from(ring_buffer);
     let ring_buffer = std::sync::Arc::new(ring_buffer);
 
-    let mut agc = dagc::MonoAgc::new(0.07, 0.0001).expect("mono-agc creation failed");
+    let agc = dagc::MonoAgc::new(0.07, 0.0001).expect("mono-agc creation failed");
 
     let callback = AudioCallback {
         ring_buffer: ring_buffer.clone(),
@@ -273,13 +244,10 @@ fn main() -> AppExit {
         .set_direction::<Input>()
         .set_performance_mode(PerformanceMode::LowLatency)
         .set_sample_rate(vqt_parameters.sr as i32)
-        // TODO: support all microphone channels if `Mono` does not mix them down
         .set_channel_count::<Mono>()
         .set_format::<f32>()
         .set_sharing_mode(SharingMode::Exclusive)
         .set_input_preset(InputPreset::Unprocessed)
-        // this will solve bugs on some devices
-        // TODO: is `Best` necessary?
         .set_sample_rate_conversion_quality(SampleRateConversionQuality::Best)
         .set_callback(callback)
         .open_stream()
@@ -287,112 +255,57 @@ fn main() -> AppExit {
 
     audio_stream.request_start().unwrap();
 
+    // Create system closures with BUFSIZE
     let update_vqt_system = vqt_system::update_vqt_to_system(BUFSIZE);
     let update_analysis_state_system = analysis_system::update_analysis_state_to_system();
     let update_display_system = display_system::update_display_to_system(&vqt_parameters.range);
 
-    let mut persistent_settings_state = Persistent::<SettingsState>::builder()
-        .name("settings")
-        .format(StorageFormat::Toml)
-        .path(config_dir.join("settings.toml"))
-        .default(SettingsState {
-            display_mode: display_system::DisplayMode::Normal,
-            visuals_mode: display_system::VisualsMode::Full,
-            fps_limit: Some(DEFAULT_FPS),
-            vqt_smoothing_mode: display_system::VQTSmoothingMode::Default,
-        })
-        .revertible(true)
-        .revert_to_default_on_deserialization_errors(true)
-        .build()
-        .expect("failed to initialize key bindings");
-    // Always start in normal mode
-    persistent_settings_state.display_mode = display_system::DisplayMode::Normal;
+    // Android-specific: Window configuration with fullscreen and logging
+    let window_config = Window {
+        mode: bevy::window::WindowMode::BorderlessFullscreen(MonitorSelection::Primary),
+        ..default()
+    };
 
-    let mut app = App::new();
-    app.add_plugins((
-        DefaultPlugins
-            .set(WindowPlugin {
-                primary_window: Some(Window {
-                    //resizable: false,
-                    mode: bevy::window::WindowMode::BorderlessFullscreen(MonitorSelection::Primary),
-                    ..default()
-                }),
-                ..default()
-            })
-            .set(LogPlugin {
-                filter: "wgpu=error,warn".to_string(),
-                level: bevy::log::Level::DEBUG,
-                ..default()
-            })
-            .set(AssetPlugin {
-                meta_check: AssetMetaCheck::Never,
-                ..default()
-            }),
-        LogDiagnosticsPlugin::default(),
-        FrameTimeDiagnosticsPlugin::default(),
-        Material2dPlugin::<display_system::material::NoisyColorMaterial>::default(),
-    ))
-    .insert_resource(vqt_system::VqtResource(vqt))
-    .insert_resource(vqt_system::VqtResultResource::new(&vqt_parameters.range))
-    .insert_resource(audio_system::AudioBufferResource(ring_buffer))
-    .insert_resource(analysis_system::AnalysisStateResource(
-        pitchvis_analysis::analysis::AnalysisState::new(
-            vqt_parameters.range.clone(),
-            pitchvis_analysis::analysis::AnalysisParameters::default(),
-        ),
-    ))
-    .insert_resource(display_system::CylinderEntityListResource(Vec::new()))
-    // .insert_resource(AudioControlChannelResource(audio_control_channel_tx))
-    .insert_resource(persistent_settings_state)
-    .insert_resource(CurrentFpsLimit(Some(DEFAULT_FPS)))
-    .insert_resource(CurrentVQTSmoothingMode(
-        display_system::VQTSmoothingMode::Default,
-    ))
-    .insert_resource(WinitSettings {
-        focused_mode: UpdateMode::reactive(std::time::Duration::from_secs_f32(
-            1.0 / DEFAULT_FPS as f32,
-        )),
-        // we also use reactive in unfocused mode since otherwise it seems to break in split screen mode
-        unfocused_mode: UpdateMode::reactive(std::time::Duration::from_secs_f32(
-            1.0 / DEFAULT_FPS as f32,
-        )),
-    })
-    .insert_resource(ScreenLockState(false))
-    .insert_resource(ActiveTouches(std::sync::Arc::new(std::sync::Mutex::new(
-        std::collections::HashMap::new(),
-    ))))
-    .add_systems(
-        Startup,
-        (
-            display_system::setup_display_to_system(&vqt_parameters.range),
-            setup_fps_counter,
-            setup_buttons,
-            // setup_bloom_ui,
-            setup_analysis_text,
-            setup_screen_lock_indicator,
-        ),
-    )
-    .add_systems(
-        Update,
-        (
-            close_on_esc,
-            set_frame_limiter_system,
-            set_vqt_smoothing_system,
-            update_vqt_system,
-            handle_lifetime_events_system,
-            update_analysis_state_system.after(update_vqt_system),
-            update_display_system.after(update_analysis_state_system),
-            update_fps_text_system.after(update_vqt_system),
-            fps_counter_showhide,
-            update_button_system,
-            button_showhide,
-            user_input_system.after(update_button_system),
-            update_analysis_text_system.after(update_analysis_state_system),
-            analysis_text_showhide,
-            update_screen_lock_indicator,
-            // update_bloom_settings.after(update_analysis_state_system),
-        ),
+    // Android-specific: Add LogPlugin to additional plugins
+    let log_plugin = LogPlugin {
+        filter: "wgpu=error,warn".to_string(),
+        level: bevy::log::Level::DEBUG,
+        ..default()
+    };
+
+    // Build common app with Android-specific config
+    let mut app = build_common_app(
+        vqt,
+        &vqt_parameters,
+        PlatformConfig {
+            config_dir,
+            storage_format: StorageFormat::Toml,
+            audio_buffer: ring_buffer,
+            window_config,
+            additional_plugins: vec![
+                Box::new(LogDiagnosticsPlugin::default()),
+                Box::new(log_plugin),
+            ],
+        },
+        DEFAULT_FPS,
     );
+
+    // Register common startup systems
+    register_startup_systems(&mut app, &vqt_parameters.range);
+
+    // Register common update systems (bloom disabled on Android)
+    register_common_update_systems(
+        &mut app,
+        PlatformSystems {
+            update_vqt: update_vqt_system,
+            update_analysis_state: update_analysis_state_system,
+            update_display: update_display_system,
+        },
+        false, // bloom disabled on Android
+    );
+
+    // Android-specific: Add lifecycle event handler
+    app.add_systems(Update, handle_lifetime_events_system);
 
     app.run()
 }

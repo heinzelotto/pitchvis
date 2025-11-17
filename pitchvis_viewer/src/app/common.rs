@@ -1,9 +1,11 @@
 use bevy::winit::UpdateMode;
 use bevy::winit::WinitSettings;
 use bevy_persistent::Persistent;
+use bevy_persistent::StorageFormat;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::Instant;
@@ -11,15 +13,20 @@ use std::time::Instant;
 use crate::analysis_system::AnalysisStateResource;
 use crate::audio_system::AudioBufferResource;
 use crate::display_system;
-use crate::vqt_system::VqtResource;
+use crate::vqt_system::{VqtResource, VqtResultResource};
+use bevy::asset::AssetMetaCheck;
 use bevy::diagnostic::DiagnosticsStore;
 use bevy::diagnostic::FrameTimeDiagnosticsPlugin;
 use bevy::input::keyboard::KeyboardInput;
 use bevy::input::mouse::MouseButtonInput;
 use bevy::input::touch::TouchPhase;
+use bevy::sprite_render::Material2dPlugin;
 // use bevy::post_process::bloom::Bloom;
 // use bevy::post_process::bloom::BloomCompositeMode;
 use bevy::prelude::*;
+use pitchvis_analysis::analysis::{AnalysisParameters, AnalysisState};
+use pitchvis_analysis::vqt::{Vqt, VqtParameters, VqtRange};
+use pitchvis_audio::RingBuffer;
 
 #[derive(Resource, Serialize, Deserialize)]
 pub struct SettingsState {
@@ -877,4 +884,203 @@ pub fn close_on_esc(
             commands.entity(window).despawn();
         }
     }
+}
+
+// ============================================================================
+// Common App Builder Functions
+// ============================================================================
+
+/// Configuration for platform-specific app setup
+pub struct PlatformConfig {
+    /// Directory for storing configuration files
+    pub config_dir: PathBuf,
+    /// Storage format for persistent settings (Toml or Json)
+    pub storage_format: StorageFormat,
+    /// Audio buffer ring buffer (platform-specific audio implementation)
+    pub audio_buffer: Arc<Mutex<RingBuffer>>,
+    /// Window configuration (platform-specific)
+    pub window_config: Window,
+    /// Platform-specific additional plugins
+    pub additional_plugins: Vec<Box<dyn Plugin>>,
+}
+
+/// Creates persistent settings with platform-specific configuration
+pub fn create_persistent_settings(
+    config_dir: PathBuf,
+    format: StorageFormat,
+    filename: &str,
+    default_fps: u32,
+) -> Persistent<SettingsState> {
+    let mut persistent_settings_state = Persistent::<SettingsState>::builder()
+        .name("settings")
+        .format(format)
+        .path(config_dir.join(filename))
+        .default(SettingsState {
+            display_mode: display_system::DisplayMode::Normal,
+            visuals_mode: display_system::VisualsMode::Full,
+            fps_limit: Some(default_fps),
+            vqt_smoothing_mode: display_system::VQTSmoothingMode::Default,
+        })
+        .revertible(true)
+        .revert_to_default_on_deserialization_errors(true)
+        .build()
+        .expect("failed to initialize settings");
+
+    // Always start in normal mode
+    persistent_settings_state.display_mode = display_system::DisplayMode::Normal;
+    persistent_settings_state
+}
+
+/// Inserts all common resources into the app
+pub fn insert_common_resources(
+    app: &mut App,
+    vqt: Vqt,
+    vqt_range: &VqtRange,
+    audio_buffer: Arc<Mutex<RingBuffer>>,
+    settings: Persistent<SettingsState>,
+    default_fps: u32,
+) {
+    app.insert_resource(VqtResource(vqt))
+        .insert_resource(VqtResultResource::new(vqt_range))
+        .insert_resource(AudioBufferResource(audio_buffer))
+        .insert_resource(AnalysisStateResource(AnalysisState::new(
+            vqt_range.clone(),
+            AnalysisParameters::default(),
+        )))
+        .insert_resource(display_system::CylinderEntityListResource(Vec::new()))
+        .insert_resource(settings)
+        .insert_resource(CurrentFpsLimit(Some(default_fps)))
+        .insert_resource(CurrentVQTSmoothingMode(
+            display_system::VQTSmoothingMode::Default,
+        ))
+        .insert_resource(WinitSettings {
+            focused_mode: UpdateMode::reactive(std::time::Duration::from_secs_f32(
+                1.0 / default_fps as f32,
+            )),
+            unfocused_mode: UpdateMode::reactive(std::time::Duration::from_secs_f32(
+                1.0 / default_fps as f32,
+            )),
+        })
+        .insert_resource(ScreenLockState(false))
+        .insert_resource(ActiveTouches(Arc::new(Mutex::new(HashMap::new()))));
+}
+
+/// Registers all common startup systems
+pub fn register_startup_systems(app: &mut App, vqt_range: &VqtRange) {
+    app.add_systems(
+        Startup,
+        (
+            display_system::setup_display_to_system(vqt_range),
+            setup_fps_counter,
+            setup_buttons,
+            // setup_bloom_ui,
+            setup_analysis_text,
+            setup_screen_lock_indicator,
+        ),
+    );
+}
+
+/// System closures that are created per-platform with specific buffer sizes
+pub struct PlatformSystems<M1, M2, M3>
+where
+    M1: IntoSystem<(), (), M1> + 'static,
+    M2: IntoSystem<(), (), M2> + 'static,
+    M3: IntoSystem<(), (), M3> + 'static,
+{
+    pub update_vqt: M1,
+    pub update_analysis_state: M2,
+    pub update_display: M3,
+}
+
+/// Registers all common update systems
+pub fn register_common_update_systems<M1, M2, M3>(
+    app: &mut App,
+    systems: PlatformSystems<M1, M2, M3>,
+    include_bloom: bool,
+) where
+    M1: IntoSystem<(), (), M1> + 'static,
+    M2: IntoSystem<(), (), M2> + 'static,
+    M3: IntoSystem<(), (), M3> + 'static,
+{
+    let mut update_systems = app.add_systems(
+        Update,
+        (
+            close_on_esc,
+            systems.update_vqt,
+            systems.update_analysis_state.after(systems.update_vqt),
+            update_fps_text_system.after(systems.update_vqt),
+            fps_counter_showhide,
+            update_button_system,
+            button_showhide,
+            user_input_system.after(update_button_system),
+            update_analysis_text_system.after(systems.update_analysis_state),
+            analysis_text_showhide,
+            update_screen_lock_indicator,
+            set_frame_limiter_system,
+            set_vqt_smoothing_system,
+            systems.update_display.after(systems.update_analysis_state),
+        ),
+    );
+
+    if include_bloom {
+        update_systems.add_systems(
+            Update,
+            update_bloom_settings.after(systems.update_analysis_state),
+        );
+    }
+}
+
+/// Builds a complete app with common configuration and platform-specific components
+pub fn build_common_app(
+    vqt: Vqt,
+    vqt_parameters: &VqtParameters,
+    config: PlatformConfig,
+    default_fps: u32,
+) -> App {
+    let settings_filename = match config.storage_format {
+        StorageFormat::Toml => "settings.toml",
+        StorageFormat::Json => "settings.json",
+        _ => "settings.toml",
+    };
+
+    let persistent_settings = create_persistent_settings(
+        config.config_dir,
+        config.storage_format,
+        settings_filename,
+        default_fps,
+    );
+
+    let mut app = App::new();
+
+    // Add default plugins with platform-specific window configuration
+    app.add_plugins((
+        DefaultPlugins
+            .set(WindowPlugin {
+                primary_window: Some(config.window_config),
+                ..default()
+            })
+            .set(AssetPlugin {
+                meta_check: AssetMetaCheck::Never,
+                ..default()
+            }),
+        FrameTimeDiagnosticsPlugin::default(),
+        Material2dPlugin::<display_system::material::NoisyColorMaterial>::default(),
+    ));
+
+    // Add platform-specific plugins
+    for plugin in config.additional_plugins {
+        app.add_plugins(plugin);
+    }
+
+    // Insert common resources
+    insert_common_resources(
+        &mut app,
+        vqt,
+        &vqt_parameters.range,
+        config.audio_buffer,
+        persistent_settings,
+        default_fps,
+    );
+
+    app
 }
