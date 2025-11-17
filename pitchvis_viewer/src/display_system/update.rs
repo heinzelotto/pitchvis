@@ -229,8 +229,12 @@ fn update_pitch_balls(
             {
                 color_mat.params.calmness =
                     (analysis_state.calmness[idx].get() - 0.27).clamp(0.0, 1.0);
+                color_mat.params.pitch_accuracy = analysis_state.pitch_accuracy[idx];
+                color_mat.params.pitch_deviation = analysis_state.pitch_deviation[idx];
             } else {
                 color_mat.params.calmness = 0.0;
+                color_mat.params.pitch_accuracy = 0.0;
+                color_mat.params.pitch_deviation = 0.0;
             }
 
             // scale calm ones even more

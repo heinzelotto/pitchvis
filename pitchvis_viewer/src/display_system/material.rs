@@ -19,11 +19,13 @@ pub struct NoisyColorMaterial {
 #[derive(Debug, Clone, Copy, Default, PartialEq, ShaderType)]
 #[repr(C)]
 pub struct Params {
-    /// The red channel. [0.0, 1.0]
+    /// The calmness level [0.0, 1.0]
     pub calmness: f32,
     pub time: f32,
-    pub _pad2: f32,
-    pub _pad3: f32,
+    /// Pitch accuracy [0.0, 1.0], 1.0 = perfectly on pitch
+    pub pitch_accuracy: f32,
+    /// Pitch deviation in semitones: negative = flat, positive = sharp, 0.0 = perfectly in tune
+    pub pitch_deviation: f32,
 }
 
 impl Material2d for NoisyColorMaterial {
