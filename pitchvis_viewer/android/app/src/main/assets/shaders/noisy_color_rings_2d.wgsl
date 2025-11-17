@@ -112,23 +112,130 @@ fn ring(uv: vec2<f32>) -> f32 {
     return f*f;
 }
 
+// PITCH INDICATOR OPTIONS - Comment/uncomment to test different styles
+// Only shows when pitch_accuracy > 0.85 (pretty accurately on pitch)
+
+// OPTION 1: Tiny bright dot in center (ACTIVE)
+fn pitch_indicator_center_dot(uv: vec2<f32>, pitch_accuracy: f32, time: f32) -> vec3<f32> {
+    let threshold = 0.85;
+    if pitch_accuracy < threshold {
+        return vec3<f32>(0.0);
+    }
+
+    let accuracy_factor = (pitch_accuracy - threshold) / (1.0 - threshold);
+    let r = length(uv);
+    let dot_size = 0.08;
+    let dot_falloff = smoothstep(dot_size, 0.0, r);
+
+    // Subtle pulse
+    let pulse = 0.85 + 0.15 * sin(time * 3.0);
+
+    return vec3<f32>(1.0) * dot_falloff * accuracy_factor * pulse;
+}
+
+// OPTION 2: Pulsing bright ring (INACTIVE)
+// fn pitch_indicator_center_dot(uv: vec2<f32>, pitch_accuracy: f32, time: f32) -> vec3<f32> {
+//     let threshold = 0.85;
+//     if pitch_accuracy < threshold {
+//         return vec3<f32>(0.0);
+//     }
+//
+//     let accuracy_factor = (pitch_accuracy - threshold) / (1.0 - threshold);
+//     let r = length(uv);
+//
+//     // Pulsing ring at edge
+//     let pulse = 0.5 + 0.5 * sin(time * 4.0);
+//     let ring_center = 0.7;
+//     let ring_width = 0.15;
+//     let ring_intensity = smoothstep(ring_center + ring_width, ring_center, abs(r - ring_center));
+//
+//     return vec3<f32>(1.0) * ring_intensity * accuracy_factor * pulse;
+// }
+
+// OPTION 3: Four-pointed star/cross pattern (INACTIVE)
+// fn pitch_indicator_center_dot(uv: vec2<f32>, pitch_accuracy: f32, time: f32) -> vec3<f32> {
+//     let threshold = 0.85;
+//     if pitch_accuracy < threshold {
+//         return vec3<f32>(0.0);
+//     }
+//
+//     let accuracy_factor = (pitch_accuracy - threshold) / (1.0 - threshold);
+//     let r = length(uv);
+//     let angle = atan2(uv.y, uv.x);
+//
+//     // Create 4-pointed star
+//     let star_arms = abs(cos(angle * 2.0));
+//     let star_size = 0.25;
+//     let star_width = 0.08;
+//
+//     let star_pattern = smoothstep(0.0, star_width, star_arms) * smoothstep(star_size, 0.0, r);
+//     let pulse = 0.8 + 0.2 * sin(time * 3.0);
+//
+//     return vec3<f32>(1.0) * star_pattern * accuracy_factor * pulse;
+// }
+
+// OPTION 4: Bright center with radial gradient (INACTIVE)
+// fn pitch_indicator_center_dot(uv: vec2<f32>, pitch_accuracy: f32, time: f32) -> vec3<f32> {
+//     let threshold = 0.85;
+//     if pitch_accuracy < threshold {
+//         return vec3<f32>(0.0);
+//     }
+//
+//     let accuracy_factor = (pitch_accuracy - threshold) / (1.0 - threshold);
+//     let r = length(uv);
+//
+//     // Soft radial glow from center
+//     let glow_size = 0.3;
+//     let glow = smoothstep(glow_size, 0.0, r);
+//     let pulse = 0.7 + 0.3 * sin(time * 2.5);
+//
+//     // Extra bright spot in the very center
+//     let center_dot = smoothstep(0.05, 0.0, r) * 0.5;
+//
+//     return vec3<f32>(1.0) * (glow + center_dot) * accuracy_factor * pulse;
+// }
+
+// OPTION 5: Multiple concentric rings flash (INACTIVE)
+// fn pitch_indicator_center_dot(uv: vec2<f32>, pitch_accuracy: f32, time: f32) -> vec3<f32> {
+//     let threshold = 0.85;
+//     if pitch_accuracy < threshold {
+//         return vec3<f32>(0.0);
+//     }
+//
+//     let accuracy_factor = (pitch_accuracy - threshold) / (1.0 - threshold);
+//     let r = length(uv);
+//
+//     // Multiple rings that flash in sequence
+//     let ring_freq = 8.0;
+//     let ring_pattern = sin(r * ring_freq * PI);
+//     let ring_highlight = max(0.0, ring_pattern);
+//
+//     // Animated wave traveling outward
+//     let wave = sin(r * 5.0 - time * 4.0);
+//     let wave_highlight = smoothstep(0.3, 1.0, wave);
+//
+//     return vec3<f32>(1.0) * ring_highlight * wave_highlight * accuracy_factor;
+// }
+
 @fragment
 fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
     let calmness = params.x;
     let time = params.y;
+    let pitch_accuracy = params.z;
     // goes from 250 to 350
     let time_periodic = 250.0 + time - floor(time/100.0)*100.0;
 
     let uv = mesh.uv * 2.0 - 1.0;
 
-    let f_noise_raw: f32 = simplexNoise3(vec3<f32>(mesh.uv *4.3, time*0.8));
-    let f_noise: f32 = clamp(f_noise_raw-0.15, 0.0, 1.0);
-    let white = vec3<f32>(1.0, 1.0, 1.0);
-
+    // Base color with rings
     let f_ring = ring(uv);
-    let ring_color = vec4<f32>(mix(material_color.rgb, white, f_noise*calmness*f_ring), material_color.a*f_ring);
+    let ring_color = vec4<f32>(material_color.rgb, material_color.a*f_ring);
+
+    // Add pitch accuracy indicator (only when very accurate)
+    let indicator = pitch_indicator_center_dot(uv, pitch_accuracy, time);
+    let final_color = vec4<f32>(ring_color.rgb + indicator, ring_color.a);
 
     // high 1-(1-calmness)^3 => more full disk, less ring
     let ring_strength = clamp(1.0-calmness * 1.65, 0.0, 1.0)*clamp(1.0-calmness * 1.65, 0.0, 1.0)*clamp(1.0-calmness * 1.65, 0.0, 1.0);
-    return smooth_circle_boundary(mix(material_color, ring_color, ring_strength), uv);
+    return smooth_circle_boundary(mix(material_color, final_color, ring_strength), uv);
 }
