@@ -369,6 +369,12 @@ pub struct AnalysisState {
     /// This prevents abrupt calmness drops when sustained notes are released.
     released_note_calmness: Vec<EmaMeasurement>,
 
+    /// Per-bin pitch accuracy: 1.0 = perfectly on pitch, 0.0 = maximally off pitch
+    pub pitch_accuracy: Vec<f32>,
+
+    /// Per-bin pitch deviation in semitones: negative = flat, positive = sharp, 0.0 = perfectly in tune
+    pub pitch_deviation: Vec<f32>,
+
     /// the smoothed average calmness of all active bins
     pub smoothed_scene_calmness: EmaMeasurement,
 
@@ -400,6 +406,9 @@ pub struct AnalysisState {
 
     /// Accumulated time for vibrato analysis (seconds)
     accumulated_time: f32,
+
+    /// Currently detected chord, if any
+    pub detected_chord: Option<crate::chord::DetectedChord>,
 }
 
 impl AnalysisState {
@@ -448,6 +457,8 @@ impl AnalysisState {
                 EmaMeasurement::new(params.note_calmness_smoothing_duration, 0.0);
                 n_buckets
             ],
+            pitch_accuracy: vec![0.0; n_buckets],
+            pitch_deviation: vec![0.0; n_buckets],
             smoothed_scene_calmness: EmaMeasurement::new(
                 Some(params.scene_calmness_smoothing_duration),
                 0.0,
@@ -461,6 +472,7 @@ impl AnalysisState {
             current_attacks: Vec::new(),
             vibrato_states: vec![VibratoState::new(); n_buckets],
             accumulated_time: 0.0,
+            detected_chord: None,
         }
     }
 
@@ -630,6 +642,8 @@ impl AnalysisState {
 
         // needs to be run after the continuous peaks have been calculated
         self.update_tuning_inaccuracy(frame_time);
+        self.update_pitch_accuracy_and_deviation();
+        self.update_chord_detection();
 
         // TODO: more advanced bass note detection than just taking the first peak (e. g. by
         // promoting frequences through their overtones first), using different peak detection
@@ -1138,6 +1152,52 @@ impl AnalysisState {
             center_frequency: state.center_frequency,
             category: state.get_category(),
         })
+    }
+
+    fn update_pitch_accuracy_and_deviation(&mut self) {
+        // Reset all values to 0.0
+        self.pitch_accuracy.fill(0.0);
+        self.pitch_deviation.fill(0.0);
+
+        // For each continuous peak, calculate pitch accuracy and deviation
+        for p in &self.peaks_continuous {
+            let center_in_semitones = p.center * 12.0 / self.range.buckets_per_octave as f32;
+
+            // Signed deviation in semitones: negative = flat, positive = sharp
+            let deviation = center_in_semitones - center_in_semitones.round();
+
+            // Drift is absolute deviation in range [0.0, 0.5]
+            let drift = deviation.abs();
+
+            // Convert to accuracy: 1.0 = on pitch, 0.0 = maximally off pitch
+            let accuracy = (1.0 - 2.0 * drift).max(0.0);
+
+            // Assign to the corresponding bin (rounded to integer index)
+            let bin_idx = p.center.round() as usize;
+            if bin_idx < self.pitch_accuracy.len() {
+                self.pitch_accuracy[bin_idx] = accuracy;
+                self.pitch_deviation[bin_idx] = deviation;
+            }
+        }
+    }
+
+    fn update_chord_detection(&mut self) {
+        use std::collections::HashMap;
+
+        // Build map of active bins with their strengths
+        let mut active_bins: HashMap<usize, f32> = HashMap::new();
+
+        for p in &self.peaks_continuous {
+            let bin_idx = p.center.round() as usize;
+            if bin_idx < self.x_vqt_peakfiltered.len() {
+                // Use peak size as strength
+                active_bins.insert(bin_idx, p.size);
+            }
+        }
+
+        // Detect chord (minimum 2 notes)
+        self.detected_chord =
+            crate::chord::detect_chord(&active_bins, self.range.buckets_per_octave, 2);
     }
 }
 

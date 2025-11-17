@@ -27,6 +27,10 @@ pub struct Params {
     pub vibrato_rate: f32,
     /// Vibrato extent normalized [0.0, 1.0] - 0.0 if no vibrato
     pub vibrato_extent: f32,
+    /// Pitch accuracy [0.0, 1.0], 1.0 = perfectly on pitch
+    pub pitch_accuracy: f32,
+    /// Pitch deviation in semitones: negative = flat, positive = sharp, 0.0 = perfectly in tune
+    pub pitch_deviation: f32,
 }
 
 impl Material2d for NoisyColorMaterial {

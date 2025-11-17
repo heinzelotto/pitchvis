@@ -60,6 +60,10 @@ pub fn setup_display(
 
     spawn_camera(&mut commands);
 
+    spawn_harmonic_lines(&mut commands, &mut meshes, &mut color_materials);
+
+    spawn_chord_display(&mut commands, asset_server);
+
     spawn_pitch_names_text(&mut commands, range, asset_server);
 }
 
@@ -313,4 +317,49 @@ fn spawn_pitch_names_text(
             Visibility::Visible,
         ));
     }
+}
+
+fn spawn_harmonic_lines(commands: &mut Commands, meshes: &mut ResMut<Assets<Mesh>>, color_materials: &mut ResMut<Assets<ColorMaterial>>) {
+    // Spawn a single entity that will hold all harmonic lines
+    // The mesh will be dynamically updated in the update system
+    use super::{HarmonicLine, LineList};
+
+    // Create an empty line mesh initially
+    let line_list = LineList {
+        lines: Vec::new(),
+        thickness: 0.01,
+    };
+    let mesh: Mesh = line_list.into();
+
+    commands.spawn((
+        HarmonicLine,
+        Mesh2d(meshes.add(mesh)),
+        MeshMaterial2d(color_materials.add(ColorMaterial {
+            color: Color::srgba(1.0, 1.0, 1.0, 0.15),
+            ..default()
+        })),
+        Transform::from_xyz(0.0, 0.0, -0.015), // Behind pitch balls but in front of background
+        Visibility::Hidden, // Hidden by default, shown when chords are detected
+    ));
+}
+
+fn spawn_chord_display(commands: &mut Commands, asset_server: Res<AssetServer>) {
+    use super::ChordDisplay;
+
+    let font = asset_server.load("fonts/DejaVuSans.ttf");
+    let text_font = TextFont {
+        font,
+        font_size: 60.0,
+        ..Default::default()
+    };
+
+    commands.spawn((
+        ChordDisplay,
+        Text2d::new(""),
+        TextColor(Color::srgba(1.0, 1.0, 1.0, 0.8)),
+        text_font,
+        TextLayout::new_with_justify(Justify::Center),
+        Transform::from_xyz(0.0, -8.0, 0.0).with_scale(vec3(0.025, 0.025, 1.0)),
+        Visibility::Hidden,
+    ));
 }
