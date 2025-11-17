@@ -1046,8 +1046,8 @@ pub fn build_common_app(
     ));
 
     // Add platform-specific plugins
-    for plugin in config.additional_plugins {
-        app.add_boxed_plugin(plugin);
+    for mut plugin in config.additional_plugins {
+        plugin.build(&mut app);
     }
 
     // Insert common resources
