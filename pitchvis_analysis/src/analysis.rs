@@ -48,14 +48,24 @@ pub struct AnalysisParameters {
     bassline_peak_config: PeakDetectionParameters,
     /// The highest bass note to be considered.
     highest_bassnote: usize,
-    /// The duration over which each VQT bin is smoothed.
-    vqt_smoothing_duration: Duration,
+    /// Base duration for VQT smoothing (will be modulated by frequency and calmness).
+    /// Bass notes use longer smoothing, treble notes use shorter smoothing.
+    vqt_smoothing_duration_base: Duration,
+    /// Multiplier for smoothing duration based on scene calmness.
+    /// Range: [vqt_smoothing_calmness_min, vqt_smoothing_calmness_max]
+    /// At calmness=0 (energetic): uses min multiplier
+    /// At calmness=1 (calm): uses max multiplier
+    vqt_smoothing_calmness_min: f32,
+    vqt_smoothing_calmness_max: f32,
     /// The duration over which the calmness of a indivitual pitch bin is smoothed.
     note_calmness_smoothing_duration: Duration,
     /// The duration over which the calmness of the scene is smoothed.
     scene_calmness_smoothing_duration: Duration,
     /// The duration over which the tuning inaccuracy is smoothed.
     tuning_inaccuracy_smoothing_duration: Duration,
+    /// Threshold for harmonic presence (as fraction of fundamental amplitude).
+    /// A harmonic is considered present if its amplitude >= threshold * fundamental.
+    harmonic_threshold: f32,
 }
 
 impl AnalysisParameters {
@@ -76,10 +86,17 @@ impl Default for AnalysisParameters {
                 min_height: 3.5,
             },
             highest_bassnote: 12 * 2 + 4,
-            vqt_smoothing_duration: Duration::from_millis(90),
+            // Base smoothing of 70ms, modulated by frequency (bass longer, treble shorter)
+            // and calmness (calm longer, energetic shorter)
+            vqt_smoothing_duration_base: Duration::from_millis(70),
+            // Calmness multiplier range: energetic 0.6x (42ms), calm 2.0x (140ms)
+            vqt_smoothing_calmness_min: 0.6,
+            vqt_smoothing_calmness_max: 2.0,
             note_calmness_smoothing_duration: Duration::from_millis(4_500),
             scene_calmness_smoothing_duration: Duration::from_millis(1_100),
             tuning_inaccuracy_smoothing_duration: Duration::from_millis(4_000),
+            // Harmonics need to be at least 30% of fundamental amplitude
+            harmonic_threshold: 0.3,
         }
     }
 }
@@ -187,6 +204,19 @@ impl AnalysisState {
     pub fn new(range: VqtRange, params: AnalysisParameters) -> Self {
         let n_buckets = range.n_buckets();
 
+        // Initialize frequency-dependent smoothing durations
+        // Bass (lower octaves) get longer smoothing, treble (higher octaves) get shorter
+        // Formula: base_duration * (1.5 - 0.5 * octave_fraction)
+        // Octave 0 (bass): 1.5x, Octave N (treble): 1.0x
+        let x_vqt_smoothed = (0..n_buckets)
+            .map(|bin_idx| {
+                let octave_fraction = bin_idx as f32 / range.buckets_per_octave as f32 / range.octaves as f32;
+                let frequency_multiplier = 1.5 - 0.5 * octave_fraction;
+                let duration_ms = params.vqt_smoothing_duration_base.as_millis() as f32 * frequency_multiplier;
+                EmaMeasurement::new(Duration::from_millis(duration_ms as u64), 0.0)
+            })
+            .collect::<Vec<_>>();
+
         Self {
             // history: (0..SMOOTH_LENGTH)
             //     .map(|_| vec![0.0; spectrum_size])
@@ -195,10 +225,7 @@ impl AnalysisState {
             //averaged: vec![0.0; spectrum_size],
             params: params.clone(),
             range,
-            x_vqt_smoothed: vec![
-                EmaMeasurement::new(params.vqt_smoothing_duration, 0.0);
-                n_buckets
-            ],
+            x_vqt_smoothed,
             x_vqt_peakfiltered: vec![0.0; n_buckets],
             x_vqt_afterglow: vec![0.0; n_buckets],
             peaks: HashSet::new(),
@@ -251,11 +278,30 @@ impl AnalysisState {
         let _max = x_vqt[k_max];
         // println!("x_vqt[{k_min}] = {min}, x_vqt[{k_max}] = {max}");
 
-        // smooth the vqt
+        // Adapt smoothing duration based on scene calmness
+        // More calm = longer smoothing (less responsive but cleaner)
+        // More energetic = shorter smoothing (more responsive to transients)
+        let calmness = self.smoothed_scene_calmness.get();
+        let calmness_multiplier = self.params.vqt_smoothing_calmness_min
+            + (self.params.vqt_smoothing_calmness_max - self.params.vqt_smoothing_calmness_min)
+                * calmness;
+
+        // Update smoothing time horizons based on calmness and smooth the VQT
         self.x_vqt_smoothed
             .iter_mut()
+            .enumerate()
             .zip(x_vqt.iter())
-            .for_each(|(smoothed, x)| {
+            .for_each(|((bin_idx, smoothed), x)| {
+                // Get base frequency-dependent duration
+                let octave_fraction = bin_idx as f32 / self.range.buckets_per_octave as f32 / self.range.octaves as f32;
+                let frequency_multiplier = 1.5 - 0.5 * octave_fraction;
+
+                // Apply calmness multiplier
+                let duration_ms = self.params.vqt_smoothing_duration_base.as_millis() as f32
+                    * frequency_multiplier
+                    * calmness_multiplier;
+
+                smoothed.set_time_horizon(Duration::from_millis(duration_ms as u64));
                 smoothed.update_with_timestep(*x, frame_time);
             });
         let x_vqt_smoothed = self
@@ -302,7 +348,17 @@ impl AnalysisState {
         )
         .cloned()
         .collect();
-        let peaks_continuous = enhance_peaks_continuous(&peaks, &x_vqt_smoothed, &self.range);
+        let mut peaks_continuous = enhance_peaks_continuous(&peaks, &x_vqt_smoothed, &self.range);
+
+        // Boost bass peaks based on harmonic content
+        // Peaks with strong harmonics are more likely to be real bass notes vs rumble/noise
+        promote_bass_peaks_with_harmonics(
+            &mut peaks_continuous,
+            &x_vqt_smoothed,
+            &self.range,
+            self.params.highest_bassnote,
+            self.params.harmonic_threshold,
+        );
 
         let x_vqt_peakfiltered = x_vqt_smoothed
             .iter()
@@ -535,6 +591,89 @@ fn enhance_peaks_continuous(
     peaks_continuous.sort_by(|a, b| a.center.partial_cmp(&b.center).unwrap());
 
     peaks_continuous
+}
+
+/// Promotes bass peaks that have strong harmonic content.
+///
+/// Real bass notes have overtones at integer multiples of their fundamental frequency.
+/// This function calculates a "harmonic score" for each bass peak based on the presence
+/// and strength of harmonics (2f, 3f, 4f, 5f) in the VQT spectrum.
+///
+/// Peaks with higher harmonic scores get their amplitude boosted, making them more
+/// prominent in bass note detection. This helps distinguish real bass notes from:
+/// - Low-frequency rumble/noise (no harmonics)
+/// - Artifacts (no harmonic structure)
+/// - Sub-bass that's just bleeding from higher notes
+///
+/// # Arguments
+/// * `peaks_continuous` - The peaks to process (modified in-place)
+/// * `vqt` - The VQT spectrum (smoothed)
+/// * `range` - The VQT frequency range
+/// * `highest_bassnote` - Only process peaks below this bin index
+/// * `harmonic_threshold` - Fraction of fundamental amplitude required for harmonic presence
+fn promote_bass_peaks_with_harmonics(
+    peaks_continuous: &mut [ContinuousPeak],
+    vqt: &[f32],
+    range: &VqtRange,
+    highest_bassnote: usize,
+    harmonic_threshold: f32,
+) {
+    for peak in peaks_continuous.iter_mut() {
+        // Only process bass notes
+        if peak.center > highest_bassnote as f32 {
+            continue;
+        }
+
+        // Calculate fundamental frequency from bin index
+        let fundamental_bin = peak.center;
+        let fundamental_freq =
+            range.min_freq * 2.0_f32.powf(fundamental_bin / range.buckets_per_octave as f32);
+
+        // Check for harmonics at 2f, 3f, 4f, 5f
+        let mut harmonic_score = 0.0;
+        let harmonic_weights = [0.5, 0.3, 0.15, 0.05]; // Weight lower harmonics more
+
+        for (harmonic_num, weight) in (2..=5).zip(harmonic_weights.iter()) {
+            let harmonic_freq = fundamental_freq * harmonic_num as f32;
+
+            // Convert harmonic frequency to bin index
+            let harmonic_bin = if harmonic_freq >= range.min_freq {
+                (harmonic_freq.log2() - range.min_freq.log2()) * range.buckets_per_octave as f32
+                    / 2.0_f32.log2()
+            } else {
+                continue; // Harmonic below range
+            };
+
+            // Check if harmonic is within spectrum
+            if harmonic_bin >= 0.0 && harmonic_bin < range.n_buckets() as f32 {
+                // Sample VQT at harmonic frequency (with interpolation)
+                let bin_low = harmonic_bin.floor() as usize;
+                let bin_high = (harmonic_bin.ceil() as usize).min(range.n_buckets() - 1);
+                let frac = harmonic_bin.fract();
+
+                let harmonic_amplitude = if bin_low == bin_high {
+                    vqt[bin_low]
+                } else {
+                    vqt[bin_low] * (1.0 - frac) + vqt[bin_high] * frac
+                };
+
+                // Check if harmonic is present (above threshold relative to fundamental)
+                let threshold_amplitude = peak.size * harmonic_threshold;
+                if harmonic_amplitude > threshold_amplitude {
+                    // Add to harmonic score, weighted by harmonic number
+                    harmonic_score += harmonic_amplitude * weight;
+                }
+            }
+        }
+
+        // Boost peak amplitude based on harmonic score
+        // Formula: new_size = size * (1.0 + 0.5 * harmonic_score / fundamental)
+        // Strong harmonics can boost amplitude by up to 50%
+        if harmonic_score > 0.0 {
+            let boost_factor = 1.0 + 0.5 * (harmonic_score / peak.size.max(1.0));
+            peak.size *= boost_factor.min(1.5); // Cap boost at 50%
+        }
+    }
 }
 
 #[cfg(test)]
