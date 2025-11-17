@@ -564,8 +564,8 @@ fn update_harmonic_lines_and_chord(
     mut harmonic_lines_query: Query<(
         &mut Visibility,
         &mut Transform,
-        Option<&mut Mesh2d>,
-        Option<&mut MeshMaterial2d<ColorMaterial>>,
+        &mut Mesh2d,
+        &mut MeshMaterial2d<ColorMaterial>,
     ), With<HarmonicLine>>,
     mut chord_display_query: Query<(&mut Text2d, &mut Visibility), With<ChordDisplay>>,
     analysis_state: &AnalysisState,
@@ -595,7 +595,7 @@ fn update_harmonic_lines_and_chord(
     }
 
     // Update harmonic lines
-    if let Ok((mut visibility, _transform, mesh_handle, material_handle)) =
+    if let Ok((mut visibility, _transform, mesh_handle, _material_handle)) =
         harmonic_lines_query.get_single_mut()
     {
         if !should_show || analysis_state.detected_chord.is_none() {
@@ -617,7 +617,6 @@ fn update_harmonic_lines_and_chord(
         }
 
         // Convert chord notes to bin indices (all octaves)
-        let buckets_per_semitone = range.buckets_per_octave / 12;
         for &note1 in &chord.notes {
             for &note2 in &chord.notes {
                 if note1 >= note2 {
@@ -671,26 +670,9 @@ fn update_harmonic_lines_and_chord(
             };
             let line_mesh: Mesh = line_list.into();
 
-            // Get or create mesh
-            let mesh_asset = match mesh_handle {
-                Some(handle) => meshes.get_mut(&handle.0).expect("harmonic line mesh"),
-                None => {
-                    // This shouldn't happen since we spawn with a mesh, but handle it anyway
-                    let new_mesh = meshes.add(line_mesh);
-                    return; // Need to add mesh component next frame
-                }
-            };
+            // Update the mesh
+            let mesh_asset = meshes.get_mut(&mesh_handle.0).expect("harmonic line mesh");
             *mesh_asset = line_mesh;
-
-            // Get or create material
-            if material_handle.is_none() {
-                // Add semi-transparent white material
-                let material = color_materials.add(ColorMaterial {
-                    color: Color::srgba(1.0, 1.0, 1.0, 0.15), // Very subtle
-                    ..default()
-                });
-                // Note: Can't add component here, would need commands
-            }
         }
     }
 }
