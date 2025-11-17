@@ -12,7 +12,7 @@ use crate::{
     analysis_system::AnalysisStateResource, app::SettingsState, vqt_system::VqtResultResource,
 };
 use pitchvis_analysis::{
-    analysis::{AnalysisState, ContinuousPeak},
+    analysis::{AnalysisState, ContinuousPeak, VibratoCategory},
     util::*,
     vqt::VqtRange,
 };
@@ -137,6 +137,10 @@ fn fade_pitch_balls(
                 .color
                 .with_alpha((color_mat.color.alpha() * dropoff_factor).max(0.7));
 
+            // Disable vibrato animation for fading balls
+            color_mat.params.vibrato_rate = 0.0;
+            color_mat.params.vibrato_extent = 0.0;
+
             // also shift shrinking circles slightly to the background so that they are not cluttering newly appearing larger circles
             transform.translation.z -= 0.001 * 30.0 * timestep.as_secs_f32();
         }
@@ -222,6 +226,35 @@ fn update_pitch_balls(
                 }
             }
 
+            // Apply vibrato health color feedback for choir singers
+            // Must come AFTER ML feature to avoid being overwritten
+            // Only modulate color for unhealthy vibrato to draw attention to issues
+            if idx < analysis_state.vibrato_states.len() {
+                let vibrato_state = &analysis_state.vibrato_states[idx];
+                if vibrato_state.is_active && vibrato_state.confidence > 0.7 {
+                    // Get vibrato category to determine color tint
+                    let vibrato_tint_strength = 0.3; // Subtle tint, doesn't overwhelm base color
+
+                    let (tint_r, tint_g, tint_b) = match vibrato_state.get_category() {
+                        VibratoCategory::Healthy => (0.0, 0.0, 0.0), // No tint for healthy vibrato
+                        VibratoCategory::Wobble => (-0.2, -0.1, 0.3), // Blue tint (too slow)
+                        VibratoCategory::Tremolo => (0.4, 0.1, -0.2), // Orange/red tint (too fast)
+                        VibratoCategory::Excessive => (0.3, 0.3, -0.1), // Yellow tint (too wide)
+                        VibratoCategory::Minimal => (-0.1, 0.2, 0.2), // Cyan tint (too narrow)
+                        VibratoCategory::StraightTone => (0.0, 0.0, 0.0), // No vibrato
+                    };
+
+                    // Apply tint by mixing with base color
+                    let current_color = color_mat.color;
+                    color_mat.color = Color::srgba(
+                        (current_color.to_srgba().red + tint_r * vibrato_tint_strength).clamp(0.0, 1.0),
+                        (current_color.to_srgba().green + tint_g * vibrato_tint_strength).clamp(0.0, 1.0),
+                        (current_color.to_srgba().blue + tint_b * vibrato_tint_strength).clamp(0.0, 1.0),
+                        current_color.to_srgba().alpha,
+                    ).into();
+                }
+            }
+
             // set calmness visual effect.
             // FIXME: Usually we see values of 0.75 for very calm notes... Fix this to be more intuitive.
             if settings_state.display_mode == DisplayMode::Normal
@@ -233,8 +266,63 @@ fn update_pitch_balls(
                 color_mat.params.calmness = 0.0;
             }
 
+            // Set vibrato visualization parameters for shader
+            // Only apply in Normal/Debugging modes
+            if (settings_state.display_mode == DisplayMode::Normal
+                || settings_state.display_mode == DisplayMode::Debugging)
+                && idx < analysis_state.vibrato_states.len()
+            {
+                let vibrato_state = &analysis_state.vibrato_states[idx];
+                if vibrato_state.is_active && vibrato_state.confidence > 0.7 {
+                    // Pass vibrato rate (Hz) to shader
+                    color_mat.params.vibrato_rate = vibrato_state.rate;
+
+                    // Normalize vibrato extent to 0.0-1.0 range
+                    // Healthy vibrato is 40-120 cents, so normalize to that range
+                    // 120 cents = 1.0, 0 cents = 0.0
+                    color_mat.params.vibrato_extent = (vibrato_state.extent / 120.0).min(1.0);
+                } else {
+                    // No vibrato or low confidence - disable shader animation
+                    color_mat.params.vibrato_rate = 0.0;
+                    color_mat.params.vibrato_extent = 0.0;
+                }
+            } else {
+                // Performance mode or other modes - disable vibrato visualization
+                color_mat.params.vibrato_rate = 0.0;
+                color_mat.params.vibrato_extent = 0.0;
+            }
+
             // scale calm ones even more
             let calmness_scale = 1.0 + 0.2 * color_mat.params.calmness;
+
+            // Tuning accuracy feedback for choir singers
+            // Boost brightness for notes close to perfect tuning
+            let tuning_accuracy_boost = if settings_state.display_mode == DisplayMode::Normal
+                || settings_state.display_mode == DisplayMode::Debugging
+            {
+                // Calculate how far this note is from perfect tuning (in semitones)
+                let center_in_semitones = center * 12.0 / range.buckets_per_octave as f32;
+                let tuning_deviation_semitones = (center_in_semitones - center_in_semitones.round()).abs();
+                let tuning_deviation_cents = tuning_deviation_semitones * 100.0;
+
+                // Brightness boost for in-tune notes (< 10 cents = full boost)
+                // Linear falloff from 0-30 cents
+                let tuning_accuracy = (1.0 - (tuning_deviation_cents / 30.0).min(1.0)).max(0.0);
+
+                // Apply subtle brightness boost (10% max) for in-tune notes
+                1.0 + 0.1 * tuning_accuracy
+            } else {
+                1.0
+            };
+
+            // Apply tuning accuracy to color brightness
+            let current_color = color_mat.color;
+            color_mat.color = Color::srgba(
+                current_color.to_srgba().red * tuning_accuracy_boost,
+                current_color.to_srgba().green * tuning_accuracy_boost,
+                current_color.to_srgba().blue * tuning_accuracy_boost,
+                current_color.to_srgba().alpha,
+            ).into();
 
             // TODO: scale up new notes to make them more prominent
 

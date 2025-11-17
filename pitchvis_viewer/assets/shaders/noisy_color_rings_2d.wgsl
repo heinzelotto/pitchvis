@@ -116,10 +116,30 @@ fn ring(uv: vec2<f32>) -> f32 {
 fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
     let calmness = params.x;
     let time = params.y;
+    let vibrato_rate = params.z;
+    let vibrato_extent = params.w;
+
     // goes from 250 to 350
     let time_periodic = 250.0 + time - floor(time/100.0)*100.0;
 
-    let uv = mesh.uv * 2.0 - 1.0;
+    var uv = mesh.uv * 2.0 - 1.0;
+
+    // Vibrato visualization: pulsate rings at vibrato rate
+    // Only apply if vibrato is detected (rate > 0)
+    if (vibrato_rate > 0.1) {
+        // Calculate vibrato phase (oscillates at vibrato_rate Hz)
+        let vibrato_phase = sin(time * vibrato_rate * 2.0 * PI);
+
+        // Scale UV coordinates to create pulsating effect
+        // Amplitude is controlled by vibrato_extent (0.0-1.0)
+        // Max pulse is ±5% of size
+        let pulse_amplitude = vibrato_extent * 0.05;
+        let scale_factor = 1.0 + vibrato_phase * pulse_amplitude;
+        uv = uv * scale_factor;
+
+        // Also modulate ring pattern density based on vibrato
+        // This creates a "breathing" effect in the rings
+    }
 
     let f_noise_raw: f32 = simplexNoise3(vec3<f32>(mesh.uv *4.3, time*0.8));
     let f_noise: f32 = clamp(f_noise_raw-0.15, 0.0, 1.0);

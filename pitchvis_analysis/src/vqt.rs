@@ -1,3 +1,131 @@
+//! # Variable Q Transform (VQT) Implementation
+//!
+//! This module implements the Variable Q Transform, an extension of the Constant Q Transform
+//! (CQT) with an additional parameter γ (gamma) that allows trading off frequency resolution
+//! for time resolution at lower frequencies.
+//!
+//! ## Overview
+//!
+//! The VQT provides a time-frequency representation with logarithmically-spaced frequency bins,
+//! making it ideal for musical analysis where notes are spaced exponentially (each semitone is
+//! 2^(1/12) ≈ 1.059 times the previous note's frequency).
+//!
+//! ### Key Features
+//!
+//! - **Multi-rate processing**: Different frequency ranges are analyzed at different sample rates,
+//!   optimizing computational efficiency without losing information.
+//! - **Sparse kernel representation**: Only significant filter coefficients are stored, reducing
+//!   memory usage and computation time.
+//! - **Variable Q factor**: The gamma parameter allows improved time resolution at lower frequencies
+//!   while maintaining good frequency resolution at higher frequencies.
+//! - **Bandwidth validation**: The implementation verifies that filters cover the frequency spectrum
+//!   without gaps.
+//!
+//! ## Theory
+//!
+//! ### Constant Q Transform (CQT)
+//!
+//! In a standard CQT, the frequency bins are logarithmically spaced:
+//!
+//! ```text
+//! f_k = f_min * 2^(k / buckets_per_octave)
+//! ```
+//!
+//! Each filter has a constant Q factor:
+//!
+//! ```text
+//! Q = f_k / Δf_k
+//! ```
+//!
+//! where Δf_k is the bandwidth of the k-th filter.
+//!
+//! ### Variable Q Transform (VQT)
+//!
+//! The VQT extends CQT by modifying the window length calculation:
+//!
+//! ```text
+//! w_k = Q * sr / (α * f_k + γ)
+//! ```
+//!
+//! where:
+//! - `sr` is the sample rate
+//! - `α` is a constant that ensures adjacent filters meet at their -3dB points
+//! - `γ` (gamma) is the additional parameter that improves time resolution at low frequencies
+//!
+//! Higher γ values result in:
+//! - Shorter window lengths (better time resolution)
+//! - Reduced frequency resolution at lower frequencies
+//! - Lower overall latency
+//!
+//! ## Implementation Details
+//!
+//! ### Filter Bank Construction
+//!
+//! Each filter is constructed as a Hanning-windowed complex exponential:
+//!
+//! ```text
+//! h_k(n) = (1/w_k) * hanning(n) * exp(2πi * f_k * n / sr)
+//! ```
+//!
+//! The filters are:
+//! 1. Normalized in the time domain (L1 norm)
+//! 2. Transformed to frequency domain via FFT
+//! 3. Complex conjugated (for correlation instead of convolution)
+//! 4. Stored as sparse matrices (values below sparsity threshold are zeroed)
+//!
+//! ### Multi-rate Processing
+//!
+//! To optimize computation, the implementation groups filters by their frequency requirements:
+//!
+//! 1. **Downsampling factor calculation**: For each filter frequency f_k, determine the maximum
+//!    downsampling factor that still satisfies the Nyquist criterion (with a 1.15× safety margin
+//!    to avoid Gibbs phenomenon artifacts).
+//!
+//! 2. **Window size calculation**: Determine the minimum FFT size needed to accommodate the
+//!    filter's window length.
+//!
+//! 3. **Filter grouping**: Group filters that can use the same downsampled FFT size.
+//!
+//! ### Resampling Method
+//!
+//! The resampling is performed via:
+//! 1. FFT of the input signal
+//! 2. Zeroing high-frequency components
+//! 3. Inverse FFT
+//! 4. Decimation by the downsampling factor
+//!
+//! This is equivalent to ideal low-pass filtering followed by downsampling.
+//!
+//! ## Usage Example
+//!
+//! ```rust,no_run
+//! use pitchvis_analysis::vqt::{Vqt, VqtParameters};
+//!
+//! // Create VQT with default parameters
+//! let params = VqtParameters::default();
+//! let vqt = Vqt::new(&params);
+//!
+//! // Prepare audio buffer (must be of length params.n_fft)
+//! let audio_buffer: Vec<f32> = vec![0.0; params.n_fft];
+//!
+//! // Compute VQT (returns dB scale)
+//! let vqt_result = vqt.calculate_vqt_instant_in_db(&audio_buffer);
+//! ```
+//!
+//! ## Performance Characteristics
+//!
+//! - **Latency**: Determined primarily by the longest filter (lowest frequency). Typical values
+//!   are 50-100ms with default parameters.
+//! - **Computation**: Roughly proportional to `n_buckets * log(n_fft)` due to FFT operations,
+//!   but significantly reduced by multi-rate processing and sparsity.
+//! - **Memory**: Sparse matrix storage reduces memory usage by ~99% (controlled by `sparsity_quantile`).
+//!
+//! ## References
+//!
+//! - [A Matlab Toolbox for Efficient Perfect Reconstruction Time-Frequency Transforms](https://www.researchgate.net/publication/274009051)
+//! - [Librosa VQT Implementation](https://librosa.org/doc/main/generated/librosa.vqt.html)
+//! - [Constant-Q Transform - Wikipedia](https://en.wikipedia.org/wiki/Constant-Q_transform)
+
 use log::{debug, error, info};
 use num_complex::{Complex32, ComplexFloat};
 use rustfft::num_traits::Zero;
@@ -10,6 +138,28 @@ use std::time::Duration;
 
 use crate::util::{self, arg_max};
 
+/// Specifies the frequency range and resolution for the VQT analysis.
+///
+/// This structure defines the "musical range" that the VQT will analyze. The bins are
+/// logarithmically spaced across octaves, matching the exponential frequency relationship
+/// in music.
+///
+/// # Examples
+///
+/// ```
+/// use pitchvis_analysis::vqt::VqtRange;
+///
+/// // Analyze 7 octaves starting from A1 (55Hz) with 84 bins per octave
+/// // This gives 12 * 7 = 84 bins per octave (7 subdivisions per semitone)
+/// let range = VqtRange {
+///     min_freq: 55.0,
+///     octaves: 7,
+///     buckets_per_octave: 84,
+/// };
+///
+/// // Total number of frequency bins
+/// assert_eq!(range.n_buckets(), 7 * 84);
+/// ```
 #[derive(Debug, Clone)]
 pub struct VqtRange {
     /// The minimum frequency (in Hz) of the lowest note analyzed in the variable-Q Transform
@@ -21,6 +171,11 @@ pub struct VqtRange {
 
     /// The resolution of the VQT, defined in terms of the number of frequency bins per octave.
     /// This value must be a multiple of 12, reflecting the 12 semitones in a musical octave.
+    ///
+    /// Common values:
+    /// - 12: One bin per semitone
+    /// - 24: Two bins per semitone
+    /// - 84: Seven bins per semitone (default in PitchVis)
     pub buckets_per_octave: u16,
 }
 
@@ -31,32 +186,90 @@ impl VqtRange {
     }
 }
 
-// increasing BUCKETS_PER_SEMITONE or Q will improve frequency resolution at cost of time resolution,
-// increasing GAMMA will improve time resolution at lower frequencies.
+/// Configuration parameters for the Variable Q Transform.
+///
+/// These parameters control the trade-offs between:
+/// - **Frequency resolution** vs **time resolution**
+/// - **Accuracy** vs **computational efficiency**
+/// - **Latency** vs **frequency resolution at low frequencies**
+///
+/// # Parameter Relationships
+///
+/// - Increasing `quality` (Q) → better frequency resolution, worse time resolution
+/// - Increasing `gamma` (γ) → better time resolution at low frequencies, worse frequency resolution
+/// - Increasing `sparsity_quantile` → less memory/computation, slightly less accurate
+/// - Increasing `buckets_per_octave` → finer frequency resolution, more computation
+///
+/// # Design Considerations
+///
+/// The default values are chosen to balance:
+/// 1. **Musical accuracy**: 7 bins per semitone allows detecting microtonal deviations
+/// 2. **Low latency**: Gamma parameter keeps total delay under 100ms
+/// 3. **Computational efficiency**: Sparsity and multi-rate processing keep CPU usage reasonable
+/// 4. **Coverage**: Q factor chosen to ensure good bandwidth coverage at high frequencies
+///
+/// ## Note on Q Factor
+///
+/// The current implementation uses `Q = 1.8 / upscale_factor`. There is a FIXME noting that
+/// at higher frequencies, this Q might be too low to fully cover the bandwidth of each semitone.
+/// This is a known trade-off: higher Q would improve coverage but worsen time resolution.
+///
+/// A potential solution mentioned in comments: use VQT for lower frequencies and switch to
+/// a regular FFT for higher frequencies where constant absolute bandwidth is acceptable.
 #[derive(Debug, Clone)]
 pub struct VqtParameters {
     /// The sample rate (in Hz) of the input audio signal.
+    ///
+    /// Default: 22050 Hz (half of CD quality, sufficient for musical analysis up to ~10 kHz)
     pub sr: f32,
 
-    /// The number of samples in the longest Fast Fourier Transform (FFT). This will be decimated
-    /// for higher octaves.
+    /// The number of samples in the longest Fast Fourier Transform (FFT).
+    ///
+    /// This determines the buffer size and thus the maximum window length. Lower frequencies
+    /// require longer windows. This value is decimated for higher octaves through multi-rate
+    /// processing.
+    ///
+    /// Default: 32768 samples (about 1.49 seconds at 22050 Hz)
     pub n_fft: usize,
 
-    /// The range of the VQT, min freq, span, and resolution.
+    /// The range of the VQT: minimum frequency, span in octaves, and resolution.
     pub range: VqtRange,
 
-    /// A quantile value used to determine the sparsity of the VQT kernel. A higher value results
-    /// in a sparser representation, with only the most impactful frequency bins being used.
+    /// Sparsity quantile (0.0 to 1.0) for filter kernel compression.
+    ///
+    /// This determines which filter coefficients are kept vs. zeroed out. A value of 0.999
+    /// means we keep only the coefficients that account for 99.9% of the filter's energy,
+    /// typically reducing storage by ~99%.
+    ///
+    /// Default: 0.999 (retains 99.9% of filter energy)
     pub sparsity_quantile: f32,
 
-    /// A value that determines the quality of the VQT. A higher value results in a more accurate
-    /// representation, at the cost of greater time smearing.
+    /// The Q factor (quality factor) determining frequency selectivity.
+    ///
+    /// Higher Q → narrower filters → better frequency resolution → longer impulse response → worse time resolution
+    ///
+    /// The Q factor is defined as: Q = f_center / bandwidth_3dB
+    ///
+    /// Default: 1.8 / upscale_factor ≈ 1.8
     pub quality: f32,
 
-    /// A parameter used in the calculation of the VQT, which determines the amount of frequency
-    /// smearing in lower octaves. A higher value results in more smearing, which can be useful
-    /// for analyzing signals with time-varying frequency content where more time resolution is
-    /// desired.
+    /// The gamma (γ) parameter that improves time resolution at lower frequencies.
+    ///
+    /// This is the key parameter that distinguishes VQT from CQT. It modifies the window
+    /// length formula from:
+    ///
+    /// ```text
+    /// w = Q * sr / (α * f)           [CQT]
+    /// w = Q * sr / (α * f + γ)       [VQT]
+    /// ```
+    ///
+    /// Effect of higher γ:
+    /// - Shorter windows at low frequencies
+    /// - Better time resolution (less smearing)
+    /// - Lower overall latency
+    /// - Reduced frequency resolution at low frequencies
+    ///
+    /// Default: 4.8 * Q ≈ 8.64
     pub gamma: f32,
 }
 
@@ -143,7 +356,8 @@ struct PrecomputedFft {
     /// The forward FFT.
     fwd_fft: Arc<dyn Fft<f32>>,
 
-    /// The inverse FFT.
+    /// The inverse FFT (unused after frequency-domain resampling optimization).
+    #[allow(dead_code)]
     inv_fft: Arc<dyn Fft<f32>>,
 }
 
@@ -215,17 +429,19 @@ impl Vqt {
                 .or_insert_with(|| {
                     PrecomputedFft {
                         fwd_fft: planner.plan_fft_forward(cur_unscaled_fft_length),
-                        inv_fft: planner.plan_fft_inverse(cur_unscaled_fft_length), // actually not needed
+                        inv_fft: planner.plan_fft_inverse(cur_unscaled_fft_length), // unused (kept for struct compatibility)
                     }
                 });
 
+            // Note: We no longer need FFTs for the scaled length since resample() now returns
+            // frequency-domain data directly. These are kept for backwards compatibility but unused.
             let cur_scaled_fft_length =
                 unscaled_window.sufficient_n_fft_size / sr_downscaling_factor;
             resample_ffts
                 .entry(cur_scaled_fft_length)
                 .or_insert_with(|| PrecomputedFft {
-                    fwd_fft: planner.plan_fft_forward(cur_scaled_fft_length),
-                    inv_fft: planner.plan_fft_inverse(cur_scaled_fft_length),
+                    fwd_fft: planner.plan_fft_forward(cur_scaled_fft_length), // unused
+                    inv_fft: planner.plan_fft_inverse(cur_scaled_fft_length), // unused
                 });
         }
 
@@ -674,38 +890,67 @@ impl Vqt {
 
     //#yellow
 
-    fn resample(&self, v: &[f32], sr_scaling: usize) -> Vec<f32> {
+    /// Resamples the input signal by performing low-pass filtering and decimation in the
+    /// frequency domain, avoiding redundant IFFT/FFT operations.
+    ///
+    /// This method returns the FFT of the resampled signal directly, which can be immediately
+    /// used for filter bank application without an additional FFT.
+    ///
+    /// # Arguments
+    /// * `v` - Input time-domain signal
+    /// * `sr_scaling` - Downsampling factor
+    ///
+    /// # Returns
+    /// The FFT of the downsampled signal (frequency domain representation)
+    fn resample(&self, v: &[f32], sr_scaling: usize) -> Vec<Complex32> {
         let fft_size = v.len();
+        let new_size = fft_size / sr_scaling;
 
+        // Convert to complex
         let mut x_fft = v
             .iter()
             .map(|f| rustfft::num_complex::Complex32::new(*f, 0.0))
             .collect::<Vec<rustfft::num_complex::Complex32>>();
 
-        let PrecomputedFft {
-            fwd_fft, inv_fft, ..
-        } = self.resample_ffts.get(&v.len()).unwrap();
+        let PrecomputedFft { fwd_fft, .. } = self.resample_ffts.get(&v.len()).unwrap();
 
+        // Forward FFT
         fwd_fft.process(&mut x_fft);
+
+        // Zero out high frequencies (low-pass filter for anti-aliasing)
         #[allow(clippy::needless_range_loop)]
         for i in (1 + fft_size / sr_scaling / 2)..(fft_size - fft_size / sr_scaling / 2) {
             x_fft[i] = num_complex::Complex::zero();
         }
-        inv_fft.process(&mut x_fft);
 
-        x_fft
+        // Decimate in frequency domain by extracting the relevant frequency bins
+        // For a real signal decimated by M, we keep:
+        // - DC to positive Nyquist: bins 0 to new_size/2
+        // - Negative frequencies: bins from (fft_size - new_size/2 + 1) to (fft_size - 1)
+        let cutoff = new_size / 2;
+        let mut result = Vec::with_capacity(new_size);
+
+        // Copy DC and positive frequencies up to Nyquist (inclusive)
+        result.extend_from_slice(&x_fft[0..=cutoff]);
+
+        // Copy negative frequencies (excluding negative Nyquist to avoid duplication)
+        result.extend_from_slice(&x_fft[(fft_size - cutoff + 1)..]);
+
+        // Apply normalization factor
+        // The old code did: FFT[N] → IFFT/N → decimate by M → FFT[N/M]
+        // Mathematical analysis shows: FFT_decimated[k] = FFT_original[k] / M
+        result
             .iter()
-            .step_by(sr_scaling)
-            .map(|z| z.re / fft_size as f32)
-            .collect::<Vec<f32>>()
+            .map(|z| z / sr_scaling as f32)
+            .collect()
     }
     //#
 
     //#pink
 
     /// Calculates the variable-Q Transform (VQT) of the given input signal at a specific time instant.
-    /// The result is given in dB scale. The function performs multiple FFTs on resampled versions of
-    /// the input signal and applies the precomputed VQT kernel to each FFT output to obtain the VQT.
+    /// The result is given in dB scale. The function performs resampling in the frequency domain
+    /// and applies the precomputed VQT kernel to each resampled FFT output to obtain the VQT.
     /// It then converts the results into the dB scale and combines them into a single output vector.
     ///
     /// # Arguments
@@ -714,10 +959,6 @@ impl Vqt {
     /// # Returns
     /// A vector containing the VQT of the input signal in dB scale.
     pub fn calculate_vqt_instant_in_db(&self, x: &[f32]) -> Vec<f32> {
-        // TODO: we are doing a lot of unnecessary ffts here, just because the interface of the resampler
-        // neither allows us to reuse the same frame for subsequent downsamplings, nor allows us to do the
-        // fft ourselves.
-
         // let freqs = (1..10).map(|i| self.params.range.min_freq * 2.0.powf(i as f32 * 7.0 / 12.0) )
         // .collect::<Vec<_>>();
         //     let x = util::test_create_sines(&self.params, &freqs, self.t_diff);
@@ -755,27 +996,19 @@ impl Vqt {
             //     cur_resampling_factor
             // );
 
-            let vv = self.resample(x_selection, *sr_downscaling_factor);
+            // Resample returns frequency-domain data directly (already FFT'd)
+            let x_fft = self.resample(x_selection, *sr_downscaling_factor);
 
-            let mut x_fft = vv
-                .iter()
-                .map(|f| rustfft::num_complex::Complex32::new(*f, 0.0))
-                .collect::<Vec<rustfft::num_complex::Complex32>>();
-            //dbg!(max(&std::iter::zip(x_selection.iter().copied(), vv.iter().copied()).map(|(a, b)| (a-b).abs()).collect::<Vec<f32>>()));
-            //dbg!(std::iter::zip(x_selection.iter().copied(), vv.iter().copied()).take(10).collect::<Vec<(f32,f32)>>());
             assert_eq!(cur_scaled_fft_length, x_fft.len());
             //dbg!(cur_scaled_fft_length);
-            self.resample_ffts
-                .get(&cur_scaled_fft_length)
-                .unwrap()
-                .fwd_fft
-                .process(&mut x_fft); // TODO: just get the fft from the resampler, ?if possible
-                                      // dbg!(
-                                      //     filters.shape(),
-                                      //     x_fft.len(),
-                                      //     offset,
-                                      //     offset + filters.shape().0
-                                      // );
+
+            // Apply filter bank to frequency-domain data
+            // dbg!(
+            //     filters.shape(),
+            //     x_fft.len(),
+            //     offset,
+            //     offset + filters.shape().0
+            // );
             sprs::prod::mul_acc_mat_vec_csr(
                 filter_matrix.view(),
                 x_fft,

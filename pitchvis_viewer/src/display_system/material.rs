@@ -19,11 +19,14 @@ pub struct NoisyColorMaterial {
 #[derive(Debug, Clone, Copy, Default, PartialEq, ShaderType)]
 #[repr(C)]
 pub struct Params {
-    /// The red channel. [0.0, 1.0]
+    /// Calmness level [0.0, 1.0] - controls ring noise/fullness
     pub calmness: f32,
+    /// Global time in seconds - for noise animation
     pub time: f32,
-    pub _pad2: f32,
-    pub _pad3: f32,
+    /// Vibrato rate in Hz [0.0, 10.0] - 0.0 if no vibrato
+    pub vibrato_rate: f32,
+    /// Vibrato extent normalized [0.0, 1.0] - 0.0 if no vibrato
+    pub vibrato_extent: f32,
 }
 
 impl Material2d for NoisyColorMaterial {

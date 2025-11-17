@@ -139,6 +139,12 @@ impl EmaMeasurement {
         self.y = self.y + alpha * (new_value - self.y);
     }
 
+    /// Update the time horizon for this EMA measurement.
+    /// This allows for adaptive smoothing based on external conditions (e.g., calmness, frequency).
+    pub fn set_time_horizon(&mut self, time_horizon: Duration) {
+        self.time_horizon = time_horizon;
+    }
+
     pub fn get(&self) -> f32 {
         self.y
     }
