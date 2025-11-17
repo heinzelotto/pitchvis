@@ -13,7 +13,7 @@ use crate::{
     vqt_system::VqtResultResource,
 };
 use pitchvis_analysis::{
-    analysis::{AnalysisState, ContinuousPeak},
+    analysis::{AnalysisState, ContinuousPeak, VibratoCategory},
     util::*,
     vqt::VqtRange,
 };
@@ -205,6 +205,34 @@ fn update_pitch_balls(
             //     b * color_coefficient,
             // );
             color_mat.color = Color::srgba(r, g, b, color_coefficient).into();
+
+            // Apply vibrato health color feedback for choir singers
+            // Only modulate color for unhealthy vibrato to draw attention to issues
+            if idx < analysis_state.vibrato_states.len() {
+                let vibrato_state = &analysis_state.vibrato_states[idx];
+                if vibrato_state.is_active && vibrato_state.confidence > 0.7 {
+                    // Get vibrato category to determine color tint
+                    let vibrato_tint_strength = 0.3; // Subtle tint, doesn't overwhelm base color
+
+                    let (tint_r, tint_g, tint_b) = match vibrato_state.get_category() {
+                        VibratoCategory::Healthy => (0.0, 0.0, 0.0), // No tint for healthy vibrato
+                        VibratoCategory::Wobble => (-0.2, -0.1, 0.3), // Blue tint (too slow)
+                        VibratoCategory::Tremolo => (0.4, 0.1, -0.2), // Orange/red tint (too fast)
+                        VibratoCategory::Excessive => (0.3, 0.3, -0.1), // Yellow tint (too wide)
+                        VibratoCategory::Minimal => (-0.1, 0.2, 0.2), // Cyan tint (too narrow)
+                        VibratoCategory::StraightTone => (0.0, 0.0, 0.0), // No vibrato
+                    };
+
+                    // Apply tint by mixing with base color
+                    let current_color = color_mat.color;
+                    color_mat.color = Color::srgba(
+                        (current_color.to_srgba().red + tint_r * vibrato_tint_strength).clamp(0.0, 1.0),
+                        (current_color.to_srgba().green + tint_g * vibrato_tint_strength).clamp(0.0, 1.0),
+                        (current_color.to_srgba().blue + tint_b * vibrato_tint_strength).clamp(0.0, 1.0),
+                        current_color.to_srgba().alpha,
+                    ).into();
+                }
+            }
 
             #[cfg(feature = "ml")]
             if let Some(midi_pitch) = vqt_bin_to_midi_pitch(buckets_per_octave, idx) {
