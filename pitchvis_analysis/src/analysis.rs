@@ -1481,17 +1481,21 @@ fn enhance_peaks_continuous(
             let estimated_precise_center =
                 bins_per_octave * (f_peak / range.min_freq).log2();
 
-            // Evaluate parabola at the peak to get amplitude
-            let c = (amplitudes[0] * log_f[1] * log_f[2]
-                - amplitudes[1] * log_f[0] * log_f[2]
-                + amplitudes[2] * log_f[0] * log_f[1])
-                / denom;
-            let estimated_precise_size = a * log_f_peak.powi(2) + b * log_f_peak + c;
+            // For amplitude, use linear interpolation of VQT values at the estimated peak
+            // This is more robust than evaluating the parabola, which can produce
+            // incorrect values due to the log-frequency space scaling
+            let estimated_precise_center_clamped =
+                estimated_precise_center.clamp(0.0, range.n_buckets() as f32 - 1.0);
 
-            // Clamp to valid range and ensure non-negative amplitude
+            let lower_bin = estimated_precise_center_clamped.floor() as usize;
+            let upper_bin = (lower_bin + 1).min(range.n_buckets() - 1);
+            let fract = estimated_precise_center_clamped.fract();
+
+            let estimated_precise_size =
+                vqt[lower_bin] * (1.0 - fract) + vqt[upper_bin] * fract;
+
             Some(ContinuousPeak {
-                center: estimated_precise_center
-                    .clamp(0.0, range.n_buckets() as f32 - 1.0),
+                center: estimated_precise_center_clamped,
                 size: estimated_precise_size.max(0.0),
             })
         })
