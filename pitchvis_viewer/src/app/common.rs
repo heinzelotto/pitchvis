@@ -1047,7 +1047,7 @@ pub fn build_common_app(
     ));
 
     // Add platform-specific plugins
-    for mut plugin in config.additional_plugins {
+    for plugin in config.additional_plugins {
         plugin.build(&mut app);
     }
 
