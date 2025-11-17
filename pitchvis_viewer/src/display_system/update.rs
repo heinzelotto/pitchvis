@@ -427,11 +427,11 @@ fn update_glissandos(
                 .path
                 .windows(2)
                 .map(|window| {
-                    let (x1, y1, z1) = bin_to_spiral(buckets_per_octave, window[0]);
-                    let (x2, y2, z2) = bin_to_spiral(buckets_per_octave, window[1]);
+                    let (x1, y1, _) = bin_to_spiral(buckets_per_octave, window[0]);
+                    let (x2, y2, _) = bin_to_spiral(buckets_per_octave, window[1]);
                     (
-                        Vec3::new(x1, y1, z1),
-                        Vec3::new(x2, y2, z2),
+                        Vec3::new(x1, y1, 0.0),
+                        Vec3::new(x2, y2, 0.0),
                     )
                 })
                 .collect();

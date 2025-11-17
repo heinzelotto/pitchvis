@@ -348,7 +348,7 @@ fn spawn_glissando_curves(
                 GlissandoCurve { index },
                 Mesh2d(mesh),
                 MeshMaterial2d(material),
-                Transform::from_xyz(0.0, 0.0, -0.005), // Behind pitch balls
+                Transform::from_xyz(0.0, 0.0, -0.02), // Behind pitch balls (more negative = farther back)
                 Visibility::Hidden,
             ))
             .id();
