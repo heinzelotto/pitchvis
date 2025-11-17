@@ -63,8 +63,9 @@ pub struct AnalysisParameters {
     scene_calmness_smoothing_duration: Duration,
     /// The duration over which the tuning inaccuracy is smoothed.
     tuning_inaccuracy_smoothing_duration: Duration,
-    /// Threshold for harmonic presence (as fraction of fundamental amplitude).
-    /// A harmonic is considered present if its amplitude >= threshold * fundamental.
+    /// Threshold for harmonic presence (as fraction of fundamental **power**, not dB).
+    /// A harmonic is considered present if its power >= threshold * fundamental_power.
+    /// Note: VQT is in dB, so we convert: power = 10^(dB/10)
     harmonic_threshold: f32,
 }
 
@@ -95,7 +96,7 @@ impl Default for AnalysisParameters {
             note_calmness_smoothing_duration: Duration::from_millis(4_500),
             scene_calmness_smoothing_duration: Duration::from_millis(1_100),
             tuning_inaccuracy_smoothing_duration: Duration::from_millis(4_000),
-            // Harmonics need to be at least 30% of fundamental amplitude
+            // Harmonics need to have at least 30% of fundamental's **power** (not dB!)
             harmonic_threshold: 0.3,
         }
     }
@@ -607,10 +608,14 @@ fn enhance_peaks_continuous(
 ///
 /// # Arguments
 /// * `peaks_continuous` - The peaks to process (modified in-place)
-/// * `vqt` - The VQT spectrum (smoothed)
+/// * `vqt` - The VQT spectrum in dB scale (smoothed)
 /// * `range` - The VQT frequency range
 /// * `highest_bassnote` - Only process peaks below this bin index
-/// * `harmonic_threshold` - Fraction of fundamental amplitude required for harmonic presence
+/// * `harmonic_threshold` - Fraction of fundamental **power** required for harmonic presence
+///
+/// # Note on dB vs Power
+/// The VQT is in dB (logarithmic) scale. We convert to power for physically meaningful
+/// comparisons: power = 10^(dB/10). The threshold is a fraction of power, not dB.
 fn promote_bass_peaks_with_harmonics(
     peaks_continuous: &mut [ContinuousPeak],
     vqt: &[f32],
@@ -625,53 +630,60 @@ fn promote_bass_peaks_with_harmonics(
         }
 
         // Calculate fundamental frequency from bin index
-        let fundamental_bin = peak.center;
         let fundamental_freq =
-            range.min_freq * 2.0_f32.powf(fundamental_bin / range.buckets_per_octave as f32);
+            range.min_freq * 2.0_f32.powf(peak.center / range.buckets_per_octave as f32);
+
+        // Convert fundamental from dB to power
+        let fundamental_power = 10.0_f32.powf(peak.size / 10.0);
 
         // Check for harmonics at 2f, 3f, 4f, 5f
         let mut harmonic_score = 0.0;
-        let harmonic_weights = [0.5, 0.3, 0.15, 0.05]; // Weight lower harmonics more
+        let harmonic_weights = [0.5, 0.3, 0.15, 0.05];
 
         for (harmonic_num, weight) in (2..=5).zip(harmonic_weights.iter()) {
             let harmonic_freq = fundamental_freq * harmonic_num as f32;
 
-            // Convert harmonic frequency to bin index
+            // Convert to bin index
             let harmonic_bin = if harmonic_freq >= range.min_freq {
                 (harmonic_freq.log2() - range.min_freq.log2()) * range.buckets_per_octave as f32
                     / 2.0_f32.log2()
             } else {
-                continue; // Harmonic below range
+                continue;
             };
 
-            // Check if harmonic is within spectrum
+            // Check if within spectrum
             if harmonic_bin >= 0.0 && harmonic_bin < range.n_buckets() as f32 {
-                // Sample VQT at harmonic frequency (with interpolation)
+                // Interpolate VQT at harmonic frequency
                 let bin_low = harmonic_bin.floor() as usize;
                 let bin_high = (harmonic_bin.ceil() as usize).min(range.n_buckets() - 1);
                 let frac = harmonic_bin.fract();
 
-                let harmonic_amplitude = if bin_low == bin_high {
+                let harmonic_amplitude_db = if bin_low == bin_high {
                     vqt[bin_low]
                 } else {
                     vqt[bin_low] * (1.0 - frac) + vqt[bin_high] * frac
                 };
 
-                // Check if harmonic is present (above threshold relative to fundamental)
-                let threshold_amplitude = peak.size * harmonic_threshold;
-                if harmonic_amplitude > threshold_amplitude {
-                    // Add to harmonic score, weighted by harmonic number
-                    harmonic_score += harmonic_amplitude * weight;
+                // Convert from dB to power for comparison
+                let harmonic_power = 10.0_f32.powf(harmonic_amplitude_db / 10.0);
+
+                // Check if harmonic is present (in power domain)
+                let threshold_power = fundamental_power * harmonic_threshold;
+                if harmonic_power > threshold_power {
+                    // Add to score in power domain
+                    harmonic_score += harmonic_power * weight;
                 }
             }
         }
 
         // Boost peak amplitude based on harmonic score
-        // Formula: new_size = size * (1.0 + 0.5 * harmonic_score / fundamental)
-        // Strong harmonics can boost amplitude by up to 50%
         if harmonic_score > 0.0 {
-            let boost_factor = 1.0 + 0.5 * (harmonic_score / peak.size.max(1.0));
-            peak.size *= boost_factor.min(1.5); // Cap boost at 50%
+            // Calculate boost factor in power domain
+            let boost_factor = 1.0 + 0.5 * (harmonic_score / fundamental_power.max(1e-6));
+            let boost_capped = boost_factor.min(1.5); // Cap at 50%
+
+            // Convert boost back to dB domain
+            peak.size += 10.0 * boost_capped.log10();
         }
     }
 }

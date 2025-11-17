@@ -193,56 +193,118 @@ Fundamental: f₀
 - Handling noise: broadband transients
 - Wind/breath noise: no harmonic series
 
+### The dB vs Power Challenge
+
+**CRITICAL**: The VQT output is in **dB (decibel) scale**, which is logarithmic:
+
+```
+dB = 10 × log₁₀(power)
+```
+
+This creates a fundamental challenge for harmonic analysis.
+
+#### Why dB Comparisons Are Wrong
+
+If we naively compare amplitudes directly in dB space:
+```rust
+// WRONG! Treating dB as linear amplitude
+if harmonic_db > fundamental_db * 0.3 {  // "30% of fundamental"?
+    // This is physically meaningless!
+}
+```
+
+**Example showing the problem**:
+- Fundamental: 40 dB
+- Harmonic: 34 dB (actually 39.8% of fundamental power)
+- 40 dB × 0.3 = 12 dB ← This makes no physical sense!
+
+The harmonic is actually quite strong (40% power), but the dB multiplication incorrectly suggests it's only at a 12 dB threshold.
+
+#### The Correct Approach: Power Domain
+
+We **must** convert to power domain for comparisons:
+
+```rust
+// Convert dB to power
+let fundamental_power = 10.0_f32.powf(fundamental_db / 10.0);
+let harmonic_power = 10.0_f32.powf(harmonic_db / 10.0);
+
+// Now threshold = 0.3 means "30% of power" (physically meaningful)
+if harmonic_power > fundamental_power * 0.3 {
+    // Correct!
+}
+```
+
+**Same example in power domain**:
+- Fundamental: 40 dB → power = 10^4 = 10,000
+- Harmonic: 34 dB → power = 10^3.4 = 2,512
+- Threshold: 10,000 × 0.3 = 3,000
+- Result: 2,512 < 3,000, so harmonic is NOT strong enough ✓
+
 ### Implementation
 
 #### Harmonic Score Calculation
 
-**Algorithm** (analysis.rs:596-677):
+**Algorithm** (analysis.rs:619-689) with **correct dB/power handling**:
 
 ```rust
 for each bass peak:
     fundamental_freq = freq_from_bin(peak.center)
+    fundamental_power = 10^(peak.size / 10)  // Convert dB to power
     harmonic_score = 0
 
     for harmonic_num in [2, 3, 4, 5]:
         harmonic_freq = fundamental_freq * harmonic_num
         harmonic_bin = bin_from_freq(harmonic_freq)
 
-        // Interpolate VQT at harmonic frequency
-        harmonic_amplitude = interpolate_vqt(harmonic_bin)
+        // Interpolate VQT at harmonic frequency (in dB)
+        harmonic_amplitude_db = interpolate_vqt(harmonic_bin)
 
-        // Check if harmonic is present (above threshold)
-        if harmonic_amplitude > peak.size * harmonic_threshold:
+        // Convert harmonic from dB to power
+        harmonic_power = 10^(harmonic_amplitude_db / 10)
+
+        // Check if harmonic is present (in power domain!)
+        threshold_power = fundamental_power * harmonic_threshold
+        if harmonic_power > threshold_power:
             // Weight lower harmonics more (they're stronger)
             weight = [0.5, 0.3, 0.15, 0.05][harmonic_num - 2]
-            harmonic_score += harmonic_amplitude * weight
+            harmonic_score += harmonic_power * weight  // Add power, not dB!
 
-    // Boost peak amplitude based on harmonic content
+    // Boost peak amplitude based on harmonic score
     if harmonic_score > 0:
-        boost_factor = 1.0 + 0.5 * (harmonic_score / peak.size)
-        peak.size *= min(boost_factor, 1.5)  // Cap at 50% boost
+        // Calculate boost in power domain
+        boost_factor = 1.0 + 0.5 * (harmonic_score / fundamental_power)
+        boost_capped = min(boost_factor, 1.5)  // Cap at 50% boost
+
+        // Convert boost back to dB domain for display
+        peak.size += 10 * log10(boost_capped)
 ```
 
 **Key design choices:**
 
-1. **Harmonic weighting**: [0.5, 0.3, 0.15, 0.05]
+1. **Power-domain operations** (CRITICAL FIX)
+   - All comparisons done in power domain, not dB
+   - Ensures physically meaningful amplitude relationships
+   - Boost calculated in power, then converted back to dB
+
+2. **Harmonic weighting**: [0.5, 0.3, 0.15, 0.05]
    - 2nd harmonic (octave) strongest in most instruments
    - Higher harmonics progressively weaker
    - Weights sum to 1.0
 
-2. **Threshold**: 30% of fundamental amplitude
-   - Harmonic must be at least 0.3 × fundamental to count
+3. **Threshold**: 30% of fundamental **power** (not dB!)
+   - Harmonic power must be at least 0.3 × fundamental_power
    - Prevents noise from contributing to score
    - Accounts for harmonic rolloff in natural instruments
 
-3. **Boost factor**: 0.5 × (harmonic_score / fundamental)
+4. **Boost factor**: 0.5 × (harmonic_score / fundamental_power)
    - Strong harmonics can boost amplitude by up to 50%
-   - Linear relationship encourages rich harmonic content
+   - Linear relationship in power domain encourages rich harmonic content
    - Capped to prevent excessive boosting
 
-4. **Frequency interpolation**:
+5. **Frequency interpolation**:
    - Harmonics rarely fall exactly on bin centers
-   - Linear interpolation between adjacent bins
+   - Linear interpolation between adjacent bins (in dB space)
    - More accurate harmonic amplitude measurement
 
 #### Effect on Bass Detection
@@ -257,14 +319,17 @@ Peaks (sorted by amplitude):
 Bass note selected: 60Hz (wrong!)
 ```
 
-**After harmonic promotion:**
+**After harmonic promotion (with correct power-domain boost):**
 ```
 Peaks (sorted by amplitude after boost):
-1. Real bass at 110Hz: 42 × 1.4 = 58.8 dB (boosted by harmonics)
+1. Real bass at 110Hz: 42 dB + boost = 45.6 dB (boosted by harmonics in power domain)
 2. Rumble at 60Hz: 45 dB (no boost, no harmonics)
 3. ...
 
 Bass note selected: 110Hz (correct!)
+
+Note: Boost calculated in power domain, then converted back to dB.
+If boost_factor = 1.4 in power domain, then dB_boost = 10*log10(1.4) ≈ 1.46 dB
 ```
 
 ### Benefits
@@ -293,10 +358,12 @@ Bass note selected: 110Hz (correct!)
 
 ```rust
 harmonic_threshold: 0.3,
-  // Fraction of fundamental amplitude required for harmonic
+  // Fraction of fundamental **POWER** required for harmonic (NOT dB!)
+  // 0.3 means harmonic must have at least 30% of fundamental's power
   // Lower = more lenient (accepts weaker harmonics)
   // Higher = more strict (requires strong harmonics)
   // Recommended range: 0.2-0.5
+  // Example: 0.3 threshold with 40 dB fundamental requires harmonic ≥ 35.23 dB
 
 highest_bassnote: 28,  // Bins (not new, but relevant)
   // Only peaks below this are considered bass
