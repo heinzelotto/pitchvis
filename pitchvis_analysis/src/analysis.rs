@@ -248,8 +248,15 @@ pub struct AnalysisParameters {
     bassline_peak_config: PeakDetectionParameters,
     /// The highest bass note to be considered.
     highest_bassnote: usize,
-    /// The duration over which each VQT bin is smoothed, or no smoothing.
-    vqt_smoothing_duration: Option<Duration>,
+    /// Base duration for VQT smoothing (will be modulated by frequency and calmness).
+    /// Bass notes use longer smoothing, treble notes use shorter smoothing.
+    vqt_smoothing_duration_base: Duration,
+    /// Multiplier for smoothing duration based on scene calmness.
+    /// Range: [vqt_smoothing_calmness_min, vqt_smoothing_calmness_max]
+    /// At calmness=0 (energetic): uses min multiplier
+    /// At calmness=1 (calm): uses max multiplier
+    vqt_smoothing_calmness_min: f32,
+    vqt_smoothing_calmness_max: f32,
     /// The duration over which the calmness of a indivitual pitch bin is smoothed.
     note_calmness_smoothing_duration: Duration,
     /// The duration over which the calmness of the scene is smoothed.
@@ -294,7 +301,12 @@ impl Default for AnalysisParameters {
                 min_height: 3.5,
             },
             highest_bassnote: 12 * 2 + 4,
-            vqt_smoothing_duration: Some(Duration::from_millis(90)),
+            // Base smoothing of 70ms, modulated by frequency (bass longer, treble shorter)
+            // and calmness (calm longer, energetic shorter)
+            vqt_smoothing_duration_base: Duration::from_millis(70),
+            // Calmness multiplier range: energetic 0.6x (42ms), calm 2.0x (140ms)
+            vqt_smoothing_calmness_min: 0.6,
+            vqt_smoothing_calmness_max: 2.0,
             note_calmness_smoothing_duration: Duration::from_millis(4_500),
             scene_calmness_smoothing_duration: Duration::from_millis(1_100),
             tuning_inaccuracy_smoothing_duration: Duration::from_millis(4_000),
@@ -489,9 +501,18 @@ impl AnalysisState {
     pub fn new(range: VqtRange, params: AnalysisParameters) -> Self {
         let n_buckets = range.n_buckets();
 
-        // Initialize VQT smoothing with uniform duration
-        let x_vqt_smoothed =
-            vec![EmaMeasurement::new(params.vqt_smoothing_duration, 0.0); n_buckets];
+        // Initialize frequency-dependent smoothing durations
+        // Bass (lower octaves) get longer smoothing, treble (higher octaves) get shorter
+        // Formula: base_duration * (1.5 - 0.5 * octave_fraction)
+        // Octave 0 (bass): 1.5x, Octave N (treble): 1.0x
+        let x_vqt_smoothed = (0..n_buckets)
+            .map(|bin_idx| {
+                let octave_fraction = bin_idx as f32 / range.buckets_per_octave as f32 / range.octaves as f32;
+                let frequency_multiplier = 1.5 - 0.5 * octave_fraction;
+                let duration_ms = params.vqt_smoothing_duration_base.as_millis() as f32 * frequency_multiplier; // TODO: ?zero smoothing allowed
+                EmaMeasurement::new(Some(Duration::from_millis(duration_ms as u64)), 0.0)
+            })
+            .collect::<Vec<_>>();
 
         Self {
             // history: (0..SMOOTH_LENGTH)
@@ -553,7 +574,7 @@ impl AnalysisState {
     /// # Parameters:
     /// - `new_duration`: The new smoothing duration to apply.
     pub fn update_vqt_smoothing_duration(&mut self, new_duration: Option<Duration>) {
-        self.params.vqt_smoothing_duration = new_duration;
+        self.params.vqt_smoothing_duration_base = new_duration.unwrap_or(Duration::from_millis(90)); // FIXME: allow None
         for ema in &mut self.x_vqt_smoothed {
             let current_value = ema.get();
             *ema = EmaMeasurement::new(new_duration, current_value);
@@ -590,11 +611,30 @@ impl AnalysisState {
         let _max = x_vqt[k_max];
         // println!("x_vqt[{k_min}] = {min}, x_vqt[{k_max}] = {max}");
 
-        // Smooth the VQT with uniform duration
+        // Adapt smoothing duration based on scene calmness
+        // More calm = longer smoothing (less responsive but cleaner)
+        // More energetic = shorter smoothing (more responsive to transients)
+        let calmness = self.smoothed_scene_calmness.get();
+        let calmness_multiplier = self.params.vqt_smoothing_calmness_min
+            + (self.params.vqt_smoothing_calmness_max - self.params.vqt_smoothing_calmness_min)
+                * calmness;
+
+        // Update smoothing time horizons based on calmness and smooth the VQT
         self.x_vqt_smoothed
             .iter_mut()
+            .enumerate()
             .zip(x_vqt.iter())
-            .for_each(|(smoothed, x)| {
+            .for_each(|((bin_idx, smoothed), x)| {
+                // Get base frequency-dependent duration
+                let octave_fraction = bin_idx as f32 / self.range.buckets_per_octave as f32 / self.range.octaves as f32;
+                let frequency_multiplier = 1.5 - 0.5 * octave_fraction;
+
+                // Apply calmness multiplier
+                let duration_ms = self.params.vqt_smoothing_duration_base.as_millis() as f32
+                    * frequency_multiplier
+                    * calmness_multiplier;
+
+                smoothed.set_time_horizon(Duration::from_millis(duration_ms as u64));
                 smoothed.update_with_timestep(*x, frame_time);
             });
         let x_vqt_smoothed = self
