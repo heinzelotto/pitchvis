@@ -61,13 +61,13 @@ pub fn update_display(
         Option<&mut Bloom>,
         Ref<Projection>, // Ref because we want to check `is_changed` later
     )>,
-    mut harmonic_lines_query: Query<(
+    harmonic_lines_query: Query<(
         &mut Visibility,
         &mut Transform,
         &mut Mesh2d,
         &mut MeshMaterial2d<ColorMaterial>,
     ), With<HarmonicLine>>,
-    mut chord_display_query: Query<(&mut Text2d, &mut Visibility), With<ChordDisplay>>,
+    chord_display_query: Query<(&mut Text2d, &mut Visibility), With<ChordDisplay>>,
 ) -> Result<()> {
     fade_pitch_balls(set.p0(), &mut noisy_color_materials, &run_time, range);
 
@@ -281,12 +281,11 @@ fn update_pitch_balls(
 
                     // Apply tint by mixing with base color
                     let current_color = color_mat.color;
-                    let current_srgba = current_color.to_srgba();
                     color_mat.color = Color::srgba(
-                        (current_srgba.red + tint_r * vibrato_tint_strength).clamp(0.0, 1.0),
-                        (current_srgba.green + tint_g * vibrato_tint_strength).clamp(0.0, 1.0),
-                        (current_srgba.blue + tint_b * vibrato_tint_strength).clamp(0.0, 1.0),
-                        current_srgba.alpha,
+                        (current_color.red() + tint_r * vibrato_tint_strength).clamp(0.0, 1.0),
+                        (current_color.green() + tint_g * vibrato_tint_strength).clamp(0.0, 1.0),
+                        (current_color.blue() + tint_b * vibrato_tint_strength).clamp(0.0, 1.0),
+                        current_color.alpha(),
                     ).into();
                 }
             }
@@ -357,12 +356,11 @@ fn update_pitch_balls(
 
             // Apply tuning accuracy to color brightness
             let current_color = color_mat.color;
-            let current_srgba = current_color.to_srgba();
             color_mat.color = Color::srgba(
-                current_srgba.red * tuning_accuracy_boost,
-                current_srgba.green * tuning_accuracy_boost,
-                current_srgba.blue * tuning_accuracy_boost,
-                current_srgba.alpha,
+                current_color.red() * tuning_accuracy_boost,
+                current_color.green() * tuning_accuracy_boost,
+                current_color.blue() * tuning_accuracy_boost,
+                current_color.alpha(),
             ).into();
 
             // TODO: scale up new notes to make them more prominent
@@ -774,7 +772,7 @@ fn update_harmonic_lines_and_chord(
     );
 
     // Update chord display
-    if let Ok((mut text, mut visibility)) = chord_display_query.get_single_mut() {
+    if let Ok((mut text, mut visibility)) = chord_display_query.single_mut() {
         if let Some(chord) = &analysis_state.detected_chord {
             if should_show && chord.confidence > 0.3 {
                 **text = chord.name();
@@ -789,7 +787,7 @@ fn update_harmonic_lines_and_chord(
 
     // Update harmonic lines
     if let Ok((mut visibility, _transform, mesh_handle, _material_handle)) =
-        harmonic_lines_query.get_single_mut()
+        harmonic_lines_query.single_mut()
     {
         if !should_show || analysis_state.detected_chord.is_none() {
             *visibility = Visibility::Hidden;

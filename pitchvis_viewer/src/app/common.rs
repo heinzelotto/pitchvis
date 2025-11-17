@@ -1047,7 +1047,7 @@ pub fn build_common_app(
 
     // Add platform-specific plugins
     for plugin in config.additional_plugins {
-        app.add_plugins(plugin);
+        app.add_plugins_boxed(plugin);
     }
 
     // Insert common resources

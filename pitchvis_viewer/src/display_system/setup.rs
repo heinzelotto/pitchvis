@@ -70,7 +70,7 @@ pub fn setup_display(
 
     spawn_harmonic_lines(&mut commands, &mut meshes, &mut color_materials);
 
-    spawn_chord_display(&mut commands, asset_server);
+    spawn_chord_display(&mut commands, &asset_server);
 
     spawn_pitch_names_text(&mut commands, range, asset_server);
 }
@@ -351,7 +351,7 @@ fn spawn_harmonic_lines(commands: &mut Commands, meshes: &mut ResMut<Assets<Mesh
     ));
 }
 
-fn spawn_chord_display(commands: &mut Commands, asset_server: Res<AssetServer>) {
+fn spawn_chord_display(commands: &mut Commands, asset_server: &Res<AssetServer>) {
     use super::ChordDisplay;
 
     let font = asset_server.load("fonts/DejaVuSans.ttf");
