@@ -980,54 +980,32 @@ pub fn register_startup_systems(app: &mut App, vqt_range: &VqtRange) {
     );
 }
 
-/// System closures that are created per-platform with specific buffer sizes
-pub struct PlatformSystems<M1, M2, M3>
-where
-    M1: IntoSystem<(), (), M1> + 'static,
-    M2: IntoSystem<(), (), M2> + 'static,
-    M3: IntoSystem<(), (), M3> + 'static,
-{
-    pub update_vqt: M1,
-    pub update_analysis_state: M2,
-    pub update_display: M3,
-}
-
 /// Registers all common update systems
 pub fn register_common_update_systems<M1, M2, M3>(
     app: &mut App,
-    systems: PlatformSystems<M1, M2, M3>,
-    include_bloom: bool,
-) where
-    M1: IntoSystem<(), (), M1> + 'static,
-    M2: IntoSystem<(), (), M2> + 'static,
-    M3: IntoSystem<(), (), M3> + 'static,
-{
-    let mut update_systems = app.add_systems(
+    update_vqt_system: impl IntoSystem<(), (), M1>,
+    update_analysis_state_system: impl IntoSystem<(), (), M2>,
+    update_display_system: impl IntoSystem<(), (), M3>,
+) {
+    app.add_systems(
         Update,
         (
             close_on_esc,
-            systems.update_vqt,
-            systems.update_analysis_state.after(systems.update_vqt),
-            update_fps_text_system.after(systems.update_vqt),
+            update_vqt_system,
+            update_analysis_state_system,
+            update_fps_text_system,
             fps_counter_showhide,
             update_button_system,
             button_showhide,
             user_input_system.after(update_button_system),
-            update_analysis_text_system.after(systems.update_analysis_state),
+            update_analysis_text_system,
             analysis_text_showhide,
             update_screen_lock_indicator,
             set_frame_limiter_system,
             set_vqt_smoothing_system,
-            systems.update_display.after(systems.update_analysis_state),
+            update_display_system,
         ),
     );
-
-    if include_bloom {
-        update_systems.add_systems(
-            Update,
-            update_bloom_settings.after(systems.update_analysis_state),
-        );
-    }
 }
 
 /// Builds a complete app with common configuration and platform-specific components

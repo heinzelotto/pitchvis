@@ -7,7 +7,6 @@ use wasm_bindgen::prelude::*;
 
 use super::common::{
     build_common_app, register_common_update_systems, register_startup_systems, PlatformConfig,
-    PlatformSystems,
 };
 use crate::analysis_system;
 use crate::display_system;
@@ -74,11 +73,9 @@ pub async fn main_fun() -> Result<(), JsValue> {
     // Register common update systems (bloom ENABLED on WASM)
     register_common_update_systems(
         &mut app,
-        PlatformSystems {
-            update_vqt: update_vqt_system,
-            update_analysis_state: update_analysis_state_system,
-            update_display: update_display_system,
-        },
+        update_vqt_system,
+        update_analysis_state_system,
+        update_display_system,
         true, // bloom enabled on WASM
     );
 

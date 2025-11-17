@@ -4,7 +4,6 @@ use bevy_persistent::StorageFormat;
 
 use super::common::{
     build_common_app, register_common_update_systems, register_startup_systems, PlatformConfig,
-    PlatformSystems,
 };
 use crate::analysis_system;
 use crate::display_system;
@@ -76,15 +75,12 @@ pub fn main_fun() -> Result<()> {
     // Register common startup systems
     register_startup_systems(&mut app, &vqt_parameters.range);
 
-    // Register common update systems (bloom disabled on desktop)
+    // Register common update systems
     register_common_update_systems(
         &mut app,
-        PlatformSystems {
-            update_vqt: update_vqt_system,
-            update_analysis_state: update_analysis_state_system,
-            update_display: update_display_system,
-        },
-        false, // bloom disabled on desktop
+        update_vqt_system,
+        update_analysis_state_system,
+        update_display_system,
     );
 
     // Add ML systems if feature is enabled (desktop-specific)

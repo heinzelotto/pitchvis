@@ -56,18 +56,18 @@ pub fn update_display(
     glissando_curve_entities: Res<GlissandoCurveEntityListResource>,
     settings_state: Res<Persistent<SettingsState>>,
     run_time: Res<Time>,
-    camera: Query<(
+    mut camera: Query<(
         &mut Camera,
         Option<&mut Bloom>,
         Ref<Projection>, // Ref because we want to check `is_changed` later
     )>,
-    harmonic_lines_query: Query<(
+    mut harmonic_lines_query: Query<(
         &mut Visibility,
         &mut Transform,
         &mut Mesh2d,
         &mut MeshMaterial2d<ColorMaterial>,
     ), With<HarmonicLine>>,
-    chord_display_query: Query<(&mut Text2d, &mut Visibility), With<ChordDisplay>>,
+    mut chord_display_query: Query<(&mut Text2d, &mut Visibility), With<ChordDisplay>>,
 ) -> Result<()> {
     fade_pitch_balls(set.p0(), &mut noisy_color_materials, &run_time, range);
 
@@ -110,7 +110,7 @@ pub fn update_display(
 
     update_spectrum(
         set.p3(),
-        camera,
+        &camera,
         &mut meshes,
         &settings_state,
         &vqt_result,
@@ -121,7 +121,7 @@ pub fn update_display(
 
     show_hide_spider_net(set.p4(), &settings_state);
 
-    toggle_background(camera, &settings_state, analysis_state)?;
+    toggle_background(&mut camera, &settings_state, analysis_state)?;
 
     update_harmonic_lines_and_chord(
         harmonic_lines_query,
@@ -281,11 +281,12 @@ fn update_pitch_balls(
 
                     // Apply tint by mixing with base color
                     let current_color = color_mat.color;
+                    let current_srgba = current_color.to_srgba();
                     color_mat.color = Color::srgba(
-                        (current_color.to_srgba().red + tint_r * vibrato_tint_strength).clamp(0.0, 1.0),
-                        (current_color.to_srgba().green + tint_g * vibrato_tint_strength).clamp(0.0, 1.0),
-                        (current_color.to_srgba().blue + tint_b * vibrato_tint_strength).clamp(0.0, 1.0),
-                        current_color.to_srgba().alpha,
+                        (current_srgba.red + tint_r * vibrato_tint_strength).clamp(0.0, 1.0),
+                        (current_srgba.green + tint_g * vibrato_tint_strength).clamp(0.0, 1.0),
+                        (current_srgba.blue + tint_b * vibrato_tint_strength).clamp(0.0, 1.0),
+                        current_srgba.alpha,
                     ).into();
                 }
             }
@@ -356,11 +357,12 @@ fn update_pitch_balls(
 
             // Apply tuning accuracy to color brightness
             let current_color = color_mat.color;
+            let current_srgba = current_color.to_srgba();
             color_mat.color = Color::srgba(
-                current_color.to_srgba().red * tuning_accuracy_boost,
-                current_color.to_srgba().green * tuning_accuracy_boost,
-                current_color.to_srgba().blue * tuning_accuracy_boost,
-                current_color.to_srgba().alpha,
+                current_srgba.red * tuning_accuracy_boost,
+                current_srgba.green * tuning_accuracy_boost,
+                current_srgba.blue * tuning_accuracy_boost,
+                current_srgba.alpha,
             ).into();
 
             // TODO: scale up new notes to make them more prominent
@@ -588,7 +590,7 @@ fn update_glissandos(
 
 fn update_spectrum(
     mut spectrum: Query<(&mut Visibility, &Mesh2d, &mut Transform), With<Spectrum>>,
-    mut camera: Query<(&mut Camera, Option<&mut Bloom>, Ref<Projection>)>,
+    camera: &Query<(&mut Camera, Option<&mut Bloom>, Ref<Projection>)>,
     meshes: &mut ResMut<Assets<Mesh>>,
     settings_state: &Res<Persistent<SettingsState>>,
     vqt_result: &Res<VqtResultResource>,
@@ -605,7 +607,7 @@ fn update_spectrum(
         }
 
         // move to right
-        let (_, _, projection) = camera.single_mut()?;
+        let (_, _, projection) = camera.single()?;
         {
             if let Projection::Orthographic(proj) = &*projection {
                 let Rect { max, .. } = proj.area;
@@ -708,11 +710,11 @@ fn show_hide_spider_net(
 }
 
 fn toggle_background(
-    mut camera: Query<(&mut Camera, Option<&mut Bloom>, Ref<Projection>)>,
+    camera: &mut Query<(&mut Camera, Option<&mut Bloom>, Ref<Projection>)>,
     settings_state: &Res<Persistent<SettingsState>>,
     analysis_state: &AnalysisState,
 ) -> Result<()> {
-    let (mut camera, _, _) = camera.single_mut()?;
+    let (mut cam, _, _) = camera.single_mut()?;
 
     let base_color = match settings_state.visuals_mode {
         VisualsMode::Zen | VisualsMode::Full | VisualsMode::Performance => CLEAR_COLOR_NEUTRAL,
@@ -732,18 +734,19 @@ fn toggle_background(
                 _ => Color::srgb(0.23, 0.23, 0.25),
             };
 
+            let base_srgba = base.to_srgba();
             let tinted = Color::srgb(
-                base.to_srgba().red * (1.0 - tint_strength) + root_color_rgb[0] * tint_strength,
-                base.to_srgba().green * (1.0 - tint_strength) + root_color_rgb[1] * tint_strength,
-                base.to_srgba().blue * (1.0 - tint_strength) + root_color_rgb[2] * tint_strength,
+                base_srgba.red * (1.0 - tint_strength) + root_color_rgb[0] * tint_strength,
+                base_srgba.green * (1.0 - tint_strength) + root_color_rgb[1] * tint_strength,
+                base_srgba.blue * (1.0 - tint_strength) + root_color_rgb[2] * tint_strength,
             );
 
-            camera.clear_color = ClearColorConfig::Custom(tinted);
+            cam.clear_color = ClearColorConfig::Custom(tinted);
         } else {
-            camera.clear_color = base_color;
+            cam.clear_color = base_color;
         }
     } else {
-        camera.clear_color = base_color;
+        cam.clear_color = base_color;
     }
 
     Ok(())
