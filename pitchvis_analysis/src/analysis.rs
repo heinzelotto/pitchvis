@@ -264,6 +264,16 @@ pub struct AnalysisParameters {
     attack_detection_config: AttackDetectionParameters,
     /// Vibrato detection parameters
     vibrato_detection_config: VibratoDetectionParameters,
+    /// Maximum distance (in buckets) a peak can move between frames to be considered the same peak
+    peak_tracking_max_distance: f32,
+    /// Time (in seconds) after which an unmatched tracked peak is removed
+    peak_tracking_timeout: f32,
+    /// Maximum number of position samples to keep in history per tracked peak
+    peak_tracking_history_length: usize,
+    /// Minimum distance traveled (in buckets) for a tracked peak to become a glissando
+    glissando_min_distance: f32,
+    /// Duration (in seconds) to keep glissandos for rendering before removal
+    glissando_lifetime: f32,
 }
 
 impl AnalysisParameters {
@@ -292,6 +302,12 @@ impl Default for AnalysisParameters {
             harmonic_threshold: 0.3,
             attack_detection_config: AttackDetectionParameters::default(),
             vibrato_detection_config: VibratoDetectionParameters::default(),
+            // Peak tracking parameters (glissando detection)
+            peak_tracking_max_distance: 3.0, // ~3 bins (~1.5 semitones for 24 buckets/octave)
+            peak_tracking_timeout: 0.15,     // 150ms without match -> remove
+            peak_tracking_history_length: 120, // Keep last 120 samples (~2 seconds at 60fps)
+            glissando_min_distance: 2.0,     // Minimum 2 buckets (~1 semitone) traveled
+            glissando_lifetime: 2.0,         // Keep glissandos visible for 2 seconds
         }
     }
 }
@@ -302,6 +318,34 @@ pub struct ContinuousPeak {
     pub center: f32,
     /// The estimated precise amplitude of the peak, in ???
     pub size: f32,
+}
+
+/// Represents a tracked peak over time for glissando detection
+#[derive(Debug, Clone)]
+pub struct TrackedPeak {
+    /// Unique identifier for this tracked peak
+    pub id: u64,
+    /// Current center position in buckets
+    pub center: f32,
+    /// Current amplitude
+    pub size: f32,
+    /// Recent position history (center values)
+    pub position_history: Vec<f32>,
+    /// Time since this peak was last matched to a detected peak (in seconds)
+    pub time_since_update: f32,
+    /// Total time this peak has been tracked (in seconds)
+    pub total_time: f32,
+}
+
+/// Represents a completed glissando for rendering
+#[derive(Debug, Clone)]
+pub struct Glissando {
+    /// Path points (center positions in buckets)
+    pub path: Vec<f32>,
+    /// Average amplitude along the path
+    pub average_size: f32,
+    /// Time when this glissando was created (for aging/fading)
+    pub creation_time: f32,
 }
 
 /// Represents the current state of spectral analysis for musical signals.
@@ -409,6 +453,18 @@ pub struct AnalysisState {
 
     /// Currently detected chord, if any
     pub detected_chord: Option<crate::chord::DetectedChord>,
+
+    /// Tracked peaks for glissando detection
+    pub tracked_peaks: Vec<TrackedPeak>,
+
+    /// Active glissandos for rendering
+    pub glissandos: Vec<Glissando>,
+
+    /// Counter for generating unique peak IDs
+    next_peak_id: u64,
+
+    /// Elapsed time in seconds since analysis started
+    elapsed_time: f32,
 }
 
 impl AnalysisState {
@@ -473,6 +529,10 @@ impl AnalysisState {
             vibrato_states: vec![VibratoState::new(); n_buckets],
             accumulated_time: 0.0,
             detected_chord: None,
+            tracked_peaks: Vec::new(),
+            glissandos: Vec::new(),
+            next_peak_id: 0,
+            elapsed_time: 0.0,
         }
     }
 
@@ -644,6 +704,9 @@ impl AnalysisState {
         self.update_tuning_inaccuracy(frame_time);
         self.update_pitch_accuracy_and_deviation();
         self.update_chord_detection();
+
+        // Update peak tracking for glissando detection
+        self.update_peak_tracking(frame_time);
 
         // TODO: more advanced bass note detection than just taking the first peak (e. g. by
         // promoting frequences through their overtones first), using different peak detection
@@ -1198,6 +1261,121 @@ impl AnalysisState {
         // Detect chord (minimum 2 notes)
         self.detected_chord =
             crate::chord::detect_chord(&active_bins, self.range.buckets_per_octave, 2);
+    }
+
+    fn update_peak_tracking(&mut self, frame_time: Duration) {
+        let delta_time = frame_time.as_secs_f32();
+        self.elapsed_time += delta_time;
+
+        // Age existing tracked peaks
+        for tracked in &mut self.tracked_peaks {
+            tracked.time_since_update += delta_time;
+        }
+
+        // Track which peaks have been matched
+        let mut matched_tracked_indices = vec![false; self.tracked_peaks.len()];
+        let mut matched_detected_indices = vec![false; self.peaks_continuous.len()];
+
+        // Match detected peaks to tracked peaks (nearest neighbor within threshold)
+        for (detected_idx, detected_peak) in self.peaks_continuous.iter().enumerate() {
+            let mut best_match: Option<(usize, f32)> = None;
+
+            for (tracked_idx, tracked_peak) in self.tracked_peaks.iter().enumerate() {
+                if matched_tracked_indices[tracked_idx] {
+                    continue; // Already matched
+                }
+
+                let distance = (detected_peak.center - tracked_peak.center).abs();
+                if distance <= self.params.peak_tracking_max_distance {
+                    if let Some((_, best_dist)) = best_match {
+                        if distance < best_dist {
+                            best_match = Some((tracked_idx, distance));
+                        }
+                    } else {
+                        best_match = Some((tracked_idx, distance));
+                    }
+                }
+            }
+
+            // If we found a match, update the tracked peak
+            if let Some((tracked_idx, _)) = best_match {
+                matched_tracked_indices[tracked_idx] = true;
+                matched_detected_indices[detected_idx] = true;
+
+                let tracked = &mut self.tracked_peaks[tracked_idx];
+                tracked.center = detected_peak.center;
+                tracked.size = detected_peak.size;
+                tracked.position_history.push(detected_peak.center);
+                tracked.time_since_update = 0.0;
+                tracked.total_time += delta_time;
+
+                // Limit history length
+                if tracked.position_history.len() > self.params.peak_tracking_history_length {
+                    tracked.position_history.drain(0..1);
+                }
+            }
+        }
+
+        // Create new tracked peaks for unmatched detected peaks
+        for (detected_idx, detected_peak) in self.peaks_continuous.iter().enumerate() {
+            if !matched_detected_indices[detected_idx] {
+                self.tracked_peaks.push(TrackedPeak {
+                    id: self.next_peak_id,
+                    center: detected_peak.center,
+                    size: detected_peak.size,
+                    position_history: vec![detected_peak.center],
+                    time_since_update: 0.0,
+                    total_time: 0.0,
+                });
+                self.next_peak_id += 1;
+            }
+        }
+
+        // Remove timed-out tracked peaks and create glissandos for significant movements
+        let mut i = 0;
+        while i < self.tracked_peaks.len() {
+            let tracked = &self.tracked_peaks[i];
+
+            if tracked.time_since_update > self.params.peak_tracking_timeout {
+                // Check if this peak traveled enough to be considered a glissando
+                if tracked.position_history.len() >= 2 {
+                    let start_pos = tracked.position_history.first().unwrap();
+                    let end_pos = tracked.position_history.last().unwrap();
+                    let total_distance = (end_pos - start_pos).abs();
+
+                    if total_distance >= self.params.glissando_min_distance {
+                        // Create a glissando
+                        let average_size =
+                            tracked.size; // Could compute average from history if we stored it
+
+                        self.glissandos.push(Glissando {
+                            path: tracked.position_history.clone(),
+                            average_size,
+                            creation_time: self.elapsed_time,
+                        });
+
+                        trace!(
+                            "Created glissando: {} -> {}, distance: {:.2} buckets, duration: {:.2}s",
+                            start_pos,
+                            end_pos,
+                            total_distance,
+                            tracked.total_time
+                        );
+                    }
+                }
+
+                // Remove this tracked peak
+                self.tracked_peaks.swap_remove(i);
+            } else {
+                i += 1;
+            }
+        }
+
+        // Age and remove old glissandos
+        self.glissandos.retain(|g| {
+            let age = self.elapsed_time - g.creation_time;
+            age < self.params.glissando_lifetime
+        });
     }
 }
 

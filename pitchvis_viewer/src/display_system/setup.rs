@@ -1,6 +1,6 @@
 use super::util::calculate_spiral_points;
 use super::{material::NoisyColorMaterial, LineList, PitchBall, PitchNameText, Spectrum};
-use super::{CylinderEntityListResource, SpiderNetSegment, CLEAR_COLOR_NEUTRAL};
+use super::{CylinderEntityListResource, GlissandoCurve, GlissandoCurveEntityListResource, SpiderNetSegment, CLEAR_COLOR_NEUTRAL};
 use bevy::camera::ScalingMode;
 use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::post_process::bloom::{Bloom, BloomCompositeMode, BloomPrefilter};
@@ -23,6 +23,7 @@ pub fn setup_display(
     mut color_materials: ResMut<Assets<ColorMaterial>>,
     mut noisy_color_materials: ResMut<Assets<NoisyColorMaterial>>,
     mut cylinder_entities: ResMut<CylinderEntityListResource>,
+    mut glissando_curve_entities: ResMut<GlissandoCurveEntityListResource>,
     range: &VqtRange,
     asset_server: Res<AssetServer>,
 ) {
@@ -55,6 +56,13 @@ pub fn setup_display(
     );
 
     spawn_spectrum(&mut commands, &mut meshes, &mut color_materials, range);
+
+    spawn_glissando_curves(
+        &mut commands,
+        &mut glissando_curve_entities,
+        &mut meshes,
+        &mut color_materials,
+    );
 
     spawn_light(&mut commands);
 
@@ -362,4 +370,38 @@ fn spawn_chord_display(commands: &mut Commands, asset_server: Res<AssetServer>) 
         Transform::from_xyz(0.0, -8.0, 0.0).with_scale(vec3(0.025, 0.025, 1.0)),
         Visibility::Hidden,
     ));
+}
+
+fn spawn_glissando_curves(
+    commands: &mut Commands,
+    glissando_curve_entities: &mut ResMut<GlissandoCurveEntityListResource>,
+    meshes: &mut ResMut<Assets<Mesh>>,
+    color_materials: &mut ResMut<Assets<ColorMaterial>>,
+) {
+    // Create a pool of glissando curve entities (max 20 concurrent glissandos)
+    const MAX_GLISSANDOS: usize = 20;
+
+    for index in 0..MAX_GLISSANDOS {
+        // Create an empty line mesh
+        let mesh = meshes.add(LineList {
+            lines: vec![],
+            thickness: 0.05,
+        });
+
+        let material = color_materials.add(ColorMaterial::from_color(Color::srgba(
+            1.0, 1.0, 1.0, 0.0,
+        )));
+
+        let entity = commands
+            .spawn((
+                GlissandoCurve { index },
+                Mesh2d(mesh),
+                MeshMaterial2d(material),
+                Transform::from_xyz(0.0, 0.0, -0.02), // Behind pitch balls (more negative = farther back)
+                Visibility::Hidden,
+            ))
+            .id();
+
+        glissando_curve_entities.0.push(entity);
+    }
 }
