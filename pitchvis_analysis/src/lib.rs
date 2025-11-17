@@ -1,4 +1,5 @@
 pub mod analysis;
+pub mod chord;
 pub mod util;
 pub mod vqt;
 

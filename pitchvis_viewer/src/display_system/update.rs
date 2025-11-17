@@ -1,7 +1,7 @@
 use super::{
-    material::NoisyColorMaterial, util::bin_to_spiral, BassCylinder, CylinderEntityListResource,
-    DisplayMode, LineList, PitchBall, PitchNameText, Spectrum, SpiderNetSegment, VisualsMode,
-    CLEAR_COLOR_GALAXY, CLEAR_COLOR_NEUTRAL,
+    material::NoisyColorMaterial, util::bin_to_spiral, BassCylinder, ChordDisplay,
+    CylinderEntityListResource, DisplayMode, HarmonicLine, LineList, PitchBall, PitchNameText,
+    Spectrum, SpiderNetSegment, VisualsMode, CLEAR_COLOR_GALAXY, CLEAR_COLOR_NEUTRAL,
 };
 use bevy::{post_process::bloom::Bloom, prelude::*};
 use bevy_persistent::Persistent;
@@ -53,6 +53,13 @@ pub fn update_display(
         Option<&mut Bloom>,
         Ref<Projection>, // Ref because we want to check `is_changed` later
     )>,
+    mut harmonic_lines_query: Query<(
+        &mut Visibility,
+        &mut Transform,
+        Option<&mut Mesh2d>,
+        Option<&mut MeshMaterial2d<ColorMaterial>>,
+    ), With<HarmonicLine>>,
+    mut chord_display_query: Query<(&mut Text2d, &mut Visibility), With<ChordDisplay>>,
 ) -> Result<()> {
     fade_pitch_balls(set.p0(), &mut noisy_color_materials, &run_time, range);
 
@@ -96,7 +103,17 @@ pub fn update_display(
 
     show_hide_spider_net(set.p4(), &settings_state);
 
-    toggle_background(&mut camera, &settings_state)?;
+    toggle_background(&mut camera, &settings_state, analysis_state)?;
+
+    update_harmonic_lines_and_chord(
+        harmonic_lines_query,
+        chord_display_query,
+        analysis_state,
+        &mut meshes,
+        &mut color_materials,
+        &settings_state,
+        range,
+    );
 
     Ok(())
 }
@@ -503,14 +520,179 @@ fn show_hide_spider_net(
 fn toggle_background(
     camera: &mut Query<(&mut Camera, Option<&mut Bloom>, Ref<Projection>)>,
     settings_state: &Res<Persistent<SettingsState>>,
+    analysis_state: &AnalysisState,
 ) -> Result<()> {
     let (mut camera, _, _) = camera.single_mut()?;
-    camera.clear_color = match settings_state.visuals_mode {
+
+    let base_color = match settings_state.visuals_mode {
         VisualsMode::Zen | VisualsMode::Full | VisualsMode::Performance => CLEAR_COLOR_NEUTRAL,
         VisualsMode::Galaxy => CLEAR_COLOR_GALAXY,
     };
 
+    // Tint background based on detected chord root note
+    if let Some(chord) = &analysis_state.detected_chord {
+        if chord.confidence > 0.5 {
+            // Get color for the root note
+            let root_color_rgb = COLORS[chord.root];
+            let tint_strength = 0.05; // Subtle tint
+
+            // Mix base color with root note color
+            let base = match base_color {
+                ClearColorConfig::Custom(c) => c,
+                _ => Color::srgb(0.23, 0.23, 0.25),
+            };
+
+            let tinted = Color::srgb(
+                base.to_srgba().red * (1.0 - tint_strength) + root_color_rgb[0] * tint_strength,
+                base.to_srgba().green * (1.0 - tint_strength) + root_color_rgb[1] * tint_strength,
+                base.to_srgba().blue * (1.0 - tint_strength) + root_color_rgb[2] * tint_strength,
+            );
+
+            camera.clear_color = ClearColorConfig::Custom(tinted);
+        } else {
+            camera.clear_color = base_color;
+        }
+    } else {
+        camera.clear_color = base_color;
+    }
+
     Ok(())
+}
+
+#[allow(clippy::type_complexity)]
+fn update_harmonic_lines_and_chord(
+    mut harmonic_lines_query: Query<(
+        &mut Visibility,
+        &mut Transform,
+        Option<&mut Mesh2d>,
+        Option<&mut MeshMaterial2d<ColorMaterial>>,
+    ), With<HarmonicLine>>,
+    mut chord_display_query: Query<(&mut Text2d, &mut Visibility), With<ChordDisplay>>,
+    analysis_state: &AnalysisState,
+    meshes: &mut ResMut<Assets<Mesh>>,
+    color_materials: &mut ResMut<Assets<ColorMaterial>>,
+    settings_state: &Res<Persistent<SettingsState>>,
+    range: &VqtRange,
+) {
+    // Only show in Full and Performance modes
+    let should_show = matches!(
+        settings_state.visuals_mode,
+        VisualsMode::Full | VisualsMode::Performance
+    );
+
+    // Update chord display
+    if let Ok((mut text, mut visibility)) = chord_display_query.get_single_mut() {
+        if let Some(chord) = &analysis_state.detected_chord {
+            if should_show && chord.confidence > 0.3 {
+                **text = chord.name();
+                *visibility = Visibility::Visible;
+            } else {
+                *visibility = Visibility::Hidden;
+            }
+        } else {
+            *visibility = Visibility::Hidden;
+        }
+    }
+
+    // Update harmonic lines
+    if let Ok((mut visibility, _transform, mesh_handle, material_handle)) =
+        harmonic_lines_query.get_single_mut()
+    {
+        if !should_show || analysis_state.detected_chord.is_none() {
+            *visibility = Visibility::Hidden;
+            return;
+        }
+
+        let chord = analysis_state.detected_chord.as_ref().unwrap();
+
+        // Build lines between harmonically related notes
+        let mut lines = Vec::new();
+
+        // Get positions of all active peaks
+        let mut peak_positions: HashMap<usize, (f32, f32)> = HashMap::new();
+        for peak in &analysis_state.peaks_continuous {
+            let (x, y, _z) = bin_to_spiral(range.buckets_per_octave, peak.center);
+            let bin_idx = peak.center.round() as usize;
+            peak_positions.insert(bin_idx, (x, y));
+        }
+
+        // Convert chord notes to bin indices (all octaves)
+        let buckets_per_semitone = range.buckets_per_octave / 12;
+        for &note1 in &chord.notes {
+            for &note2 in &chord.notes {
+                if note1 >= note2 {
+                    continue;
+                }
+
+                // Check harmonic relationship
+                let interval = (note2 + 12 - note1) % 12;
+
+                // Only draw lines for important intervals:
+                // Perfect fifth (7), Perfect fourth (5), Major third (4), Minor third (3)
+                let should_connect = matches!(interval, 3 | 4 | 5 | 7);
+
+                if should_connect {
+                    // Find all instances of these notes across octaves
+                    for (bin1, &(x1, y1)) in &peak_positions {
+                        let semitone1 = (bin1 * 12) / range.buckets_per_octave as usize;
+                        let pitch_class1 = semitone1 % 12;
+
+                        if pitch_class1 == note1 {
+                            for (bin2, &(x2, y2)) in &peak_positions {
+                                let semitone2 = (bin2 * 12) / range.buckets_per_octave as usize;
+                                let pitch_class2 = semitone2 % 12;
+
+                                if pitch_class2 == note2 {
+                                    // Add line, but only if bins are reasonably close (within 2 octaves)
+                                    let bin_distance = (*bin2 as i32 - *bin1 as i32).abs();
+                                    if bin_distance < (range.buckets_per_octave * 2) as i32 {
+                                        lines.push((
+                                            Vec3::new(x1, y1, 0.0),
+                                            Vec3::new(x2, y2, 0.0),
+                                        ));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if lines.is_empty() {
+            *visibility = Visibility::Hidden;
+        } else {
+            *visibility = Visibility::Visible;
+
+            // Create line mesh
+            let line_list = LineList {
+                lines,
+                thickness: 0.01, // Thin lines to avoid clutter
+            };
+            let line_mesh: Mesh = line_list.into();
+
+            // Get or create mesh
+            let mesh_asset = match mesh_handle {
+                Some(handle) => meshes.get_mut(&handle.0).expect("harmonic line mesh"),
+                None => {
+                    // This shouldn't happen since we spawn with a mesh, but handle it anyway
+                    let new_mesh = meshes.add(line_mesh);
+                    return; // Need to add mesh component next frame
+                }
+            };
+            *mesh_asset = line_mesh;
+
+            // Get or create material
+            if material_handle.is_none() {
+                // Add semi-transparent white material
+                let material = color_materials.add(ColorMaterial {
+                    color: Color::srgba(1.0, 1.0, 1.0, 0.15), // Very subtle
+                    ..default()
+                });
+                // Note: Can't add component here, would need commands
+            }
+        }
+    }
 }
 
 // #[derive(PartialEq)]

@@ -38,6 +38,12 @@ pub struct Spectrum;
 #[derive(Component)]
 pub struct PitchNameText;
 
+#[derive(Component)]
+pub struct HarmonicLine;
+
+#[derive(Component)]
+pub struct ChordDisplay;
+
 #[derive(PartialEq, Serialize, Deserialize)]
 pub enum DisplayMode {
     Normal,

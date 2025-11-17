@@ -175,6 +175,9 @@ pub struct AnalysisState {
     ///
     /// Also, overtones that don't fit to the tuning grid will also impact the inaccuracy.
     pub smoothed_tuning_grid_inaccuracy: EmaMeasurement,
+
+    /// Currently detected chord, if any
+    pub detected_chord: Option<crate::chord::DetectedChord>,
 }
 
 impl AnalysisState {
@@ -226,6 +229,7 @@ impl AnalysisState {
                 Some(params.tuning_inaccuracy_smoothing_duration),
                 0.0,
             ),
+            detected_chord: None,
         }
     }
 
@@ -359,6 +363,7 @@ impl AnalysisState {
         // needs to be run after the continuous peaks have been calculated
         self.update_tuning_inaccuracy(frame_time);
         self.update_pitch_accuracy_and_deviation();
+        self.update_chord_detection();
 
         // TODO: more advanced bass note detection than just taking the first peak (e. g. by
         // promoting frequences through their overtones first), using different peak detection
@@ -464,6 +469,25 @@ impl AnalysisState {
                 self.pitch_deviation[bin_idx] = deviation;
             }
         }
+    }
+
+    fn update_chord_detection(&mut self) {
+        use std::collections::HashMap;
+
+        // Build map of active bins with their strengths
+        let mut active_bins: HashMap<usize, f32> = HashMap::new();
+
+        for p in &self.peaks_continuous {
+            let bin_idx = p.center.round() as usize;
+            if bin_idx < self.x_vqt_peakfiltered.len() {
+                // Use peak size as strength
+                active_bins.insert(bin_idx, p.size);
+            }
+        }
+
+        // Detect chord (minimum 2 notes)
+        self.detected_chord =
+            crate::chord::detect_chord(&active_bins, self.range.buckets_per_octave, 2);
     }
 }
 
