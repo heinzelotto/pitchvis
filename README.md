@@ -9,23 +9,50 @@ Get the Android App here: https://play.google.com/store/apps/details?id=org.p1gr
 
 More resources on the [Website](https://www.p1graph.org/pitchvis/)
 
-# instructions
+# Building and Running
 
-To run the viewer, run `cargo r --features bevy/dynamic_linking --bin pitchvis` from within `pitchvis_viewer/`.
+PitchVis uses a unified build system powered by `cargo xtask`.
 
-For the webgl version:
+## Quick Start
+
 ```bash
-npm install
-# local test build
-npm run serve
-# build into dist/
-npm run build
+# Run desktop viewer (development mode with fast iteration)
+cargo xtask run
+
+# Build for WASM/web
+cargo xtask build wasm
+
+# Build for Android
+cargo xtask build android
 ```
 
-To output to a serial port (e. g. for transfer to a microcontroller that actuates a LED strip), run `cargo r --features bevy/dynamic_linking --bin pitchvis_serial -- </path/to/serial/fd> <baudrate>` from within `pitchvis_serial/`. The serial output format is `0xFF <num_triples / 256> <num_triples % 256> <r1> <g1> <b1> <r2> <g2> <b2> ...`. Led values are within [0x00; 0xFE] and 0xFF is the marker byte beginning each sequence.
+See [BUILD.md](BUILD.md) for complete build documentation, including release builds, prerequisites, and troubleshooting.
 
-## prerequisites
+## Development
 
-This uses `cpal` for audio input, which should give results on most platforms. You might need to install some system dependencies like `libasound2-dev` and/or `libudev-dev`.
+For fast iteration during development, use `cargo xtask run` which enables Bevy's dynamic linking feature for faster compile times.
+
+For the WASM development server:
+```bash
+cd pitchvis_viewer/wasm
+npm run serve
+```
+
+## Serial Output
+
+To output to a serial port (e.g., for LED strip control), run from within `pitchvis_serial/`:
+```bash
+cargo r --features bevy/dynamic_linking --bin pitchvis_serial -- </path/to/serial/fd> <baudrate>
+```
+
+The serial output format is: `0xFF <num_triples / 256> <num_triples % 256> <r1> <g1> <b1> <r2> <g2> <b2> ...`
+LED values are within [0x00; 0xFE] and 0xFF is the marker byte beginning each sequence.
+
+## Prerequisites
+
+- Rust toolchain (install from https://rustup.rs/)
+- System dependencies for audio (`cpal`): `libasound2-dev` and `libudev-dev` on Linux
+
+See [BUILD.md](BUILD.md) for platform-specific prerequisites.
 
 

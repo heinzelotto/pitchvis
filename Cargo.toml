@@ -11,6 +11,7 @@ members = [
     "rustysynth_fork",
     "pitchvis_wasm_kiss3d",
     "pitchvis_colors",
+    "xtask",
 ]
 
 resolver = "2"
