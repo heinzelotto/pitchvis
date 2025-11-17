@@ -171,6 +171,10 @@ pub struct AnalysisState {
     /// A buffer for storing a calmness value for each bin in the spectrum.
     pub calmness: Vec<EmaMeasurement>,
 
+    /// Calmness values for recently released notes (decays when note is not active).
+    /// This prevents abrupt calmness drops when sustained notes are released.
+    released_note_calmness: Vec<EmaMeasurement>,
+
     /// the smoothed average calmness of all active bins
     pub smoothed_scene_calmness: EmaMeasurement,
 
@@ -235,6 +239,10 @@ impl AnalysisState {
             _spectrogram_front_idx: 0,
             ml_midi_base_pitches: vec![0.0; 128],
             calmness: vec![
+                EmaMeasurement::new(params.note_calmness_smoothing_duration, 0.0);
+                n_buckets
+            ],
+            released_note_calmness: vec![
                 EmaMeasurement::new(params.note_calmness_smoothing_duration, 0.0);
                 n_buckets
             ],
@@ -405,20 +413,20 @@ impl AnalysisState {
     }
 
     fn update_calmness(&mut self, x_vqt: &[f32], frame_time: Duration) {
-        // for each bin, take the few bins around it into account as well. If the bin is a
-        // peak, it is promoted as calm. Calmness currently means that the note has been
-        // sustained for a while.
+        // For each bin, take the few bins around it into account as well. If the bin is a
+        // peak, it is promoted as calm. Calmness means that the note has been sustained for a while.
+        //
+        // IMPROVEMENTS:
+        // 1. Amplitude-weighted: Louder notes contribute more to scene calmness (matches perception)
+        // 2. Released note tracking: Recently released notes contribute to prevent abrupt drops
 
-        // FIXME: we only take into account the notes that are currently being played. But
-        // the calmness of notes is a function of their history. Should we take into account
-        // the calmness of notes that are not currently being played, or that have recently
-        // been released?
-        // Currently, releasing a note with above average calmness decreases scene calmness.
-        // Releasing a note with below average increases scene calmness.
         let mut peaks_around = vec![false; self.range.n_buckets()];
         let radius = self.range.buckets_per_octave / 12 / 2;
 
-        // we want unsmoothed peaks for this
+        // Get smoothed VQT for amplitude weighting
+        let x_vqt_smoothed: Vec<f32> = self.x_vqt_smoothed.iter().map(|x| x.get()).collect();
+
+        // We want unsmoothed peaks for this (more responsive)
         let peaks = find_peaks(
             &self.params.peak_config,
             x_vqt,
@@ -432,20 +440,49 @@ impl AnalysisState {
             }
         }
 
-        let mut calmness_sum = 0.0;
-        let mut calmness_count = 0;
-        for (calmness, has_peak) in self.calmness.iter_mut().zip(peaks_around.iter()) {
+        // Calculate amplitude-weighted scene calmness
+        let mut weighted_calmness_sum = 0.0;
+        let mut weight_sum = 0.0;
+
+        for (bin_idx, ((calmness, released_calmness), has_peak)) in self
+            .calmness
+            .iter_mut()
+            .zip(self.released_note_calmness.iter_mut())
+            .zip(peaks_around.iter())
+            .enumerate()
+        {
             if *has_peak {
+                // Note is active - update to maximum calmness
                 calmness.update_with_timestep(1.0, frame_time);
-                calmness_sum += calmness.get();
-                calmness_count += 1;
+
+                // Sync released calmness with active calmness
+                *released_calmness = calmness.clone();
+
+                // Weight by amplitude (convert dB to power for proper weighting)
+                let amplitude_db = x_vqt_smoothed[bin_idx];
+                let amplitude_power = 10.0_f32.powf(amplitude_db / 10.0);
+
+                weighted_calmness_sum += calmness.get() * amplitude_power;
+                weight_sum += amplitude_power;
             } else {
+                // Note is not active - decay both calmness values
                 calmness.update_with_timestep(0.0, frame_time);
+                released_calmness.update_with_timestep(0.0, frame_time);
+
+                // Recently released notes contribute at 30% weight to prevent abrupt drops
+                let released_contribution = released_calmness.get();
+                if released_contribution > 0.01 {
+                    // Still has some calmness from being recently released
+                    let released_weight = released_contribution * 0.3;
+                    weighted_calmness_sum += released_contribution * released_weight;
+                    weight_sum += released_weight;
+                }
             }
         }
-        if calmness_count > 0 {
+
+        if weight_sum > 0.0 {
             self.smoothed_scene_calmness
-                .update_with_timestep(calmness_sum / calmness_count as f32, frame_time);
+                .update_with_timestep(weighted_calmness_sum / weight_sum, frame_time);
         }
     }
 
