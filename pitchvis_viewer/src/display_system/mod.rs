@@ -38,6 +38,12 @@ pub struct Spectrum;
 #[derive(Component)]
 pub struct PitchNameText;
 
+#[derive(Component)]
+pub struct GlissandoCurve {
+    /// Index of this curve in the pool
+    pub index: usize,
+}
+
 #[derive(PartialEq, Serialize, Deserialize)]
 pub enum DisplayMode {
     Normal,
@@ -77,6 +83,10 @@ impl VQTSmoothingMode {
 #[derive(Resource)]
 pub struct CylinderEntityListResource(pub Vec<Entity>);
 
+/// keep an index -> entity mapping for the glissando curves
+#[derive(Resource)]
+pub struct GlissandoCurveEntityListResource(pub Vec<Entity>);
+
 pub fn setup_display_to_system(
     range: &VqtRange,
 ) -> impl FnMut(
@@ -85,6 +95,7 @@ pub fn setup_display_to_system(
     ResMut<Assets<ColorMaterial>>,
     ResMut<Assets<NoisyColorMaterial>>,
     ResMut<CylinderEntityListResource>,
+    ResMut<GlissandoCurveEntityListResource>,
     Res<AssetServer>,
 ) {
     let range = range.clone();
@@ -93,6 +104,7 @@ pub fn setup_display_to_system(
           color_materials: ResMut<Assets<ColorMaterial>>,
           noisy_color_materials: ResMut<Assets<NoisyColorMaterial>>,
           cylinder_entities: ResMut<CylinderEntityListResource>,
+          glissando_curve_entities: ResMut<GlissandoCurveEntityListResource>,
           asset_server: Res<AssetServer>| {
         setup::setup_display(
             commands,
@@ -100,6 +112,7 @@ pub fn setup_display_to_system(
             color_materials,
             noisy_color_materials,
             cylinder_entities,
+            glissando_curve_entities,
             &range,
             asset_server,
         )
@@ -129,6 +142,12 @@ pub fn update_display_to_system(
         Query<(&PitchNameText, &mut Visibility)>,
         Query<(&mut Visibility, &Mesh2d, &mut Transform), With<Spectrum>>,
         Query<&mut Visibility, With<SpiderNetSegment>>,
+        Query<(
+            &GlissandoCurve,
+            &mut Visibility,
+            &Mesh2d,
+            &mut MeshMaterial2d<ColorMaterial>,
+        )>,
     )>,
     ResMut<Assets<ColorMaterial>>,
     ResMut<Assets<NoisyColorMaterial>>,
@@ -136,6 +155,7 @@ pub fn update_display_to_system(
     Res<AnalysisStateResource>,
     Res<VqtResultResource>,
     Res<CylinderEntityListResource>,
+    Res<GlissandoCurveEntityListResource>,
     Res<Persistent<SettingsState>>,
     Res<Time>,
     Query<(&mut Camera, Option<&mut Bloom>, Ref<Projection>)>,
@@ -156,6 +176,12 @@ pub fn update_display_to_system(
         Query<(&PitchNameText, &mut Visibility)>,
         Query<(&mut Visibility, &Mesh2d, &mut Transform), With<Spectrum>>,
         Query<&mut Visibility, With<SpiderNetSegment>>,
+        Query<(
+            &GlissandoCurve,
+            &mut Visibility,
+            &Mesh2d,
+            &mut MeshMaterial2d<ColorMaterial>,
+        )>,
     )>,
           color_materials: ResMut<Assets<ColorMaterial>>,
           noisy_color_materials: ResMut<Assets<NoisyColorMaterial>>,
@@ -163,6 +189,7 @@ pub fn update_display_to_system(
           analysis_state: Res<AnalysisStateResource>,
           vqt_result: Res<VqtResultResource>,
           cylinder_entities: Res<CylinderEntityListResource>,
+          glissando_curve_entities: Res<GlissandoCurveEntityListResource>,
           settings_state: Res<Persistent<SettingsState>>,
           run_time: Res<Time>,
           camera: Query<(&mut Camera, Option<&mut Bloom>, Ref<Projection>)>| {
@@ -175,6 +202,7 @@ pub fn update_display_to_system(
             analysis_state,
             vqt_result,
             cylinder_entities,
+            glissando_curve_entities,
             settings_state,
             run_time,
             camera,

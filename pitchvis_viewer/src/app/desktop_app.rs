@@ -138,6 +138,7 @@ pub fn main_fun() -> Result<()> {
     #[cfg(feature = "ml")]
     app.insert_resource(ml_model_resource);
     app.insert_resource(display_system::CylinderEntityListResource(Vec::new()))
+        .insert_resource(display_system::GlissandoCurveEntityListResource(Vec::new()))
         .add_systems(
             Startup,
             (

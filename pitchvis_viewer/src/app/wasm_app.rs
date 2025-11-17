@@ -35,7 +35,7 @@ use super::common::{close_on_esc, update_bloom_settings};
 use crate::analysis_system::{self, AnalysisStateResource};
 use crate::audio_system::AudioBufferResource;
 use crate::display_system::material::NoisyColorMaterial;
-use crate::display_system::{self, CylinderEntityListResource, DisplayMode};
+use crate::display_system::{self, CylinderEntityListResource, GlissandoCurveEntityListResource, DisplayMode};
 use crate::vqt_system::{self, VqtResource, VqtResultResource};
 use pitchvis_analysis::vqt::{Vqt, VqtParameters};
 use pitchvis_audio::AudioStream;
@@ -116,6 +116,7 @@ pub async fn main_fun() -> Result<(), JsValue> {
             AnalysisParameters::default(),
         )))
         .insert_resource(CylinderEntityListResource(Vec::new()))
+        .insert_resource(GlissandoCurveEntityListResource(Vec::new()))
         .insert_resource(persistent_settings_state)
         .insert_resource(CurrentFpsLimit(Some(DEFAULT_FPS)))
         .insert_resource(CurrentVQTSmoothingMode(

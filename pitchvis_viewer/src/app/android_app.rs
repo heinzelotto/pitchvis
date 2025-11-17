@@ -342,6 +342,7 @@ fn main() -> AppExit {
         ),
     ))
     .insert_resource(display_system::CylinderEntityListResource(Vec::new()))
+    .insert_resource(display_system::GlissandoCurveEntityListResource(Vec::new()))
     // .insert_resource(AudioControlChannelResource(audio_control_channel_tx))
     .insert_resource(persistent_settings_state)
     .insert_resource(CurrentFpsLimit(Some(DEFAULT_FPS)))

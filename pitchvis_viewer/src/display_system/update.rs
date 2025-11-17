@@ -1,6 +1,6 @@
 use super::{
     material::NoisyColorMaterial, util::bin_to_spiral, BassCylinder, CylinderEntityListResource,
-    DisplayMode, LineList, PitchBall, PitchNameText, Spectrum, SpiderNetSegment, VisualsMode,
+    DisplayMode, GlissandoCurve, GlissandoCurveEntityListResource, LineList, PitchBall, PitchNameText, Spectrum, SpiderNetSegment, VisualsMode,
     CLEAR_COLOR_GALAXY, CLEAR_COLOR_NEUTRAL,
 };
 use bevy::{post_process::bloom::Bloom, prelude::*};
@@ -39,6 +39,12 @@ pub fn update_display(
         Query<(&PitchNameText, &mut Visibility)>,
         Query<(&mut Visibility, &Mesh2d, &mut Transform), With<Spectrum>>,
         Query<&mut Visibility, With<SpiderNetSegment>>,
+        Query<(
+            &GlissandoCurve,
+            &mut Visibility,
+            &Mesh2d,
+            &mut MeshMaterial2d<ColorMaterial>,
+        )>,
     )>,
     mut color_materials: ResMut<Assets<ColorMaterial>>,
     mut noisy_color_materials: ResMut<Assets<NoisyColorMaterial>>,
@@ -46,6 +52,7 @@ pub fn update_display(
     analysis_state: Res<AnalysisStateResource>,
     vqt_result: Res<VqtResultResource>,
     cylinder_entities: Res<CylinderEntityListResource>,
+    glissando_curve_entities: Res<GlissandoCurveEntityListResource>,
     settings_state: Res<Persistent<SettingsState>>,
     run_time: Res<Time>,
     mut camera: Query<(
@@ -81,6 +88,16 @@ pub fn update_display(
         &settings_state,
         &analysis_state.peaks_continuous,
         range.buckets_per_octave,
+    );
+
+    update_glissandos(
+        set.p5(),
+        &mut meshes,
+        &mut color_materials,
+        &glissando_curve_entities,
+        &analysis_state.glissandos,
+        range.buckets_per_octave,
+        run_time.elapsed_secs(),
     );
 
     update_spectrum(
@@ -371,6 +388,90 @@ fn update_bass_spiral(
 
             // let radius = 0.08;
             // c.set_local_scale(radius, *height, radius);
+        }
+    }
+}
+
+fn update_glissandos(
+    mut glissando_curves: Query<(
+        &GlissandoCurve,
+        &mut Visibility,
+        &Mesh2d,
+        &mut MeshMaterial2d<ColorMaterial>,
+    )>,
+    meshes: &mut ResMut<Assets<Mesh>>,
+    materials: &mut ResMut<Assets<ColorMaterial>>,
+    glissando_curve_entities: &Res<GlissandoCurveEntityListResource>,
+    glissandos: &[pitchvis_analysis::analysis::Glissando],
+    buckets_per_octave: u16,
+    current_time: f32,
+) {
+    // Hide all curves first
+    for (_, mut visibility, _, _) in &mut glissando_curves {
+        *visibility = Visibility::Hidden;
+    }
+
+    // Render active glissandos using the entity pool
+    for (glissando_idx, glissando) in glissandos.iter().enumerate() {
+        if glissando_idx >= glissando_curve_entities.0.len() {
+            // Pool exhausted, skip remaining glissandos
+            break;
+        }
+
+        let entity = glissando_curve_entities.0[glissando_idx];
+        if let Ok((_, mut visibility, mesh_handle, material_handle)) =
+            glissando_curves.get_mut(entity)
+        {
+            // Convert path from bucket positions to spiral coordinates
+            let line_segments: Vec<(Vec3, Vec3)> = glissando
+                .path
+                .windows(2)
+                .map(|window| {
+                    let (x1, y1, z1) = bin_to_spiral(buckets_per_octave, window[0]);
+                    let (x2, y2, z2) = bin_to_spiral(buckets_per_octave, window[1]);
+                    (
+                        Vec3::new(x1, y1, z1),
+                        Vec3::new(x2, y2, z2),
+                    )
+                })
+                .collect();
+
+            if line_segments.is_empty() {
+                continue;
+            }
+
+            // Update mesh
+            let mesh = LineList {
+                lines: line_segments,
+                thickness: 0.05,
+            };
+
+            if let Some(mesh_asset) = meshes.get_mut(&mesh_handle.0) {
+                *mesh_asset = mesh.into();
+            }
+
+            // Calculate color based on average position (for pitch color)
+            let avg_position = glissando.path.iter().sum::<f32>() / glissando.path.len() as f32;
+            let (r, g, b) = pitchvis_colors::calculate_color(
+                buckets_per_octave,
+                (avg_position + (buckets_per_octave - 3 * (buckets_per_octave / 12)) as f32)
+                    % buckets_per_octave as f32,
+                pitchvis_colors::COLORS,
+                pitchvis_colors::GRAY_LEVEL,
+                pitchvis_colors::EASING_POW,
+            );
+
+            // Fade out based on age
+            let age = current_time - glissando.creation_time;
+            let fade_duration = 2.0; // Match glissando_lifetime from AnalysisParameters
+            let alpha = (1.0 - age / fade_duration).clamp(0.0, 1.0);
+
+            // Update material color
+            if let Some(material) = materials.get_mut(&material_handle.0) {
+                material.color = Color::srgba(r, g, b, alpha * 0.6); // 0.6 for slight transparency
+            }
+
+            *visibility = Visibility::Visible;
         }
     }
 }
