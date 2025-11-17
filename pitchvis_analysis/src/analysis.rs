@@ -510,7 +510,7 @@ impl AnalysisState {
                 n_buckets
             ],
             released_note_calmness: vec![
-                EmaMeasurement::new(params.note_calmness_smoothing_duration, 0.0);
+                EmaMeasurement::new(Some(params.note_calmness_smoothing_duration), 0.0);
                 n_buckets
             ],
             pitch_accuracy: vec![0.0; n_buckets],
