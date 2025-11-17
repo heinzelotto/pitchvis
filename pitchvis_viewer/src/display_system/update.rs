@@ -206,7 +206,18 @@ fn update_pitch_balls(
             // );
             color_mat.color = Color::srgba(r, g, b, color_coefficient).into();
 
+            #[cfg(feature = "ml")]
+            if let Some(midi_pitch) = vqt_bin_to_midi_pitch(buckets_per_octave, idx) {
+                let inferred_midi_pitch_strength = analysis_state.ml_midi_base_pitches[midi_pitch];
+                if inferred_midi_pitch_strength > 0.35 {
+                    color_mat.color = Color::srgba(r, g, b, 1.0);
+                } else {
+                    color_mat.color = Color::srgba(r, g, b, color_coefficient * 0.1);
+                }
+            }
+
             // Apply vibrato health color feedback for choir singers
+            // Must come AFTER ML feature to avoid being overwritten
             // Only modulate color for unhealthy vibrato to draw attention to issues
             if idx < analysis_state.vibrato_states.len() {
                 let vibrato_state = &analysis_state.vibrato_states[idx];
@@ -231,16 +242,6 @@ fn update_pitch_balls(
                         (current_color.to_srgba().blue + tint_b * vibrato_tint_strength).clamp(0.0, 1.0),
                         current_color.to_srgba().alpha,
                     ).into();
-                }
-            }
-
-            #[cfg(feature = "ml")]
-            if let Some(midi_pitch) = vqt_bin_to_midi_pitch(buckets_per_octave, idx) {
-                let inferred_midi_pitch_strength = analysis_state.ml_midi_base_pitches[midi_pitch];
-                if inferred_midi_pitch_strength > 0.35 {
-                    color_mat.color = Color::srgba(r, g, b, 1.0);
-                } else {
-                    color_mat.color = Color::srgba(r, g, b, color_coefficient * 0.1);
                 }
             }
 
