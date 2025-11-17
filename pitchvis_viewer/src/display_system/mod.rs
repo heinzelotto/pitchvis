@@ -47,6 +47,7 @@ pub struct ChordDisplay;
 #[derive(Component)]
 pub struct GlissandoCurve {
     /// Index of this curve in the pool
+    #[allow(dead_code)]
     pub index: usize,
 }
 

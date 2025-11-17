@@ -46,6 +46,13 @@ pub fn update_display(
             &Mesh2d,
             &mut MeshMaterial2d<ColorMaterial>,
         )>,
+        Query<(
+            &mut Visibility,
+            &mut Transform,
+            &mut Mesh2d,
+            &mut MeshMaterial2d<ColorMaterial>,
+        ), With<HarmonicLine>>,
+        Query<(&mut Text2d, &mut Visibility), With<ChordDisplay>>,
     )>,
     mut color_materials: ResMut<Assets<ColorMaterial>>,
     mut noisy_color_materials: ResMut<Assets<NoisyColorMaterial>>,
@@ -61,13 +68,6 @@ pub fn update_display(
         Option<&mut Bloom>,
         Ref<Projection>, // Ref because we want to check `is_changed` later
     )>,
-    harmonic_lines_query: Query<(
-        &mut Visibility,
-        &mut Transform,
-        &mut Mesh2d,
-        &mut MeshMaterial2d<ColorMaterial>,
-    ), With<HarmonicLine>>,
-    chord_display_query: Query<(&mut Text2d, &mut Visibility), With<ChordDisplay>>,
 ) -> Result<()> {
     fade_pitch_balls(set.p0(), &mut noisy_color_materials, &run_time, range);
 
@@ -124,8 +124,8 @@ pub fn update_display(
     toggle_background(&mut camera, &settings_state, analysis_state)?;
 
     update_harmonic_lines_and_chord(
-        harmonic_lines_query,
-        chord_display_query,
+        set.p6(),
+        set.p7(),
         analysis_state,
         &mut meshes,
         &mut color_materials,
@@ -752,13 +752,13 @@ fn toggle_background(
 
 #[allow(clippy::type_complexity)]
 fn update_harmonic_lines_and_chord(
-    mut harmonic_lines_query: Query<(
+    mut harmonic_lines_query: Query<'_, '_, (
         &mut Visibility,
         &mut Transform,
         &mut Mesh2d,
         &mut MeshMaterial2d<ColorMaterial>,
     ), With<HarmonicLine>>,
-    mut chord_display_query: Query<(&mut Text2d, &mut Visibility), With<ChordDisplay>>,
+    mut chord_display_query: Query<'_, '_, (&mut Text2d, &mut Visibility), With<ChordDisplay>>,
     analysis_state: &AnalysisState,
     meshes: &mut ResMut<Assets<Mesh>>,
     _color_materials: &mut ResMut<Assets<ColorMaterial>>,
