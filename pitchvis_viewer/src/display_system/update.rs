@@ -123,9 +123,12 @@ pub fn update_display(
 
     toggle_background(&mut camera, &settings_state, analysis_state)?;
 
+    // Need to extract queries separately to avoid double borrow of set
+    let harmonic_lines = set.p6();
+    let chord_display = set.p7();
     update_harmonic_lines_and_chord(
-        set.p6(),
-        set.p7(),
+        harmonic_lines,
+        chord_display,
         analysis_state,
         &mut meshes,
         &mut color_materials,

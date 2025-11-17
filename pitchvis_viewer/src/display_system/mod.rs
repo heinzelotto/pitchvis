@@ -196,6 +196,13 @@ pub fn update_display_to_system(
             &Mesh2d,
             &mut MeshMaterial2d<ColorMaterial>,
         )>,
+        Query<(
+            &mut Visibility,
+            &mut Transform,
+            &mut Mesh2d,
+            &mut MeshMaterial2d<ColorMaterial>,
+        ), With<HarmonicLine>>,
+        Query<(&mut Text2d, &mut Visibility), With<ChordDisplay>>,
     )>,
           color_materials: ResMut<Assets<ColorMaterial>>,
           noisy_color_materials: ResMut<Assets<NoisyColorMaterial>>,
@@ -206,14 +213,7 @@ pub fn update_display_to_system(
           glissando_curve_entities: Res<GlissandoCurveEntityListResource>,
           settings_state: Res<Persistent<SettingsState>>,
           run_time: Res<Time>,
-          camera: Query<(&mut Camera, Option<&mut Bloom>, Ref<Projection>)>,
-          harmonic_lines_query: Query<(
-              &mut Visibility,
-              &mut Transform,
-              &mut Mesh2d,
-              &mut MeshMaterial2d<ColorMaterial>,
-          ), With<HarmonicLine>>,
-          chord_display_query: Query<(&mut Text2d, &mut Visibility), With<ChordDisplay>>| {
+          camera: Query<(&mut Camera, Option<&mut Bloom>, Ref<Projection>)>| {
         update::update_display(
             &range,
             set,
@@ -227,8 +227,6 @@ pub fn update_display_to_system(
             settings_state,
             run_time,
             camera,
-            harmonic_lines_query,
-            chord_display_query,
         )?;
 
         Ok(())
