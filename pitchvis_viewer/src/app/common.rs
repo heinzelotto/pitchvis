@@ -948,6 +948,7 @@ pub fn insert_common_resources(
             AnalysisParameters::default(),
         )))
         .insert_resource(display_system::CylinderEntityListResource(Vec::new()))
+        .insert_resource(display_system::GlissandoCurveEntityListResource(Vec::new()))
         .insert_resource(settings)
         .insert_resource(CurrentFpsLimit(Some(default_fps)))
         .insert_resource(CurrentVQTSmoothingMode(
