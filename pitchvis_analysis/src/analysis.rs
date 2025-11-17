@@ -112,6 +112,132 @@ pub struct AttackEvent {
     pub percussion_score: f32,
 }
 
+/// Vibrato health category for feedback
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VibratoCategory {
+    StraightTone,   // No vibrato detected
+    Healthy,        // Good vibrato (4.5-8 Hz, 40-120 cents)
+    Wobble,         // Too slow (< 4.5 Hz)
+    Tremolo,        // Too fast (> 8 Hz)
+    Excessive,      // Too wide (> 120 cents)
+    Minimal,        // Too narrow (< 40 cents)
+}
+
+/// Per-note vibrato state tracking
+#[derive(Debug, Clone)]
+pub struct VibratoState {
+    /// Frequency history (last 120 samples ≈ 2 seconds at 60 FPS)
+    pub frequency_history: VecDeque<f32>,
+    /// Time history (for proper rate calculation)
+    pub time_history: VecDeque<f32>,
+    /// Detected vibrato rate (Hz), 0.0 if no vibrato detected
+    pub rate: f32,
+    /// Detected vibrato extent (cents peak-to-peak)
+    pub extent: f32,
+    /// Vibrato regularity score (0.0 = irregular, 1.0 = perfectly regular)
+    pub regularity: f32,
+    /// Is vibrato currently active?
+    pub is_active: bool,
+    /// Center frequency of vibrato (Hz)
+    pub center_frequency: f32,
+    /// Confidence in vibrato detection (0.0-1.0)
+    pub confidence: f32,
+}
+
+impl VibratoState {
+    fn new() -> Self {
+        Self {
+            frequency_history: VecDeque::with_capacity(120),
+            time_history: VecDeque::with_capacity(120),
+            rate: 0.0,
+            extent: 0.0,
+            regularity: 0.0,
+            is_active: false,
+            center_frequency: 0.0,
+            confidence: 0.0,
+        }
+    }
+
+    /// Check if vibrato is healthy (rate and extent in acceptable ranges)
+    pub fn is_healthy(&self) -> bool {
+        if !self.is_active {
+            return true;  // No vibrato is fine
+        }
+
+        // Healthy vibrato: 4.5-8 Hz rate, 40-120 cents extent
+        let rate_ok = self.rate >= 4.5 && self.rate <= 8.0;
+        let extent_ok = self.extent >= 40.0 && self.extent <= 120.0;
+        let regular_enough = self.regularity >= 0.6;
+
+        rate_ok && extent_ok && regular_enough
+    }
+
+    /// Get vibrato category for feedback
+    pub fn get_category(&self) -> VibratoCategory {
+        if !self.is_active {
+            return VibratoCategory::StraightTone;
+        }
+
+        if self.rate < 4.5 {
+            VibratoCategory::Wobble  // Too slow
+        } else if self.rate > 8.0 {
+            VibratoCategory::Tremolo  // Too fast
+        } else if self.extent > 120.0 {
+            VibratoCategory::Excessive  // Too wide
+        } else if self.extent < 40.0 {
+            VibratoCategory::Minimal  // Too narrow
+        } else {
+            VibratoCategory::Healthy
+        }
+    }
+}
+
+/// Public vibrato analysis for a detected peak/note
+#[derive(Debug, Clone, Copy)]
+pub struct VibratoAnalysis {
+    /// Vibrato rate in Hz (0.0 if none detected)
+    pub rate: f32,
+    /// Vibrato extent in cents peak-to-peak
+    pub extent: f32,
+    /// Regularity score (0.0-1.0)
+    pub regularity: f32,
+    /// Is vibrato present?
+    pub is_present: bool,
+    /// Center frequency (Hz) of the vibrating note
+    pub center_frequency: f32,
+    /// Vibrato health category
+    pub category: VibratoCategory,
+}
+
+#[derive(Debug, Clone)]
+pub struct VibratoDetectionParameters {
+    /// Minimum vibrato rate to detect (Hz)
+    pub min_rate: f32,
+    /// Maximum vibrato rate to detect (Hz)
+    pub max_rate: f32,
+    /// Minimum correlation for vibrato detection
+    pub min_correlation: f32,
+    /// Minimum extent to consider as vibrato (cents)
+    pub min_extent: f32,
+    /// History window duration (seconds)
+    pub history_duration: f32,
+    /// Enable vibrato peak consolidation?
+    pub consolidate_peaks: bool,
+}
+
+impl Default for VibratoDetectionParameters {
+    fn default() -> Self {
+        Self {
+            min_rate: 2.0,
+            max_rate: 10.0,
+            min_correlation: 0.5,
+            min_extent: 20.0,
+            history_duration: 2.0,
+            consolidate_peaks: true,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct AnalysisParameters {
     /// The length of the spectrogram in frames.
@@ -143,6 +269,8 @@ pub struct AnalysisParameters {
     harmonic_threshold: f32,
     /// Attack detection parameters
     attack_detection_config: AttackDetectionParameters,
+    /// Vibrato detection parameters
+    vibrato_detection_config: VibratoDetectionParameters,
 }
 
 impl AnalysisParameters {
@@ -175,6 +303,7 @@ impl Default for AnalysisParameters {
             // Harmonics need to have at least 30% of fundamental's **power** (not dB!)
             harmonic_threshold: 0.3,
             attack_detection_config: AttackDetectionParameters::default(),
+            vibrato_detection_config: VibratoDetectionParameters::default(),
         }
     }
 }
@@ -277,6 +406,12 @@ pub struct AnalysisState {
 
     /// Attack events detected in the current frame (for visualization)
     pub current_attacks: Vec<AttackEvent>,
+
+    /// Per-bin vibrato state tracking
+    pub vibrato_states: Vec<VibratoState>,
+
+    /// Accumulated time for vibrato analysis (seconds)
+    accumulated_time: f32,
 }
 
 impl AnalysisState {
@@ -343,6 +478,8 @@ impl AnalysisState {
             attack_state: vec![AttackState::new(); n_buckets],
             percussion_score: vec![0.0; n_buckets],
             current_attacks: Vec::new(),
+            vibrato_states: vec![VibratoState::new(); n_buckets],
+            accumulated_time: 0.0,
         }
     }
 
@@ -448,6 +585,29 @@ impl AnalysisState {
         .collect();
         let mut peaks_continuous = enhance_peaks_continuous(&peaks, &x_vqt_smoothed, &self.range);
 
+        // Update vibrato state for all active peaks
+        for peak in &peaks_continuous {
+            let bin_idx = peak.center.round() as usize;
+            if bin_idx < self.vibrato_states.len() {
+                let freq = self.bin_to_frequency(bin_idx);
+                self.update_vibrato_state(bin_idx, freq, true);
+            }
+        }
+
+        // Mark inactive bins (clear history after delay)
+        let inactive_bins: Vec<usize> = self.vibrato_states.iter()
+            .enumerate()
+            .filter(|(bin_idx, _)| !peaks.contains(bin_idx))
+            .map(|(bin_idx, _)| bin_idx)
+            .collect();
+
+        for bin_idx in inactive_bins {
+            self.update_vibrato_state(bin_idx, 0.0, false);
+        }
+
+        // Consolidate peaks that are part of same vibrato note (fixes double peak glitch!)
+        self.consolidate_vibrato_peaks(&mut peaks_continuous);
+
         // Boost bass peaks based on harmonic content
         // Peaks with strong harmonics are more likely to be real bass notes vs rumble/noise
         promote_bass_peaks_with_harmonics(
@@ -503,6 +663,9 @@ impl AnalysisState {
                 .first()
                 .map(|p| p.center.round() as usize)
         );
+
+        // Update accumulated time for vibrato detection
+        self.accumulated_time += frame_time.as_secs_f32();
     }
 
     fn update_calmness(&mut self, x_vqt: &[f32], frame_time: Duration) {
@@ -754,6 +917,249 @@ impl AnalysisState {
 
         // Return absolute decay rate (negative slope = decay)
         -slope
+    }
+
+    /// Convert frequency (Hz) to bin index (f32)
+    fn frequency_to_bin(&self, frequency: f32) -> f32 {
+        self.range.buckets_per_octave as f32 * (frequency / self.range.min_freq).log2()
+    }
+
+    /// Update vibrato state for a specific bin
+    fn update_vibrato_state(
+        &mut self,
+        bin_idx: usize,
+        current_freq: f32,
+        is_peak_active: bool,
+    ) {
+        let state = &mut self.vibrato_states[bin_idx];
+        let current_time = self.accumulated_time;
+
+        if is_peak_active {
+            // Add to history
+            state.frequency_history.push_back(current_freq);
+            state.time_history.push_back(current_time);
+
+            // Keep last 2 seconds (120 samples at 60 FPS)
+            let history_length = (self.params.vibrato_detection_config.history_duration * 60.0) as usize;
+            if state.frequency_history.len() > history_length {
+                state.frequency_history.pop_front();
+                state.time_history.pop_front();
+            }
+
+            // Need at least 0.5 seconds of data to detect vibrato (30 samples at 60 FPS)
+            if state.frequency_history.len() >= 30 {
+                self.analyze_vibrato(bin_idx);
+            }
+        } else {
+            // Peak not active - check if we should clear history
+            if !state.frequency_history.is_empty() {
+                if let Some(&last_time) = state.time_history.back() {
+                    // Keep history for a short time (0.2s) in case peak re-appears
+                    if current_time - last_time > 0.2 {
+                        state.frequency_history.clear();
+                        state.time_history.clear();
+                        state.is_active = false;
+                    }
+                }
+            }
+        }
+    }
+
+    /// Analyze vibrato for a specific bin using autocorrelation
+    fn analyze_vibrato(&mut self, bin_idx: usize) {
+        let state = &mut self.vibrato_states[bin_idx];
+        let params = &self.params.vibrato_detection_config;
+
+        // Convert frequency history to cents deviation from mean
+        let mean_freq: f32 = state.frequency_history.iter().sum::<f32>()
+                             / state.frequency_history.len() as f32;
+        state.center_frequency = mean_freq;
+
+        let cents_history: Vec<f32> = state.frequency_history.iter()
+            .map(|f| 1200.0 * (f / mean_freq).log2())
+            .collect();
+
+        // Autocorrelation to find periodicity
+        let (vibrato_period, correlation_strength) =
+            Self::find_vibrato_period(&cents_history, &state.time_history, params);
+
+        if correlation_strength > params.min_correlation && vibrato_period > 0.0 {
+            // Vibrato detected!
+            state.is_active = true;
+            state.rate = 1.0 / vibrato_period;  // Convert period to Hz
+            state.regularity = correlation_strength;
+
+            // Measure extent (peak-to-peak deviation)
+            let max_cents = cents_history.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+            let min_cents = cents_history.iter().cloned().fold(f32::INFINITY, f32::min);
+            state.extent = max_cents - min_cents;
+
+            // Only consider it vibrato if extent is above minimum
+            if state.extent < params.min_extent {
+                state.is_active = false;
+            } else {
+                // Confidence based on history length and correlation
+                state.confidence = (state.frequency_history.len() as f32 / 120.0).min(1.0)
+                                 * correlation_strength;
+            }
+        } else {
+            // No clear periodicity - not vibrato
+            state.is_active = false;
+            state.rate = 0.0;
+            state.extent = 0.0;
+        }
+    }
+
+    /// Find vibrato period using autocorrelation - static version
+    fn find_vibrato_period(
+        cents_history: &[f32],
+        time_history: &VecDeque<f32>,
+        params: &VibratoDetectionParameters,
+    ) -> (f32, f32) {
+        // Remove DC component (mean)
+        let mean: f32 = cents_history.iter().sum::<f32>() / cents_history.len() as f32;
+        let centered: Vec<f32> = cents_history.iter().map(|x| x - mean).collect();
+
+        // Expected vibrato period range: min_rate to max_rate Hz
+        // At 60 FPS: calculate min/max lags
+        let max_period = 1.0 / params.min_rate;  // Maximum period in seconds
+        let min_period = 1.0 / params.max_rate;  // Minimum period in seconds
+
+        // Convert to frame counts (assuming 60 FPS average)
+        let min_lag = (min_period * 60.0).max(5.0) as usize;   // At least 5 frames
+        let max_lag = (max_period * 60.0).min(centered.len() as f32 / 2.0) as usize;
+
+        let mut best_lag = 0;
+        let mut best_correlation = 0.0;
+
+        for lag in min_lag..=max_lag {
+            if lag >= centered.len() {
+                break;
+            }
+
+            // Autocorrelation at this lag
+            let mut sum = 0.0;
+            let mut count = 0;
+
+            for i in 0..(centered.len() - lag) {
+                sum += centered[i] * centered[i + lag];
+                count += 1;
+            }
+
+            let correlation = sum / count as f32;
+
+            // Normalize by variance
+            let variance: f32 = centered.iter().map(|x| x * x).sum::<f32>()
+                                / centered.len() as f32;
+            let normalized_correlation = if variance > 0.1 {
+                correlation / variance
+            } else {
+                0.0
+            };
+
+            if normalized_correlation > best_correlation {
+                best_correlation = normalized_correlation;
+                best_lag = lag;
+            }
+        }
+
+        // Convert lag to period in seconds
+        let period = if best_lag > 0 && best_correlation > params.min_correlation {
+            let time_start = time_history[0];
+            let time_end = time_history[best_lag];
+            time_end - time_start
+        } else {
+            0.0
+        };
+
+        (period, best_correlation)
+    }
+
+    /// Consolidate peaks that are part of the same vibrato note
+    fn consolidate_vibrato_peaks(&self, peaks_continuous: &mut Vec<ContinuousPeak>) {
+        if !self.params.vibrato_detection_config.consolidate_peaks {
+            return;  // Peak consolidation disabled
+        }
+
+        let mut consolidated = Vec::new();
+        let mut used = vec![false; peaks_continuous.len()];
+
+        for i in 0..peaks_continuous.len() {
+            if used[i] {
+                continue;
+            }
+
+            let peak = peaks_continuous[i];
+            let bin_idx = peak.center.round() as usize;
+
+            if bin_idx >= self.vibrato_states.len() {
+                consolidated.push(peak);
+                used[i] = true;
+                continue;
+            }
+
+            let vibrato = &self.vibrato_states[bin_idx];
+
+            if vibrato.is_active && vibrato.confidence > 0.7 {
+                // This is a vibrato note - find all peaks within vibrato extent
+                let extent_bins = vibrato.extent / 100.0 * self.range.buckets_per_octave as f32 / 12.0;
+                let search_range = extent_bins * 1.2;  // 20% margin
+
+                // Find all peaks within vibrato extent
+                for j in (i+1)..peaks_continuous.len() {
+                    if used[j] {
+                        continue;
+                    }
+
+                    let other_peak = peaks_continuous[j];
+                    let distance = (other_peak.center - peak.center).abs();
+
+                    if distance <= search_range {
+                        // Check if this peak's frequency is in this vibrato's range
+                        let other_freq = self.bin_to_frequency(other_peak.center.round() as usize);
+                        let center_freq = vibrato.center_frequency;
+                        let freq_deviation = 1200.0 * (other_freq / center_freq).log2();
+
+                        if freq_deviation.abs() <= vibrato.extent / 2.0 {
+                            used[j] = true;
+                        }
+                    }
+                }
+
+                // Create consolidated peak at vibrato center
+                let consolidated_peak = ContinuousPeak {
+                    center: self.frequency_to_bin(vibrato.center_frequency),
+                    size: peak.size,  // Keep original amplitude
+                };
+
+                consolidated.push(consolidated_peak);
+                used[i] = true;
+            } else {
+                // Not vibrato - keep as-is
+                consolidated.push(peak);
+                used[i] = true;
+            }
+        }
+
+        *peaks_continuous = consolidated;
+    }
+
+    /// Get vibrato analysis for a specific bin (public API)
+    pub fn get_vibrato_analysis(&self, bin_idx: usize) -> Option<VibratoAnalysis> {
+        if bin_idx >= self.vibrato_states.len() {
+            return None;
+        }
+
+        let state = &self.vibrato_states[bin_idx];
+
+        Some(VibratoAnalysis {
+            rate: state.rate,
+            extent: state.extent,
+            regularity: state.regularity,
+            is_present: state.is_active,
+            center_frequency: state.center_frequency,
+            category: state.get_category(),
+        })
     }
 }
 
