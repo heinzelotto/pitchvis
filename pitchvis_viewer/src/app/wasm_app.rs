@@ -70,13 +70,12 @@ pub async fn main_fun() -> Result<(), JsValue> {
     // Register common startup systems
     register_startup_systems(&mut app, &vqt_parameters.range);
 
-    // Register common update systems (bloom ENABLED on WASM)
+    // Register common update systems
     register_common_update_systems(
         &mut app,
         update_vqt_system,
         update_analysis_state_system,
         update_display_system,
-        true, // bloom enabled on WASM
     );
 
     app.run();
