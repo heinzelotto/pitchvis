@@ -113,14 +113,68 @@ pub fn detect_chord(
         if let Some(quality) = chord_quality {
             let notes: Vec<usize> = pitch_classes.keys().copied().collect();
 
-            // Calculate confidence based on:
-            // 1. How many notes match the expected pattern
-            // 2. Root note power relative to other notes
+            // Get the expected intervals for this chord quality
+            let expected_intervals = get_expected_intervals(&quality);
+
+            // Calculate confidence based on multiple factors:
+            // 1. How well the detected intervals match the expected pattern
+            // 2. Root note prominence
+            // 3. Chord tones power vs non-chord tones power
+            // 4. Penalty for extra notes that don't belong to the chord
+
             let total_power: f32 = pitch_classes_vec.iter().map(|(_, p)| p).sum();
-            let root_ratio = root_power / total_power;
-            let pattern_match =
-                intervals.len() as f32 / expected_notes_for_quality(&quality) as f32;
-            let confidence = (root_ratio * 0.5 + pattern_match * 0.5).min(1.0);
+
+            // Factor 1: Pattern match score (0.0 - 1.0)
+            // Check if all expected intervals are present with significant power
+            let mut matched_power = 0.0;
+            let mut expected_power = 0.0;
+            for &expected_interval in &expected_intervals {
+                let expected_pc = (*potential_root + expected_interval) % 12;
+                if let Some(&power) = pitch_classes.get(&expected_pc) {
+                    matched_power += power;
+                }
+                // Use root power as baseline expectation
+                expected_power += root_power * 0.7; // Expect chord tones to be at least 70% of root
+            }
+            let pattern_completeness = if expected_power > 0.0 {
+                (matched_power / expected_power).min(1.0)
+            } else {
+                0.0
+            };
+
+            // Factor 2: Root prominence (should be strong but not necessarily strongest)
+            let root_prominence = (root_power / total_power).min(1.0);
+
+            // Factor 3: Chord tones vs non-chord tones power ratio
+            let mut chord_tones_power = *root_power;
+            for &interval in &expected_intervals {
+                let pc = (*potential_root + interval) % 12;
+                if let Some(&power) = pitch_classes.get(&pc) {
+                    chord_tones_power += power;
+                }
+            }
+            let chord_tone_ratio = chord_tones_power / total_power;
+
+            // Factor 4: Penalty for extra pitch classes (non-chord tones)
+            let num_expected_notes = expected_intervals.len() + 1; // +1 for root
+            let extra_notes_penalty = if pitch_classes.len() > num_expected_notes {
+                let extra = pitch_classes.len() - num_expected_notes;
+                1.0 / (1.0 + extra as f32 * 0.3) // Diminishing penalty
+            } else {
+                1.0
+            };
+
+            // Combine factors with weights
+            // - Pattern completeness is most important (40%)
+            // - Chord tone ratio is very important (30%)
+            // - Root prominence matters (20%)
+            // - Extra notes penalty (10%)
+            let confidence = (
+                pattern_completeness * 0.4 +
+                chord_tone_ratio * 0.3 +
+                root_prominence * 0.2 +
+                extra_notes_penalty * 0.1
+            ).min(1.0);
 
             return Some(DetectedChord {
                 root: *potential_root,
@@ -132,6 +186,23 @@ pub fn detect_chord(
     }
 
     None
+}
+
+/// Get the expected intervals for a chord quality (not including root)
+fn get_expected_intervals(quality: &ChordQuality) -> Vec<usize> {
+    match quality {
+        ChordQuality::Major => vec![4, 7],
+        ChordQuality::Minor => vec![3, 7],
+        ChordQuality::Diminished => vec![3, 6],
+        ChordQuality::Augmented => vec![4, 8],
+        ChordQuality::Sus2 => vec![2, 7],
+        ChordQuality::Sus4 => vec![5, 7],
+        ChordQuality::Major7 => vec![4, 7, 11],
+        ChordQuality::Minor7 => vec![3, 7, 10],
+        ChordQuality::Dominant7 => vec![4, 7, 10],
+        ChordQuality::Diminished7 => vec![3, 6, 9],
+        ChordQuality::HalfDiminished7 => vec![3, 6, 10],
+    }
 }
 
 fn match_chord_pattern(intervals: &[usize]) -> Option<ChordQuality> {
@@ -180,6 +251,7 @@ fn match_chord_pattern(intervals: &[usize]) -> Option<ChordQuality> {
     None
 }
 
+#[allow(dead_code)]
 fn expected_notes_for_quality(quality: &ChordQuality) -> usize {
     match quality {
         ChordQuality::Major
