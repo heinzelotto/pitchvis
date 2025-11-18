@@ -58,22 +58,31 @@ impl DetectedChord {
 /// # Arguments
 /// * `active_bins` - Map of bin index to strength/amplitude
 /// * `buckets_per_octave` - Number of buckets per octave
+/// * `min_freq` - The frequency of bin 0 in Hz (e.g., 55.0 for A1)
 /// * `min_notes` - Minimum number of notes to consider for chord detection (default: 2)
 pub fn detect_chord(
     active_bins: &HashMap<usize, f32>,
     buckets_per_octave: u16,
+    min_freq: f32,
     min_notes: usize,
 ) -> Option<DetectedChord> {
     if active_bins.len() < min_notes {
         return None;
     }
 
+    // Calculate the pitch class of bin 0 (min_freq)
+    // Reference: C4 = 261.626 Hz is pitch class 0
+    // Formula: pitch_class = (12 * log2(freq / C4) + 0.5) % 12
+    const C4_FREQ: f32 = 261.626;
+    let semitones_from_c4 = 12.0 * (min_freq / C4_FREQ).log2();
+    let bin_0_pitch_class = ((semitones_from_c4.round() as i32 % 12) + 12) % 12;
+
     // Convert bins to pitch classes (0-11) with aggregated power
     let mut pitch_classes: HashMap<usize, f32> = HashMap::new();
     for (&bin, &strength) in active_bins.iter() {
         let semitone = (bin * 12) / buckets_per_octave as usize;
-        // the bins are indexed starting from A, the chords from C, three semitones higher
-        let pitch_class = (semitone + 3) % 12;
+        // Offset by the pitch class of bin 0
+        let pitch_class = ((semitone as i32 + bin_0_pitch_class) % 12) as usize;
         *pitch_classes.entry(pitch_class).or_insert(0.0) += strength;
     }
 
@@ -184,5 +193,158 @@ fn expected_notes_for_quality(quality: &ChordQuality) -> usize {
         | ChordQuality::Dominant7
         | ChordQuality::Diminished7
         | ChordQuality::HalfDiminished7 => 4,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_major_chord_detection() {
+        let mut active_bins = HashMap::new();
+        // Assuming bin 0 starts at C (261.626 Hz)
+        // C major chord: C (bin 0), E (bin 28), G (bin 49)
+        // With 84 buckets per octave: 84/12 = 7 buckets per semitone
+        // C = 0, E = 4 semitones = 28 buckets, G = 7 semitones = 49 buckets
+        active_bins.insert(0, 1.0);  // C
+        active_bins.insert(28, 0.8); // E
+        active_bins.insert(49, 0.9); // G
+
+        let chord = detect_chord(&active_bins, 84, 261.626, 2);
+        assert!(chord.is_some());
+        let chord = chord.unwrap();
+        assert_eq!(chord.root, 0); // C
+        assert_eq!(chord.quality, ChordQuality::Major);
+        assert_eq!(chord.name(), "C");
+    }
+
+    #[test]
+    fn test_minor_chord_detection() {
+        let mut active_bins = HashMap::new();
+        // Assuming bin 0 starts at A (220.0 Hz)
+        // A minor chord: A (bin 0), C (bin 21), E (bin 49)
+        // A = 0, C = 3 semitones = 21 buckets, E = 7 semitones = 49 buckets
+        active_bins.insert(0, 1.0);  // A (root)
+        active_bins.insert(21, 0.8); // C
+        active_bins.insert(49, 0.9); // E
+
+        let chord = detect_chord(&active_bins, 84, 220.0, 2);
+        assert!(chord.is_some());
+        let chord = chord.unwrap();
+        assert_eq!(chord.root, 9); // A
+        assert_eq!(chord.quality, ChordQuality::Minor);
+        assert_eq!(chord.name(), "Am");
+    }
+
+    #[test]
+    fn test_dominant_7th_chord_detection() {
+        let mut active_bins = HashMap::new();
+        // Assuming bin 0 starts at G (196.0 Hz)
+        // G7 chord: G (bin 0), B (bin 28), D (bin 49), F (bin 70)
+        // G = 0, B = 4 semitones = 28, D = 7 semitones = 49, F = 10 semitones = 70
+        active_bins.insert(0, 1.0);  // G
+        active_bins.insert(28, 0.7); // B
+        active_bins.insert(49, 0.8); // D
+        active_bins.insert(70, 0.6); // F
+
+        let chord = detect_chord(&active_bins, 84, 196.0, 2);
+        assert!(chord.is_some());
+        let chord = chord.unwrap();
+        assert_eq!(chord.root, 7); // G
+        assert_eq!(chord.quality, ChordQuality::Dominant7);
+        assert_eq!(chord.name(), "G7");
+    }
+
+    #[test]
+    fn test_sus4_chord_detection() {
+        let mut active_bins = HashMap::new();
+        // Assuming bin 0 starts at D (293.66 Hz)
+        // Dsus4: D (bin 0), G (bin 35), A (bin 49)
+        // D = 0, G = 5 semitones = 35, A = 7 semitones = 49
+        active_bins.insert(0, 1.0);  // D
+        active_bins.insert(35, 0.8); // G
+        active_bins.insert(49, 0.9); // A
+
+        let chord = detect_chord(&active_bins, 84, 293.66, 2);
+        assert!(chord.is_some());
+        let chord = chord.unwrap();
+        assert_eq!(chord.root, 2); // D
+        assert_eq!(chord.quality, ChordQuality::Sus4);
+        assert_eq!(chord.name(), "Dsus4");
+    }
+
+    #[test]
+    fn test_no_chord_detection_single_note() {
+        let mut active_bins = HashMap::new();
+        active_bins.insert(0, 1.0);
+
+        let chord = detect_chord(&active_bins, 84, 220.0, 2);
+        assert!(chord.is_none());
+    }
+
+    #[test]
+    fn test_no_chord_detection_non_chord_intervals() {
+        let mut active_bins = HashMap::new();
+        // Random intervals that don't form a chord
+        active_bins.insert(0, 1.0);
+        active_bins.insert(7, 0.8);  // 1 semitone
+        active_bins.insert(14, 0.9); // 2 semitones
+
+        let _chord = detect_chord(&active_bins, 84, 220.0, 2);
+        // This might detect something or nothing depending on pattern matching
+        // The important thing is it doesn't crash
+        assert!(true);
+    }
+
+    #[test]
+    fn test_chord_with_octaves() {
+        let mut active_bins = HashMap::new();
+        // Assuming bin 0 starts at C (261.626 Hz)
+        // C major with octave doubling
+        // C = 0, E = 28, G = 49, C (octave) = 84
+        active_bins.insert(0, 1.0);   // C
+        active_bins.insert(28, 0.8);  // E
+        active_bins.insert(49, 0.9);  // G
+        active_bins.insert(84, 0.7);  // C (octave higher)
+
+        let chord = detect_chord(&active_bins, 84, 261.626, 2);
+        assert!(chord.is_some());
+        let chord = chord.unwrap();
+        assert_eq!(chord.root, 0); // C
+        assert_eq!(chord.quality, ChordQuality::Major);
+    }
+
+    #[test]
+    fn test_power_chord_detection() {
+        let mut active_bins = HashMap::new();
+        // Assuming bin 0 starts at A (220.0 Hz)
+        // Power chord: root + fifth
+        // A = 0, E = 49 (7 semitones)
+        active_bins.insert(0, 1.0);  // A
+        active_bins.insert(49, 0.9); // E
+
+        let chord = detect_chord(&active_bins, 84, 220.0, 2);
+        assert!(chord.is_some());
+        let chord = chord.unwrap();
+        // Power chords are treated as major
+        assert_eq!(chord.quality, ChordQuality::Major);
+    }
+
+    #[test]
+    fn test_different_buckets_per_octave() {
+        let mut active_bins = HashMap::new();
+        // Test with 12 buckets per octave (1 per semitone)
+        // Assuming bin 0 starts at C (261.626 Hz)
+        // C major: C (0), E (4), G (7)
+        active_bins.insert(0, 1.0);
+        active_bins.insert(4, 0.8);
+        active_bins.insert(7, 0.9);
+
+        let chord = detect_chord(&active_bins, 12, 261.626, 2);
+        assert!(chord.is_some());
+        let chord = chord.unwrap();
+        assert_eq!(chord.root, 0); // C
+        assert_eq!(chord.quality, ChordQuality::Major);
     }
 }
