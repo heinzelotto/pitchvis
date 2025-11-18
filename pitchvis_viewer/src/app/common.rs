@@ -476,17 +476,19 @@ pub fn setup_screen_lock_indicator(mut commands: Commands) {
 
     commands.spawn((
         ScreenLockIndicator,
-        Text::new("SCREEN LOCKED"),
+        Button,
+        Text::new("TAP HERE TO UNLOCK"),
         TextColor(Color::srgb(0.95, 0.95, 0.65)),
         text_font,
         Node {
             position_type: PositionType::Absolute,
             right: Val::Percent(1.),
             top: Val::Percent(1.),
-            // padding: UiRect::all(Val::Px(2.0)),
+            padding: UiRect::all(Val::Px(8.0)),
             ..default()
         },
-        BackgroundColor(Color::BLACK.with_alpha(0.4)),
+        BackgroundColor(Color::BLACK.with_alpha(0.6)),
+        BorderColor::all(Color::srgb(0.7, 0.7, 0.5)),
         ZIndex(i32::MAX),
         Visibility::Hidden,
     ));
@@ -513,6 +515,23 @@ pub fn update_screen_lock_indicator(
         } else {
             Visibility::Hidden
         };
+    }
+}
+
+/// Handle screen lock indicator button press to unlock
+pub fn handle_screen_lock_indicator_press(
+    mut interaction_query: Query<
+        &Interaction,
+        (Changed<Interaction>, With<ScreenLockIndicator>),
+    >,
+    mut lock_state: ResMut<ScreenLockState>,
+    mut mouse_consumed: ResMut<PressEventConsumed>,
+) {
+    for interaction in &mut interaction_query {
+        if *interaction == Interaction::Pressed {
+            lock_state.0 = false;
+            mouse_consumed.0 = true;
+        }
     }
 }
 
@@ -1474,6 +1493,7 @@ pub fn register_common_update_systems<M1, M2, M3>(
             update_analysis_text_system,
             analysis_text_showhide,
             update_screen_lock_indicator,
+            handle_screen_lock_indicator_press,
             set_frame_limiter_system,
             set_vqt_smoothing_system,
             update_display_system,
