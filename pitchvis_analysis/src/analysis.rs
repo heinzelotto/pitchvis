@@ -1264,9 +1264,9 @@ impl AnalysisState {
             }
         }
 
-        // Detect chord (minimum 2 notes)
+        // Detect chord using enhanced algorithm with rust-music-theory (minimum 2 notes)
         self.detected_chord =
-            crate::chord::detect_chord(&active_bins, self.range.buckets_per_octave, 2);
+            crate::chord_enhanced::detect_chord_enhanced(&active_bins, self.range.buckets_per_octave as usize, 2);
     }
 
     fn update_peak_tracking(&mut self, frame_time: Duration) {
