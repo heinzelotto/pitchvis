@@ -426,8 +426,12 @@ fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
     }
 
     // Base color with rings
+    let f_noise_raw: f32 = simplexNoise3(vec3<f32>(mesh.uv *4.3, time*0.8));
+    let f_noise: f32 = clamp(f_noise_raw-0.15, 0.0, 1.0);
+    let white = vec3<f32>(1.0, 1.0, 1.0);
+
     let f_ring = ring(uv);
-    let ring_color = vec4<f32>(material_color.rgb, material_color.a*f_ring);
+    let ring_color = vec4<f32>(mix(material_color.rgb, white, f_noise*calmness*f_ring), material_color.a*f_ring);
 
     // Add pitch accuracy indicator (only when very accurate)
     let accuracy_indicator = pitch_indicator_center_dot(uv, pitch_accuracy, time);
