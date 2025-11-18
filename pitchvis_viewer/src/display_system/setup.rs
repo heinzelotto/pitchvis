@@ -422,8 +422,9 @@ fn spawn_root_note_slice(
     // Create a pizza slice mesh pointing from center outward
     // The slice will be dynamically updated in the update system
     // Start with an empty mesh
-    use bevy::render::mesh::{Indices, PrimitiveTopology};
-    use bevy::render::render_asset::RenderAssetUsages;
+    use bevy::asset::RenderAssetUsages;
+    use bevy::render::mesh::Indices;
+    use bevy::render::mesh::PrimitiveTopology;
 
     let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
 

@@ -56,7 +56,6 @@ pub fn update_display(
             With<HarmonicLine>,
         >,
         Query<(&mut Text2d, &mut Visibility), With<ChordDisplay>>,
-        Query<(&mut Visibility, &Mesh2d, &mut MeshMaterial2d<ColorMaterial>), With<RootNoteSlice>>,
     )>,
     mut color_materials: ResMut<Assets<ColorMaterial>>,
     mut noisy_color_materials: ResMut<Assets<NoisyColorMaterial>>,
@@ -72,6 +71,7 @@ pub fn update_display(
         Option<&mut Bloom>,
         Ref<Projection>, // Ref because we want to check `is_changed` later
     )>,
+    mut root_slice: Query<(&mut Visibility, &Mesh2d, &mut MeshMaterial2d<ColorMaterial>), With<RootNoteSlice>>,
 ) -> Result<()> {
     fade_pitch_balls(set.p0(), &mut noisy_color_materials, &run_time, range);
 
@@ -169,16 +169,13 @@ pub fn update_display(
     }
 
     // Update root note slice visualization
-    {
-        let mut root_slice = set.p8();
-        update_root_note_slice(
-            &mut root_slice,
-            &mut meshes,
-            &mut color_materials,
-            &analysis_state.0,
-            &settings_state,
-        );
-    }
+    update_root_note_slice(
+        &mut root_slice,
+        &mut meshes,
+        &mut color_materials,
+        &analysis_state.0,
+        &settings_state,
+    );
 
     Ok(())
 }
@@ -1009,8 +1006,9 @@ fn update_root_note_slice(
                 }
 
                 // Create the mesh
-                use bevy::render::mesh::{Indices, PrimitiveTopology};
-                use bevy::render::render_asset::RenderAssetUsages;
+                use bevy::asset::RenderAssetUsages;
+                use bevy::render::mesh::Indices;
+                use bevy::render::mesh::PrimitiveTopology;
 
                 let mut mesh = Mesh::new(
                     PrimitiveTopology::TriangleList,
