@@ -199,16 +199,15 @@ fn fade_pitch_balls(
             transform.scale = size * PITCH_BALL_SCALE_FACTOR;
 
             // also make them slightly more transparent when they are smaller
-            let color_mat = noisy_color_materials
-                .get_mut(&*color)
-                .expect("ball color material");
-            color_mat.color = color_mat
-                .color
-                .with_alpha((color_mat.color.alpha() * dropoff_factor).max(0.7));
+            if let Some(color_mat) = noisy_color_materials.get_mut(&*color) {
+                color_mat.color = color_mat
+                    .color
+                    .with_alpha((color_mat.color.alpha() * dropoff_factor).max(0.7));
 
-            // Disable vibrato animation for fading balls
-            color_mat.params.vibrato_rate = 0.0;
-            color_mat.params.vibrato_extent = 0.0;
+                // Disable vibrato animation for fading balls
+                color_mat.params.vibrato_rate = 0.0;
+                color_mat.params.vibrato_extent = 0.0;
+            }
 
             // also shift shrinking circles slightly to the background so that they are not cluttering newly appearing larger circles
             transform.translation.z -= 0.001 * 30.0 * timestep.as_secs_f32();
@@ -274,9 +273,9 @@ fn update_pitch_balls(
             let z_ordering_offset = (size / max_size - 1.01) * 12.5;
             transform.translation = Vec3::new(x, y, z_ordering_offset);
 
-            let color_mat = noisy_color_materials
-                .get_mut(&*color)
-                .expect("ball color material");
+            let Some(color_mat) = noisy_color_materials.get_mut(&*color) else {
+                continue;
+            };
             color_mat.params.time = run_time.elapsed_secs();
             // color_mat.color = Color::srgb(
             //     r * color_coefficient,
@@ -504,9 +503,11 @@ fn update_bass_spiral(
 
         // color up to lowest note
         for idx in 0..((center.round() * SPIRAL_SEGMENTS_PER_SEMITONE as f32) as usize) {
-            let (_, ref mut visibility, color) = bass_cylinders
+            let Ok((_, ref mut visibility, color)) = bass_cylinders
                 .get_mut(cylinder_entities.0[idx])
-                .expect("cylinder entity");
+            else {
+                continue;
+            };
             **visibility = Visibility::Visible;
 
             let color_map_ref = center.round() * buckets_per_octave as f32 / 12.0;
@@ -529,10 +530,9 @@ fn update_bass_spiral(
 
             let color_coefficient = 1.0 - (1.0 - size / max_size).powf(2.0);
 
-            materials
-                .get_mut(&*color)
-                .expect("cylinder color material")
-                .color = Color::srgba(r, g, b, color_coefficient);
+            if let Some(material) = materials.get_mut(&*color) {
+                material.color = Color::srgba(r, g, b, color_coefficient);
+            }
 
             // let radius = 0.08;
             // c.set_local_scale(radius, *height, radius);
@@ -700,10 +700,9 @@ fn update_spectrum(
             .collect::<Vec<[f32; 4]>>();
         spectrum_mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colors);
 
-        let mesh = meshes
-            .get_mut(&mesh_handle.0)
-            .expect("spectrum line strip mesh");
-        *mesh = spectrum_mesh;
+        if let Some(mesh) = meshes.get_mut(&mesh_handle.0) {
+            *mesh = spectrum_mesh;
+        }
     }
 
     Ok(())
@@ -734,7 +733,9 @@ fn show_hide_spider_net(
         _ => Visibility::Hidden,
     };
 
-    let vis = spider_net_segments.iter_mut().next().unwrap();
+    let Some(vis) = spider_net_segments.iter_mut().next() else {
+        return;
+    };
     if *vis != target_visibility {
         for mut visibility in &mut spider_net_segments {
             *visibility = target_visibility;
@@ -921,8 +922,9 @@ fn update_harmonic_lines(
             let line_mesh: Mesh = line_list.into();
 
             // Update the mesh
-            let mesh_asset = meshes.get_mut(&mesh_handle.0).expect("harmonic line mesh");
-            *mesh_asset = line_mesh;
+            if let Some(mesh_asset) = meshes.get_mut(&mesh_handle.0) {
+                *mesh_asset = line_mesh;
+            }
         }
     }
 }

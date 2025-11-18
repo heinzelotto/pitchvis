@@ -352,13 +352,12 @@ fn main() -> AppExit {
     // Register common startup systems
     register_startup_systems(&mut app, &vqt_parameters.range);
 
-    // Register common update systems (bloom disabled on Android)
+    // Register common update systems
     register_common_update_systems(
         &mut app,
         update_vqt_system,
         update_analysis_state_system,
         update_display_system,
-        false, // bloom disabled on Android
     );
 
     // Android-specific: Add lifecycle event handler and UI visibility handler
