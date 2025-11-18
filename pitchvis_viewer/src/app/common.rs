@@ -71,6 +71,10 @@ pub fn set_vqt_smoothing_system(
 #[derive(Resource)]
 pub struct ScreenLockState(pub bool);
 
+/// Resource to track when the last tap occurred while screen was locked
+#[derive(Resource)]
+pub struct ScreenLockTapTime(pub Option<Instant>);
+
 /// Resource to track active touches for long press detection
 #[derive(Resource)]
 pub struct ActiveTouches(pub Arc<Mutex<HashMap<u64, Instant>>>);
@@ -473,7 +477,7 @@ pub fn setup_screen_lock_indicator(mut commands: Commands) {
     commands.spawn((
         ScreenLockIndicator,
         Text::new("SCREEN LOCKED"),
-        TextColor(Color::srgb(0.7, 0.7, 0.4)),
+        TextColor(Color::srgb(0.95, 0.95, 0.65)),
         text_font,
         Node {
             position_type: PositionType::Absolute,
@@ -492,9 +496,19 @@ pub fn setup_screen_lock_indicator(mut commands: Commands) {
 pub fn update_screen_lock_indicator(
     mut query: Query<&mut Visibility, With<ScreenLockIndicator>>,
     lock_state: Res<ScreenLockState>,
+    tap_time: Res<ScreenLockTapTime>,
 ) {
+    const INDICATOR_DISPLAY_DURATION: f32 = 3.0;
+
     if let Ok(mut visibility) = query.single_mut() {
-        *visibility = if lock_state.0 {
+        // Show indicator only if locked AND a tap was registered recently
+        let should_show = lock_state.0
+            && tap_time
+                .0
+                .map(|t| t.elapsed().as_secs_f32() < INDICATOR_DISPLAY_DURATION)
+                .unwrap_or(false);
+
+        *visibility = if should_show {
             Visibility::Visible
         } else {
             Visibility::Hidden
@@ -1220,6 +1234,7 @@ pub fn user_input_system(
     mut settings: ResMut<Persistent<SettingsState>>,
     mouse_consumed: Res<PressEventConsumed>,
     mut lock_state: ResMut<ScreenLockState>,
+    mut tap_time: ResMut<ScreenLockTapTime>,
     active_touches: Res<ActiveTouches>,
     mut commands: Commands,
 ) {
@@ -1256,6 +1271,9 @@ pub fn user_input_system(
                                     cycle_display_mode(&mut settings.display_mode);
                                 })
                                 .expect("failed to update settings");
+                        } else if lock_state.0 {
+                            // Record tap time when screen is locked
+                            tap_time.0 = Some(Instant::now());
                         }
                     }
                 }
@@ -1299,6 +1317,9 @@ pub fn user_input_system(
                                 cycle_display_mode(&mut settings.display_mode);
                             })
                             .expect("failed to update settings");
+                    } else if lock_state.0 {
+                        // Record tap time when screen is locked
+                        tap_time.0 = Some(Instant::now());
                     }
                     // reset the consumed state for the next frame
                     commands.insert_resource(PressEventConsumed(false));
@@ -1411,6 +1432,7 @@ pub fn insert_common_resources(
             )),
         })
         .insert_resource(ScreenLockState(false))
+        .insert_resource(ScreenLockTapTime(None))
         .insert_resource(ActiveTouches(Arc::new(Mutex::new(HashMap::new()))));
 }
 
