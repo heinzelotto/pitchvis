@@ -359,11 +359,11 @@ pub struct Glissando {
 ///
 /// Assuming the setup of an `AnalysisState` object and some dummy VQT data:
 /// ```
-/// # use pitchvis_analysis::analysis::AnalysisState;
+/// # use pitchvis_analysis::analysis::{AnalysisState, AnalysisParameters};
 /// # use pitchvis_analysis::vqt::VqtRange;
 /// # use std::time::Duration;
 /// let range = VqtRange { min_freq: 55.0, octaves: 8, buckets_per_octave: 24 };
-/// let mut analysis_state = AnalysisState::new(range.clone(), 10);
+/// let mut analysis_state = AnalysisState::new(range.clone(), AnalysisParameters::default());
 /// let dummy_x_vqt = vec![0.0; range.n_buckets()]; // Replace with actual VQT data
 /// analysis_state.preprocess(&dummy_x_vqt, Duration::from_millis(30));
 /// ```
@@ -639,7 +639,9 @@ impl AnalysisState {
         for peak in &peaks_continuous {
             let bin_idx = peak.center.round() as usize;
             if bin_idx < self.vibrato_states.len() {
-                let freq = self.bin_to_frequency(bin_idx);
+                // Use the continuous peak center to get precise frequency
+                // This is critical for vibrato detection - we need the actual frequency variation!
+                let freq = self.range.min_freq * 2.0_f32.powf(peak.center / self.range.buckets_per_octave as f32);
                 self.update_vibrato_state(bin_idx, freq, true);
             }
         }
@@ -1618,5 +1620,91 @@ mod tests {
         analysis.preprocess(&vec![0.0; 48], Duration::from_secs(1));
         assert!(!analysis.x_vqt_smoothed.is_empty());
         assert!(analysis.x_vqt_smoothed.iter().all(|x| x.get() == 0.0));
+    }
+
+    #[test]
+    fn test_vibrato_detection_with_oscillating_peak() {
+        // Test that vibrato is detected when a peak oscillates in frequency
+        let range = VqtRange {
+            min_freq: 55.0,  // A1
+            octaves: 5,
+            buckets_per_octave: 24,
+        };
+        let mut analysis = AnalysisState::new(range.clone(), AnalysisParameters::default());
+
+        // Simulate a vibrating note at ~440 Hz (A4) with 6 Hz vibrato rate and 50 cents extent
+        // 440 Hz is approximately at bin 96 (4 octaves above 55 Hz)
+        let base_bin = 96.0;
+        let vibrato_rate_hz = 6.0;
+        let vibrato_extent_cents = 50.0;
+        let vibrato_extent_bins = vibrato_extent_cents / 100.0 * range.buckets_per_octave as f32 / 12.0;
+
+        // Create VQT data with a single peak that oscillates
+        let frame_duration = Duration::from_millis(16); // ~60 FPS
+        let n_buckets = range.n_buckets();
+
+        // Run for 2 seconds to allow vibrato detection
+        let n_frames = 120; // 2 seconds at 60 FPS
+
+        for frame_idx in 0..n_frames {
+            let time = frame_idx as f32 * 0.016667; // 60 FPS
+
+            // Calculate vibrating peak position
+            let vibrato_phase = 2.0 * std::f32::consts::PI * vibrato_rate_hz * time;
+            let peak_center = base_bin + vibrato_extent_bins / 2.0 * vibrato_phase.sin();
+
+            // Create VQT with continuous peak shape using interpolation
+            // This creates a realistic peak that smoothly moves between bins
+            let mut vqt = vec![0.0; n_buckets];
+
+            // Create a Gaussian-like peak centered at peak_center
+            let peak_width = 1.5; // Standard deviation in bins
+            for bin in 0..n_buckets {
+                let distance = (bin as f32 - peak_center).abs();
+                if distance < 5.0 {
+                    // Gaussian amplitude with max 50 dB
+                    let amplitude = 50.0 * (-0.5 * (distance / peak_width).powi(2)).exp();
+                    vqt[bin] = amplitude;
+                }
+            }
+
+            analysis.preprocess(&vqt, frame_duration);
+        }
+
+        // After 2 seconds, vibrato should be detected for bin ~96
+        let bin_idx = base_bin.round() as usize;
+        assert!(bin_idx < analysis.vibrato_states.len(), "Bin index out of range");
+
+        let vibrato_state = &analysis.vibrato_states[bin_idx];
+
+        // Check that vibrato is detected
+        assert!(
+            vibrato_state.is_active,
+            "Vibrato should be detected after 2 seconds of oscillating peak. State: {:?}",
+            vibrato_state
+        );
+
+        // Check that rate is within reasonable range (vibrato smoothing may affect accuracy)
+        // We expect ~6 Hz but due to VQT smoothing and other factors, allow generous tolerance
+        assert!(
+            vibrato_state.rate >= 2.0 && vibrato_state.rate <= 10.0,
+            "Vibrato rate should be in range 2-10 Hz, got {} Hz (target was {})",
+            vibrato_state.rate,
+            vibrato_rate_hz
+        );
+
+        // Check that extent is detected (should be non-zero)
+        assert!(
+            vibrato_state.extent > 20.0,
+            "Vibrato extent should be detected (>20 cents), got {} cents",
+            vibrato_state.extent
+        );
+
+        // Most importantly: verify that vibrato IS detected (was the bug)
+        println!("✓ Vibrato detected successfully!");
+        println!("  Rate: {:.2} Hz (target: {:.2} Hz)", vibrato_state.rate, vibrato_rate_hz);
+        println!("  Extent: {:.1} cents", vibrato_state.extent);
+        println!("  Regularity: {:.2}", vibrato_state.regularity);
+        println!("  Confidence: {:.2}", vibrato_state.confidence);
     }
 }
