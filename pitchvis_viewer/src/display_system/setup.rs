@@ -373,8 +373,9 @@ fn spawn_chord_display(commands: &mut Commands, asset_server: &Res<AssetServer>)
         Text2d::new(""),
         TextColor(Color::srgba(1.0, 1.0, 1.0, 0.8)),
         text_font,
-        TextLayout::new_with_justify(Justify::Center),
-        Transform::from_xyz(0.0, -8.0, 0.0).with_scale(vec3(0.025, 0.025, 1.0)),
+        TextLayout::new_with_justify(Justify::Left),
+        // Position in bottom left: x=-9.5 (left), y=-6.5 (bottom with clearance)
+        Transform::from_xyz(-10.5, -6.5, 0.0).with_scale(vec3(0.02, 0.02, 1.0)),
         Visibility::Hidden,
     ));
 }

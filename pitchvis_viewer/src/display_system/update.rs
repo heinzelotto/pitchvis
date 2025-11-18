@@ -161,7 +161,7 @@ pub fn update_display(
         }
         {
             let mut chord_display = set.p7();
-            if let Ok((_, mut visibility)) = chord_display.single_mut() {
+            if let Ok((_, _, mut visibility)) = chord_display.single_mut() {
                 *visibility = Visibility::Hidden;
             }
         }
@@ -800,7 +800,7 @@ fn update_chord_display(
     if let Ok((mut text, mut visibility)) = chord_display_query.single_mut() {
         if settings_state.enable_chord_recognition {
             if let Some(chord) = &analysis_state.detected_chord {
-                if should_show_visuals && chord.confidence > 0.3 {
+                if should_show_visuals && chord.confidence > 0.9 {
                     **text = chord.name();
                     *visibility = Visibility::Visible;
                 } else {
