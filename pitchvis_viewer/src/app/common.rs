@@ -34,6 +34,20 @@ pub struct SettingsState {
     pub visuals_mode: display_system::VisualsMode,
     pub fps_limit: Option<u32>,
     pub vqt_smoothing_mode: display_system::VQTSmoothingMode,
+    #[serde(default = "default_true")]
+    pub enable_vibrato: bool,
+    #[serde(default = "default_true")]
+    pub enable_attack_detection: bool,
+    #[serde(default = "default_true")]
+    pub enable_glissando: bool,
+    #[serde(default = "default_true")]
+    pub enable_chord_recognition: bool,
+    #[serde(default = "default_true")]
+    pub enable_harmonic_lines: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 #[derive(Resource)]
 pub struct CurrentFpsLimit(pub Option<u32>);
@@ -629,15 +643,24 @@ pub fn update_screen_lock_indicator(
 //     Ok(())
 // }
 
-/// Marker to find the container entity so we can show/hide the Buttons
+/// Marker to find the container entity so we can show/hide the Buttons (left side)
 #[derive(Component)]
 pub struct ButtonRoot;
+
+/// Marker to find the container entity so we can show/hide the feature toggle buttons (right side)
+#[derive(Component)]
+pub struct ButtonRootRight;
 
 #[derive(Component)]
 pub enum ButtonAction {
     VisualsMode,
     FpsLimit,
     VQTSmoothing,
+    ToggleVibrato,
+    ToggleAttackDetection,
+    ToggleGlissando,
+    ToggleChordRecognition,
+    ToggleHarmonicLines,
 }
 
 #[derive(Component)]
@@ -755,16 +778,198 @@ pub fn setup_buttons(mut commands: Commands, settings: Res<Persistent<SettingsSt
     commands.insert_resource(PressEventConsumed(false));
 }
 
+pub fn setup_feature_toggle_buttons(
+    mut commands: Commands,
+    settings: Res<Persistent<SettingsState>>,
+) {
+    let button_node = Node {
+        justify_content: JustifyContent::Center,
+        align_items: AlignItems::Center,
+        border: UiRect::all(Val::Px(5.0)),
+        padding: UiRect::all(Val::Px(4.0)),
+        margin: UiRect::all(Val::Px(4.0)),
+        ..default()
+    };
+    let text_font = TextFont {
+        font_size: 16.0,
+        ..default()
+    };
+
+    // Helper function to get button colors based on enabled state
+    let button_colors = |enabled: bool| {
+        if enabled {
+            (
+                BackgroundColor(Color::srgba(0.0, 0.2, 0.2, 0.5)),
+                BorderColor::all(Color::srgb(0.0, 0.5, 0.5)),
+            )
+        } else {
+            (
+                BackgroundColor(Color::srgba(0.2, 0.0, 0.0, 0.5)),
+                BorderColor::all(Color::srgb(0.5, 0.0, 0.0)),
+            )
+        }
+    };
+
+    // create our UI root node for right side
+    commands
+        .spawn((
+            ButtonRootRight,
+            Node {
+                position_type: PositionType::Absolute,
+                right: Val::Percent(1.),
+                top: Val::Percent(35.),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Default,
+                padding: UiRect::all(Val::Px(4.0)),
+                margin: UiRect::all(Val::Px(4.0)),
+                flex_direction: FlexDirection::Column,
+                ..default()
+            },
+            ZIndex(i32::MAX),
+            Visibility::Visible,
+        ))
+        .with_children(|parent| {
+            // Vibrato toggle
+            let (bg_color, border_color) = button_colors(settings.enable_vibrato);
+            parent
+                .spawn((
+                    Button,
+                    Node {
+                        ..button_node.clone()
+                    },
+                    bg_color,
+                    border_color,
+                    BorderRadius::MAX,
+                    ButtonAction::ToggleVibrato,
+                ))
+                .insert(ConsumesPressEvents)
+                .with_child((
+                    Text::new(format!(
+                        "Vibrato: {}",
+                        if settings.enable_vibrato { "On" } else { "Off" }
+                    )),
+                    TextColor(Color::WHITE),
+                    text_font.clone(),
+                ));
+
+            // Attack Detection toggle
+            let (bg_color, border_color) = button_colors(settings.enable_attack_detection);
+            parent
+                .spawn((
+                    Button,
+                    Node {
+                        ..button_node.clone()
+                    },
+                    bg_color,
+                    border_color,
+                    BorderRadius::MAX,
+                    ButtonAction::ToggleAttackDetection,
+                ))
+                .insert(ConsumesPressEvents)
+                .with_child((
+                    Text::new(format!(
+                        "Attack Det.: {}",
+                        if settings.enable_attack_detection {
+                            "On"
+                        } else {
+                            "Off"
+                        }
+                    )),
+                    TextColor(Color::WHITE),
+                    text_font.clone(),
+                ));
+
+            // Glissando toggle
+            let (bg_color, border_color) = button_colors(settings.enable_glissando);
+            parent
+                .spawn((
+                    Button,
+                    Node {
+                        ..button_node.clone()
+                    },
+                    bg_color,
+                    border_color,
+                    BorderRadius::MAX,
+                    ButtonAction::ToggleGlissando,
+                ))
+                .insert(ConsumesPressEvents)
+                .with_child((
+                    Text::new(format!(
+                        "Glissando: {}",
+                        if settings.enable_glissando { "On" } else { "Off" }
+                    )),
+                    TextColor(Color::WHITE),
+                    text_font.clone(),
+                ));
+
+            // Chord Recognition toggle
+            let (bg_color, border_color) = button_colors(settings.enable_chord_recognition);
+            parent
+                .spawn((
+                    Button,
+                    Node {
+                        ..button_node.clone()
+                    },
+                    bg_color,
+                    border_color,
+                    BorderRadius::MAX,
+                    ButtonAction::ToggleChordRecognition,
+                ))
+                .insert(ConsumesPressEvents)
+                .with_child((
+                    Text::new(format!(
+                        "Chords: {}",
+                        if settings.enable_chord_recognition {
+                            "On"
+                        } else {
+                            "Off"
+                        }
+                    )),
+                    TextColor(Color::WHITE),
+                    text_font.clone(),
+                ));
+
+            // Harmonic Lines toggle
+            let (bg_color, border_color) = button_colors(settings.enable_harmonic_lines);
+            parent
+                .spawn((
+                    Button,
+                    Node {
+                        ..button_node.clone()
+                    },
+                    bg_color,
+                    border_color,
+                    BorderRadius::MAX,
+                    ButtonAction::ToggleHarmonicLines,
+                ))
+                .insert(ConsumesPressEvents)
+                .with_child((
+                    Text::new(format!(
+                        "Harmonic Lines: {}",
+                        if settings.enable_harmonic_lines {
+                            "On"
+                        } else {
+                            "Off"
+                        }
+                    )),
+                    TextColor(Color::WHITE),
+                    text_font.clone(),
+                ));
+        });
+}
+
 pub fn update_button_system(
     interaction_query: Query<
-        (&Interaction, &ButtonAction, &Children),
+        (Entity, &Interaction, &ButtonAction, &Children),
         (Changed<Interaction>, With<Button>),
     >,
     mut settings: ResMut<Persistent<SettingsState>>,
     mut text_query: Query<&mut Text>,
+    mut bg_color_query: Query<&mut BackgroundColor>,
+    mut border_color_query: Query<&mut BorderColor>,
     mut mouse_consumed: ResMut<PressEventConsumed>,
 ) {
-    for (interaction, button_action, children) in &interaction_query {
+    for (entity, interaction, button_action, children) in &interaction_query {
         if *interaction == Interaction::Pressed {
             mouse_consumed.0 = true;
             let mut text = text_query.get_mut(children[0]).unwrap();
@@ -813,14 +1018,148 @@ pub fn update_button_system(
                         }
                     );
                 }
+                ButtonAction::ToggleVibrato => {
+                    settings
+                        .update(|settings| {
+                            settings.enable_vibrato = !settings.enable_vibrato;
+                        })
+                        .expect("failed to update settings");
+                    **text = format!(
+                        "Vibrato: {}",
+                        if settings.enable_vibrato { "On" } else { "Off" }
+                    );
+                    update_toggle_button_colors(
+                        entity,
+                        settings.enable_vibrato,
+                        &mut bg_color_query,
+                        &mut border_color_query,
+                    );
+                }
+                ButtonAction::ToggleAttackDetection => {
+                    settings
+                        .update(|settings| {
+                            settings.enable_attack_detection = !settings.enable_attack_detection;
+                        })
+                        .expect("failed to update settings");
+                    **text = format!(
+                        "Attack Det.: {}",
+                        if settings.enable_attack_detection {
+                            "On"
+                        } else {
+                            "Off"
+                        }
+                    );
+                    update_toggle_button_colors(
+                        entity,
+                        settings.enable_attack_detection,
+                        &mut bg_color_query,
+                        &mut border_color_query,
+                    );
+                }
+                ButtonAction::ToggleGlissando => {
+                    settings
+                        .update(|settings| {
+                            settings.enable_glissando = !settings.enable_glissando;
+                        })
+                        .expect("failed to update settings");
+                    **text = format!(
+                        "Glissando: {}",
+                        if settings.enable_glissando { "On" } else { "Off" }
+                    );
+                    update_toggle_button_colors(
+                        entity,
+                        settings.enable_glissando,
+                        &mut bg_color_query,
+                        &mut border_color_query,
+                    );
+                }
+                ButtonAction::ToggleChordRecognition => {
+                    settings
+                        .update(|settings| {
+                            settings.enable_chord_recognition = !settings.enable_chord_recognition;
+                        })
+                        .expect("failed to update settings");
+                    **text = format!(
+                        "Chords: {}",
+                        if settings.enable_chord_recognition {
+                            "On"
+                        } else {
+                            "Off"
+                        }
+                    );
+                    update_toggle_button_colors(
+                        entity,
+                        settings.enable_chord_recognition,
+                        &mut bg_color_query,
+                        &mut border_color_query,
+                    );
+                }
+                ButtonAction::ToggleHarmonicLines => {
+                    settings
+                        .update(|settings| {
+                            settings.enable_harmonic_lines = !settings.enable_harmonic_lines;
+                        })
+                        .expect("failed to update settings");
+                    **text = format!(
+                        "Harmonic Lines: {}",
+                        if settings.enable_harmonic_lines {
+                            "On"
+                        } else {
+                            "Off"
+                        }
+                    );
+                    update_toggle_button_colors(
+                        entity,
+                        settings.enable_harmonic_lines,
+                        &mut bg_color_query,
+                        &mut border_color_query,
+                    );
+                }
             }
         }
     }
 }
 
-/// Toggle the FPS counter based on the display mode
+fn update_toggle_button_colors(
+    entity: Entity,
+    enabled: bool,
+    bg_color_query: &mut Query<&mut BackgroundColor>,
+    border_color_query: &mut Query<&mut BorderColor>,
+) {
+    if let Ok(mut bg_color) = bg_color_query.get_mut(entity) {
+        *bg_color = if enabled {
+            BackgroundColor(Color::srgba(0.0, 0.2, 0.2, 0.5))
+        } else {
+            BackgroundColor(Color::srgba(0.2, 0.0, 0.0, 0.5))
+        };
+    }
+    if let Ok(mut border_color) = border_color_query.get_mut(entity) {
+        *border_color = if enabled {
+            BorderColor::all(Color::srgb(0.0, 0.5, 0.5))
+        } else {
+            BorderColor::all(Color::srgb(0.5, 0.0, 0.0))
+        };
+    }
+}
+
+/// Toggle the left-side buttons based on the display mode
 pub fn button_showhide(
     mut q: Query<&mut Visibility, With<ButtonRoot>>,
+    settings: Res<Persistent<SettingsState>>,
+) -> Result<()> {
+    let mut vis = q.single_mut()?;
+    if settings.display_mode == display_system::DisplayMode::Debugging {
+        *vis = Visibility::Visible;
+    } else {
+        *vis = Visibility::Hidden;
+    }
+
+    Ok(())
+}
+
+/// Toggle the right-side feature toggle buttons based on the display mode
+pub fn button_showhide_right(
+    mut q: Query<&mut Visibility, With<ButtonRootRight>>,
     settings: Res<Persistent<SettingsState>>,
 ) -> Result<()> {
     let mut vis = q.single_mut()?;
@@ -1070,6 +1409,7 @@ pub fn register_startup_systems(app: &mut App, vqt_range: &VqtRange) {
             display_system::setup_display_to_system(vqt_range),
             setup_fps_counter,
             setup_buttons,
+            setup_feature_toggle_buttons,
             // setup_bloom_ui,
             setup_analysis_text,
             setup_screen_lock_indicator,
@@ -1094,6 +1434,7 @@ pub fn register_common_update_systems<M1, M2, M3>(
             fps_counter_showhide,
             update_button_system,
             button_showhide,
+            button_showhide_right,
             user_input_system.after(update_button_system),
             update_analysis_text_system,
             analysis_text_showhide,

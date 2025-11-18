@@ -98,15 +98,20 @@ pub fn update_display(
         range.buckets_per_octave,
     );
 
-    update_glissandos(
-        set.p5(),
-        &mut meshes,
-        &mut color_materials,
-        &glissando_curve_entities,
-        &analysis_state.glissandos,
-        range.buckets_per_octave,
-        run_time.elapsed_secs(),
-    );
+    if settings_state.enable_glissando {
+        update_glissandos(
+            set.p5(),
+            &mut meshes,
+            &mut color_materials,
+            &glissando_curve_entities,
+            &analysis_state.glissandos,
+            range.buckets_per_octave,
+            run_time.elapsed_secs(),
+        );
+    } else {
+        // Hide all glissandos when disabled
+        hide_all_glissandos(set.p5());
+    }
 
     update_spectrum(
         set.p3(),
@@ -126,15 +131,20 @@ pub fn update_display(
     // Need to extract queries separately to avoid double borrow of set
     let harmonic_lines = set.p6();
     let chord_display = set.p7();
-    update_harmonic_lines_and_chord(
-        harmonic_lines,
-        chord_display,
-        analysis_state,
-        &mut meshes,
-        &mut color_materials,
-        &settings_state,
-        range,
-    );
+    if settings_state.enable_harmonic_lines || settings_state.enable_chord_recognition {
+        update_harmonic_lines_and_chord(
+            harmonic_lines,
+            chord_display,
+            analysis_state,
+            &mut meshes,
+            &mut color_materials,
+            &settings_state,
+            range,
+        );
+    } else {
+        // Hide all harmonic lines and chord display when disabled
+        hide_all_harmonic_lines_and_chords(harmonic_lines, chord_display);
+    }
 
     Ok(())
 }
@@ -267,7 +277,7 @@ fn update_pitch_balls(
             // Apply vibrato health color feedback for choir singers
             // Must come AFTER ML feature to avoid being overwritten
             // Only modulate color for unhealthy vibrato to draw attention to issues
-            if idx < analysis_state.vibrato_states.len() {
+            if settings_state.enable_vibrato && idx < analysis_state.vibrato_states.len() {
                 let vibrato_state = &analysis_state.vibrato_states[idx];
                 if vibrato_state.is_active && vibrato_state.confidence > 0.7 {
                     // Get vibrato category to determine color tint
@@ -309,9 +319,10 @@ fn update_pitch_balls(
             }
 
             // Set vibrato visualization parameters for shader
-            // Only apply in Normal/Debugging modes
-            if (settings_state.display_mode == DisplayMode::Normal
-                || settings_state.display_mode == DisplayMode::Debugging)
+            // Only apply in Normal/Debugging modes and if vibrato is enabled
+            if settings_state.enable_vibrato
+                && (settings_state.display_mode == DisplayMode::Normal
+                    || settings_state.display_mode == DisplayMode::Debugging)
                 && idx < analysis_state.vibrato_states.len()
             {
                 let vibrato_state = &analysis_state.vibrato_states[idx];
@@ -769,17 +780,21 @@ fn update_harmonic_lines_and_chord(
     range: &VqtRange,
 ) {
     // Only show in Full and Performance modes
-    let should_show = matches!(
+    let should_show_visuals = matches!(
         settings_state.visuals_mode,
         VisualsMode::Full | VisualsMode::Performance
     );
 
     // Update chord display
     if let Ok((mut text, mut visibility)) = chord_display_query.single_mut() {
-        if let Some(chord) = &analysis_state.detected_chord {
-            if should_show && chord.confidence > 0.3 {
-                **text = chord.name();
-                *visibility = Visibility::Visible;
+        if settings_state.enable_chord_recognition {
+            if let Some(chord) = &analysis_state.detected_chord {
+                if should_show_visuals && chord.confidence > 0.3 {
+                    **text = chord.name();
+                    *visibility = Visibility::Visible;
+                } else {
+                    *visibility = Visibility::Hidden;
+                }
             } else {
                 *visibility = Visibility::Hidden;
             }
@@ -792,7 +807,7 @@ fn update_harmonic_lines_and_chord(
     if let Ok((mut visibility, _transform, mesh_handle, _material_handle)) =
         harmonic_lines_query.single_mut()
     {
-        if !should_show || analysis_state.detected_chord.is_none() {
+        if !settings_state.enable_harmonic_lines || !should_show_visuals || analysis_state.detected_chord.is_none() {
             *visibility = Visibility::Hidden;
             return;
         }
@@ -868,6 +883,39 @@ fn update_harmonic_lines_and_chord(
             let mesh_asset = meshes.get_mut(&mesh_handle.0).expect("harmonic line mesh");
             *mesh_asset = line_mesh;
         }
+    }
+}
+
+fn hide_all_glissandos(
+    mut glissando_curves: Query<(
+        &GlissandoCurve,
+        &mut Visibility,
+        &Mesh2d,
+        &mut MeshMaterial2d<ColorMaterial>,
+    )>,
+) {
+    for (_, mut visibility, _, _) in &mut glissando_curves {
+        *visibility = Visibility::Hidden;
+    }
+}
+
+fn hide_all_harmonic_lines_and_chords(
+    mut harmonic_lines: Query<(
+        &mut Visibility,
+        &mut Transform,
+        &mut Mesh2d,
+        &mut MeshMaterial2d<ColorMaterial>,
+    ), With<HarmonicLine>>,
+    mut chord_display: Query<(&mut Text2d, &mut Visibility), With<ChordDisplay>>,
+) {
+    // Hide all harmonic lines
+    for (mut visibility, _, _, _) in &mut harmonic_lines {
+        *visibility = Visibility::Hidden;
+    }
+
+    // Hide chord display
+    if let Ok((_, mut visibility)) = chord_display.get_single_mut() {
+        *visibility = Visibility::Hidden;
     }
 }
 
