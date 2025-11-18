@@ -439,7 +439,9 @@ fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
     // Add tuning direction indicator (shows sharp/flat with animated shape)
     let tuning_indicator_color = tuning_indicator(uv, pitch_deviation, time);
 
-    let final_color = vec4<f32>(ring_color.rgb + accuracy_indicator + tuning_indicator_color, ring_color.a);
+    // Scale down indicators to prevent color washout (use overlay blend strength)
+    let indicator_strength = 0.4;
+    let final_color = vec4<f32>(ring_color.rgb + (accuracy_indicator + tuning_indicator_color) * indicator_strength, ring_color.a);
 
     // high 1-(1-calmness)^3 => more full disk, less ring
     let ring_strength = clamp(1.0-calmness * 1.65, 0.0, 1.0)*clamp(1.0-calmness * 1.65, 0.0, 1.0)*clamp(1.0-calmness * 1.65, 0.0, 1.0);
