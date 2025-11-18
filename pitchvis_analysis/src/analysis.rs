@@ -454,6 +454,12 @@ pub struct AnalysisState {
     /// Currently detected chord, if any
     pub detected_chord: Option<crate::chord::DetectedChord>,
 
+    /// Previous chord detection for smoothing
+    prev_chord_detection: Option<crate::chord::DetectedChord>,
+
+    /// Time since last chord change (in seconds)
+    time_since_chord_change: f32,
+
     /// Tracked peaks for glissando detection
     pub tracked_peaks: Vec<TrackedPeak>,
 
@@ -530,6 +536,8 @@ impl AnalysisState {
             vibrato_states: vec![VibratoState::new(); n_buckets],
             accumulated_time: 0.0,
             detected_chord: None,
+            prev_chord_detection: None,
+            time_since_chord_change: 0.0,
             tracked_peaks: Vec::new(),
             glissandos: Vec::new(),
             next_peak_id: 0,
@@ -1265,17 +1273,81 @@ impl AnalysisState {
         }
 
         // Detect chord (minimum 2 notes)
-        self.detected_chord = crate::chord::detect_chord(
+        let new_detection = crate::chord::detect_chord(
             &active_bins,
             self.range.buckets_per_octave,
             self.range.min_freq,
             2,
         );
+
+        // Apply temporal smoothing and hysteresis to prevent oscillation
+        const MIN_CONFIDENCE_THRESHOLD: f32 = 0.5; // Minimum confidence to display a chord
+        const CHORD_CHANGE_HYSTERESIS: f32 = 0.15; // New chord must be this much better to change
+        const MIN_STABLE_TIME: f32 = 0.15; // Minimum time (seconds) before chord can change
+
+        // Helper function to check if two chords are the same
+        let chords_match = |a: &crate::chord::DetectedChord, b: &crate::chord::DetectedChord| {
+            a.root == b.root && std::mem::discriminant(&a.quality) == std::mem::discriminant(&b.quality)
+        };
+
+        match (&self.detected_chord, &new_detection) {
+            (None, Some(new_chord)) => {
+                // No current chord, accept new one if confidence is high enough
+                if new_chord.confidence >= MIN_CONFIDENCE_THRESHOLD {
+                    self.detected_chord = new_detection.clone();
+                    self.prev_chord_detection = new_detection;
+                    self.time_since_chord_change = 0.0;
+                } else {
+                    self.detected_chord = None;
+                }
+            }
+            (Some(_current_chord), None) => {
+                // Had a chord, now detecting nothing
+                // Keep current chord for a bit (grace period) to avoid flickering
+                if self.time_since_chord_change > MIN_STABLE_TIME {
+                    self.detected_chord = None;
+                    self.prev_chord_detection = None;
+                    self.time_since_chord_change = 0.0;
+                }
+            }
+            (Some(current_chord), Some(new_chord)) => {
+                if chords_match(current_chord, new_chord) {
+                    // Same chord detected, update confidence with smoothing
+                    let mut updated_chord = new_chord.clone();
+                    // Smooth confidence to reduce jitter
+                    updated_chord.confidence = current_chord.confidence * 0.7 + new_chord.confidence * 0.3;
+                    self.detected_chord = Some(updated_chord);
+                } else {
+                    // Different chord detected
+                    // Only change if:
+                    // 1. New chord has significantly higher confidence (with hysteresis), OR
+                    // 2. Current chord has low confidence and new one is decent, OR
+                    // 3. Enough time has passed for a natural chord change
+                    let confidence_boost = new_chord.confidence - current_chord.confidence;
+                    let should_change =
+                        (confidence_boost > CHORD_CHANGE_HYSTERESIS) ||
+                        (current_chord.confidence < 0.4 && new_chord.confidence > MIN_CONFIDENCE_THRESHOLD) ||
+                        (self.time_since_chord_change > MIN_STABLE_TIME && new_chord.confidence > MIN_CONFIDENCE_THRESHOLD);
+
+                    if should_change {
+                        self.detected_chord = new_detection.clone();
+                        self.prev_chord_detection = new_detection;
+                        self.time_since_chord_change = 0.0;
+                    }
+                    // Otherwise keep the current chord
+                }
+            }
+            (None, None) => {
+                // No chord detected, nothing to do
+                self.detected_chord = None;
+            }
+        }
     }
 
     fn update_peak_tracking(&mut self, frame_time: Duration) {
         let delta_time = frame_time.as_secs_f32();
         self.elapsed_time += delta_time;
+        self.time_since_chord_change += delta_time;
 
         // Age existing tracked peaks
         for tracked in &mut self.tracked_peaks {

@@ -800,7 +800,7 @@ fn update_chord_display(
     if let Ok((mut text, mut text_color, mut visibility)) = chord_display_query.single_mut() {
         if settings_state.enable_chord_recognition {
             if let Some(chord) = &analysis_state.detected_chord {
-                if should_show_visuals && chord.confidence > 0.3 {
+                if should_show_visuals && chord.confidence > 0.5 {
                     **text = chord.name();
 
                     // Set color based on root note
