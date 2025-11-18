@@ -169,12 +169,11 @@ pub fn detect_chord(
             // - Chord tone ratio is very important (30%)
             // - Root prominence matters (20%)
             // - Extra notes penalty (10%)
-            let confidence = (
-                pattern_completeness * 0.4 +
-                chord_tone_ratio * 0.3 +
-                root_prominence * 0.2 +
-                extra_notes_penalty * 0.1
-            ).min(1.0);
+            let confidence = (pattern_completeness * 0.4
+                + chord_tone_ratio * 0.3
+                + root_prominence * 0.2
+                + extra_notes_penalty * 0.1)
+                .min(1.0);
 
             return Some(DetectedChord {
                 root: *potential_root,
@@ -279,7 +278,7 @@ mod tests {
         // C major chord: C (bin 0), E (bin 28), G (bin 49)
         // With 84 buckets per octave: 84/12 = 7 buckets per semitone
         // C = 0, E = 4 semitones = 28 buckets, G = 7 semitones = 49 buckets
-        active_bins.insert(0, 1.0);  // C
+        active_bins.insert(0, 1.0); // C
         active_bins.insert(28, 0.8); // E
         active_bins.insert(49, 0.9); // G
 
@@ -297,7 +296,7 @@ mod tests {
         // Assuming bin 0 starts at A (220.0 Hz)
         // A minor chord: A (bin 0), C (bin 21), E (bin 49)
         // A = 0, C = 3 semitones = 21 buckets, E = 7 semitones = 49 buckets
-        active_bins.insert(0, 1.0);  // A (root)
+        active_bins.insert(0, 1.0); // A (root)
         active_bins.insert(21, 0.8); // C
         active_bins.insert(49, 0.9); // E
 
@@ -315,7 +314,7 @@ mod tests {
         // Assuming bin 0 starts at G (196.0 Hz)
         // G7 chord: G (bin 0), B (bin 28), D (bin 49), F (bin 70)
         // G = 0, B = 4 semitones = 28, D = 7 semitones = 49, F = 10 semitones = 70
-        active_bins.insert(0, 1.0);  // G
+        active_bins.insert(0, 1.0); // G
         active_bins.insert(28, 0.7); // B
         active_bins.insert(49, 0.8); // D
         active_bins.insert(70, 0.6); // F
@@ -334,7 +333,7 @@ mod tests {
         // Assuming bin 0 starts at D (293.66 Hz)
         // Dsus4: D (bin 0), G (bin 35), A (bin 49)
         // D = 0, G = 5 semitones = 35, A = 7 semitones = 49
-        active_bins.insert(0, 1.0);  // D
+        active_bins.insert(0, 1.0); // D
         active_bins.insert(35, 0.8); // G
         active_bins.insert(49, 0.9); // A
 
@@ -360,7 +359,7 @@ mod tests {
         let mut active_bins = HashMap::new();
         // Random intervals that don't form a chord
         active_bins.insert(0, 1.0);
-        active_bins.insert(7, 0.8);  // 1 semitone
+        active_bins.insert(7, 0.8); // 1 semitone
         active_bins.insert(14, 0.9); // 2 semitones
 
         let _chord = detect_chord(&active_bins, 84, 220.0, 2);
@@ -375,10 +374,10 @@ mod tests {
         // Assuming bin 0 starts at C (261.626 Hz)
         // C major with octave doubling
         // C = 0, E = 28, G = 49, C (octave) = 84
-        active_bins.insert(0, 1.0);   // C
-        active_bins.insert(28, 0.8);  // E
-        active_bins.insert(49, 0.9);  // G
-        active_bins.insert(84, 0.7);  // C (octave higher)
+        active_bins.insert(0, 1.0); // C
+        active_bins.insert(28, 0.8); // E
+        active_bins.insert(49, 0.9); // G
+        active_bins.insert(84, 0.7); // C (octave higher)
 
         let chord = detect_chord(&active_bins, 84, 261.626, 2);
         assert!(chord.is_some());
@@ -393,7 +392,7 @@ mod tests {
         // Assuming bin 0 starts at A (220.0 Hz)
         // Power chord: root + fifth
         // A = 0, E = 49 (7 semitones)
-        active_bins.insert(0, 1.0);  // A
+        active_bins.insert(0, 1.0); // A
         active_bins.insert(49, 0.9); // E
 
         let chord = detect_chord(&active_bins, 84, 220.0, 2);

@@ -649,7 +649,8 @@ impl AnalysisState {
         // This handles cases where the discrete peak jumps between adjacent bins due to vibrato.
         let mut active_bins = HashSet::new();
         for peak in &peaks_continuous {
-            let peak_freq = self.range.min_freq * 2.0_f32.powf(peak.center / self.range.buckets_per_octave as f32);
+            let peak_freq = self.range.min_freq
+                * 2.0_f32.powf(peak.center / self.range.buckets_per_octave as f32);
             let nominal_bin = peak.center.round() as usize;
 
             // Find the best bin to track this peak in:
@@ -678,7 +679,9 @@ impl AnalysisState {
 
                                     // If within 150 cents (1.5 semitones), consider it the same note
                                     if cents_diff < 150.0 {
-                                        if best_match.is_none() || cents_diff < best_match.unwrap().1 {
+                                        if best_match.is_none()
+                                            || cents_diff < best_match.unwrap().1
+                                        {
                                             best_match = Some((check_bin, cents_diff));
                                         }
                                     }
@@ -1346,8 +1349,11 @@ impl AnalysisState {
         //     2,
         // );
         // Detect chord using enhanced algorithm with rust-music-theory (minimum 2 notes)
-        let new_detection =
-            crate::chord_enhanced::detect_chord_enhanced(&active_bins, self.range.buckets_per_octave as usize, 2);
+        let new_detection = crate::chord_enhanced::detect_chord_enhanced(
+            &active_bins,
+            self.range.buckets_per_octave as usize,
+            2,
+        );
 
         // Apply temporal smoothing and hysteresis to prevent oscillation
         const MIN_CONFIDENCE_THRESHOLD: f32 = 0.5; // Minimum confidence to display a chord
@@ -1356,7 +1362,8 @@ impl AnalysisState {
 
         // Helper function to check if two chords are the same
         let chords_match = |a: &crate::chord::DetectedChord, b: &crate::chord::DetectedChord| {
-            a.root == b.root && std::mem::discriminant(&a.quality) == std::mem::discriminant(&b.quality)
+            a.root == b.root
+                && std::mem::discriminant(&a.quality) == std::mem::discriminant(&b.quality)
         };
 
         match (&self.detected_chord, &new_detection) {
@@ -1384,7 +1391,8 @@ impl AnalysisState {
                     // Same chord detected, update confidence with smoothing
                     let mut updated_chord = new_chord.clone();
                     // Smooth confidence to reduce jitter
-                    updated_chord.confidence = current_chord.confidence * 0.7 + new_chord.confidence * 0.3;
+                    updated_chord.confidence =
+                        current_chord.confidence * 0.7 + new_chord.confidence * 0.3;
                     self.detected_chord = Some(updated_chord);
                 } else {
                     // Different chord detected
@@ -1393,10 +1401,11 @@ impl AnalysisState {
                     // 2. Current chord has low confidence and new one is decent, OR
                     // 3. Enough time has passed for a natural chord change
                     let confidence_boost = new_chord.confidence - current_chord.confidence;
-                    let should_change =
-                        (confidence_boost > CHORD_CHANGE_HYSTERESIS) ||
-                        (current_chord.confidence < 0.4 && new_chord.confidence > MIN_CONFIDENCE_THRESHOLD) ||
-                        (self.time_since_chord_change > MIN_STABLE_TIME && new_chord.confidence > MIN_CONFIDENCE_THRESHOLD);
+                    let should_change = (confidence_boost > CHORD_CHANGE_HYSTERESIS)
+                        || (current_chord.confidence < 0.4
+                            && new_chord.confidence > MIN_CONFIDENCE_THRESHOLD)
+                        || (self.time_since_chord_change > MIN_STABLE_TIME
+                            && new_chord.confidence > MIN_CONFIDENCE_THRESHOLD);
 
                     if should_change {
                         self.detected_chord = new_detection.clone();
@@ -1769,7 +1778,7 @@ mod tests {
     fn test_vibrato_detection_with_oscillating_peak() {
         // Test that vibrato is detected when a peak oscillates in frequency
         let range = VqtRange {
-            min_freq: 55.0,  // A1
+            min_freq: 55.0, // A1
             octaves: 5,
             buckets_per_octave: 24,
         };
@@ -1780,7 +1789,8 @@ mod tests {
         let base_bin = 96.0;
         let vibrato_rate_hz = 6.0;
         let vibrato_extent_cents = 50.0;
-        let vibrato_extent_bins = vibrato_extent_cents / 100.0 * range.buckets_per_octave as f32 / 12.0;
+        let vibrato_extent_bins =
+            vibrato_extent_cents / 100.0 * range.buckets_per_octave as f32 / 12.0;
 
         // Create VQT data with a single peak that oscillates
         let frame_duration = Duration::from_millis(16); // ~60 FPS
@@ -1816,7 +1826,10 @@ mod tests {
 
         // After 2 seconds, vibrato should be detected for bin ~96
         let bin_idx = base_bin.round() as usize;
-        assert!(bin_idx < analysis.vibrato_states.len(), "Bin index out of range");
+        assert!(
+            bin_idx < analysis.vibrato_states.len(),
+            "Bin index out of range"
+        );
 
         let vibrato_state = &analysis.vibrato_states[bin_idx];
 
@@ -1845,7 +1858,10 @@ mod tests {
 
         // Most importantly: verify that vibrato IS detected (was the bug)
         println!("✓ Vibrato detected successfully!");
-        println!("  Rate: {:.2} Hz (target: {:.2} Hz)", vibrato_state.rate, vibrato_rate_hz);
+        println!(
+            "  Rate: {:.2} Hz (target: {:.2} Hz)",
+            vibrato_state.rate, vibrato_rate_hz
+        );
         println!("  Extent: {:.1} cents", vibrato_state.extent);
         println!("  Regularity: {:.2}", vibrato_state.regularity);
         println!("  Confidence: {:.2}", vibrato_state.confidence);
@@ -1867,7 +1883,8 @@ mod tests {
         let base_bin = 96.0;
         let vibrato_rate_hz = 5.0;
         let vibrato_extent_cents = 100.0;
-        let vibrato_extent_bins = vibrato_extent_cents / 100.0 * range.buckets_per_octave as f32 / 12.0; // ~2 bins
+        let vibrato_extent_bins =
+            vibrato_extent_cents / 100.0 * range.buckets_per_octave as f32 / 12.0; // ~2 bins
 
         let frame_duration = Duration::from_millis(16);
         let n_buckets = range.n_buckets();

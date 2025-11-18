@@ -1,6 +1,6 @@
-use std::collections::HashMap;
 use rust_music_theory::chord::{Chord as RmtChord, Number as ChordNumber, Quality as ChordQuality};
 use rust_music_theory::note::{Notes, PitchClass};
+use std::collections::HashMap;
 
 use crate::chord::{ChordQuality as OldChordQuality, DetectedChord};
 
@@ -131,7 +131,11 @@ pub fn detect_chord_enhanced(
 
         // Test each chord type with this root
         for (quality, number) in &chord_types {
-            let chord = RmtChord::new(index_to_pitch_class(root_pc), quality.clone(), number.clone());
+            let chord = RmtChord::new(
+                index_to_pitch_class(root_pc),
+                quality.clone(),
+                number.clone(),
+            );
             let chord_notes = chord.notes();
 
             // Extract pitch classes from chord
@@ -198,7 +202,9 @@ pub fn detect_chord_enhanced(
         }
 
         // Fourth: prefer stronger root
-        b.root_strength.partial_cmp(&a.root_strength).unwrap_or(std::cmp::Ordering::Equal)
+        b.root_strength
+            .partial_cmp(&a.root_strength)
+            .unwrap_or(std::cmp::Ordering::Equal)
     });
 
     // Take the best candidate
@@ -239,7 +245,7 @@ mod tests {
         // C is at bin 6 (3 semitones * 2 buckets/semitone)
         // E is at bin 14 (7 semitones from A * 2)
         // G is at bin 20 (10 semitones from A * 2)
-        active_bins.insert(6, 1.0);  // C
+        active_bins.insert(6, 1.0); // C
         active_bins.insert(14, 0.8); // E
         active_bins.insert(20, 0.6); // G
 
@@ -248,8 +254,10 @@ mod tests {
 
         let chord = result.unwrap();
         // Debug: print what we actually got
-        println!("Detected root: {}, quality: {:?}, confidence: {}",
-                 chord.root, chord.quality, chord.confidence);
+        println!(
+            "Detected root: {}, quality: {:?}, confidence: {}",
+            chord.root, chord.quality, chord.confidence
+        );
         println!("Detected notes: {:?}", chord.notes);
 
         // The algorithm should detect C major (root=0, quality=Major)
