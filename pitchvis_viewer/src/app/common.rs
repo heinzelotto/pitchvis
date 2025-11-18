@@ -306,6 +306,56 @@ pub fn setup_analysis_text(mut commands: Commands) {
                 TextColor(Color::WHITE),
                 text_font.clone(),
             ));
+            builder.spawn((
+                TextSpan::new("\nActive attacks: "),
+                TextColor(Color::WHITE),
+                text_font.clone(),
+            ));
+            builder.spawn((
+                TextSpan::new("0"),
+                TextColor(Color::WHITE),
+                text_font.clone(),
+            ));
+            builder.spawn((
+                TextSpan::new("\nVibrato (conf>0.7): "),
+                TextColor(Color::WHITE),
+                text_font.clone(),
+            ));
+            builder.spawn((
+                TextSpan::new("0"),
+                TextColor(Color::WHITE),
+                text_font.clone(),
+            ));
+            builder.spawn((
+                TextSpan::new("\nGlissandos: "),
+                TextColor(Color::WHITE),
+                text_font.clone(),
+            ));
+            builder.spawn((
+                TextSpan::new("0"),
+                TextColor(Color::WHITE),
+                text_font.clone(),
+            ));
+            builder.spawn((
+                TextSpan::new("\nTracked peaks: "),
+                TextColor(Color::WHITE),
+                text_font.clone(),
+            ));
+            builder.spawn((
+                TextSpan::new("0"),
+                TextColor(Color::WHITE),
+                text_font.clone(),
+            ));
+            builder.spawn((
+                TextSpan::new("\nChord: "),
+                TextColor(Color::WHITE),
+                text_font.clone(),
+            ));
+            builder.spawn((
+                TextSpan::new("None"),
+                TextColor(Color::WHITE),
+                text_font.clone(),
+            ));
         });
 }
 
@@ -317,6 +367,7 @@ pub fn update_analysis_text_system(
 ) -> Result<()> {
     let entity = query.single()?;
 
+    // Tuning drift
     let inaccuracy = analysis.0.smoothed_tuning_grid_inaccuracy.get().round();
     // Format the number as to leave space for 3 digits, just in case,
     // right-aligned and rounded. This helps readability when the
@@ -333,6 +384,51 @@ pub fn update_analysis_text_system(
     } else {
         Color::srgb(1.0, 0.0, 0.0)
     });
+
+    // Active attacks count
+    let active_attacks = analysis.0.current_attacks.len();
+    *writer.text(entity, 4) = format!("{}", active_attacks);
+    *writer.color(entity, 4) = if active_attacks > 0 {
+        TextColor(Color::srgb(1.0, 0.8, 0.0))  // Yellow when attacks are happening
+    } else {
+        TextColor(Color::WHITE)
+    };
+
+    // Vibrato count (confidence > 0.7)
+    let vibrato_count = analysis
+        .0
+        .vibrato_states
+        .iter()
+        .filter(|v| v.is_active && v.confidence > 0.7)
+        .count();
+    *writer.text(entity, 6) = format!("{}", vibrato_count);
+    *writer.color(entity, 6) = if vibrato_count > 0 {
+        TextColor(Color::srgb(0.5, 0.8, 1.0))  // Cyan when vibrato detected
+    } else {
+        TextColor(Color::WHITE)
+    };
+
+    // Glissandos count
+    let glissando_count = analysis.0.glissandos.len();
+    *writer.text(entity, 8) = format!("{}", glissando_count);
+    *writer.color(entity, 8) = if glissando_count > 0 {
+        TextColor(Color::srgb(1.0, 0.5, 1.0))  // Magenta when glissandos present
+    } else {
+        TextColor(Color::WHITE)
+    };
+
+    // Tracked peaks count
+    let tracked_peaks = analysis.0.tracked_peaks.len();
+    *writer.text(entity, 10) = format!("{}", tracked_peaks);
+
+    // Detected chord
+    if let Some(ref chord) = analysis.0.detected_chord {
+        *writer.text(entity, 12) = format!("{}", chord.name);
+        *writer.color(entity, 12) = TextColor(Color::srgb(0.5, 1.0, 0.5));  // Green when chord detected
+    } else {
+        *writer.text(entity, 12) = "None".to_string();
+        *writer.color(entity, 12) = TextColor(Color::srgb(0.6, 0.6, 0.6));  // Gray when no chord
+    }
 
     Ok(())
 }
