@@ -636,22 +636,86 @@ impl AnalysisState {
         let mut peaks_continuous = enhance_peaks_continuous(&peaks, &x_vqt_smoothed, &self.range);
 
         // Update vibrato state for all active peaks
+        // IMPORTANT: We need stable bin assignment across frames for vibrato detection.
+        // Strategy: Check nearby bins for existing vibrato states and continue tracking there.
+        // This handles cases where the discrete peak jumps between adjacent bins due to vibrato.
+        let mut active_bins = HashSet::new();
         for peak in &peaks_continuous {
-            let bin_idx = peak.center.round() as usize;
-            if bin_idx < self.vibrato_states.len() {
-                // Use the continuous peak center to get precise frequency
-                // This is critical for vibrato detection - we need the actual frequency variation!
-                let freq = self.range.min_freq * 2.0_f32.powf(peak.center / self.range.buckets_per_octave as f32);
-                self.update_vibrato_state(bin_idx, freq, true);
+            let peak_freq = self.range.min_freq * 2.0_f32.powf(peak.center / self.range.buckets_per_octave as f32);
+            let nominal_bin = peak.center.round() as usize;
+
+            // Find the best bin to track this peak in:
+            // 1. Check if any nearby bin (±2) already has active vibrato with similar frequency
+            // 2. If found, continue tracking in that bin (maintains continuity)
+            // 3. Otherwise, use the nominal bin
+            let mut tracking_bin = nominal_bin;
+            let search_radius = 2; // Check ±2 bins
+
+            if nominal_bin < self.vibrato_states.len() {
+                let mut best_match: Option<(usize, f32)> = None;
+
+                for offset in 0..=search_radius {
+                    for &sign in &[-1, 1] {
+                        let check_bin = (nominal_bin as i32 + sign * offset) as usize;
+                        if check_bin < self.vibrato_states.len() {
+                            let state = &self.vibrato_states[check_bin];
+                            // Check if this bin has frequency history (even if not yet "active")
+                            if !state.frequency_history.is_empty() {
+                                // Use average of frequency history for matching
+                                let avg_freq: f32 = state.frequency_history.iter().sum::<f32>()
+                                    / state.frequency_history.len() as f32;
+                                if avg_freq > 0.0 {
+                                    let freq_ratio = peak_freq / avg_freq;
+                                    let cents_diff = 1200.0 * freq_ratio.log2().abs();
+
+                                    // If within 150 cents (1.5 semitones), consider it the same note
+                                    if cents_diff < 150.0 {
+                                        if best_match.is_none() || cents_diff < best_match.unwrap().1 {
+                                            best_match = Some((check_bin, cents_diff));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Check the center bin (offset 0) first
+                    if offset == 0 {
+                        let state = &self.vibrato_states[nominal_bin];
+                        if !state.frequency_history.is_empty() {
+                            let avg_freq: f32 = state.frequency_history.iter().sum::<f32>()
+                                / state.frequency_history.len() as f32;
+                            if avg_freq > 0.0 {
+                                let freq_ratio = peak_freq / avg_freq;
+                                let cents_diff = 1200.0 * freq_ratio.log2().abs();
+                                if cents_diff < 150.0 {
+                                    if best_match.is_none() || cents_diff < best_match.unwrap().1 {
+                                        best_match = Some((nominal_bin, cents_diff));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if let Some((matched_bin, _)) = best_match {
+                    tracking_bin = matched_bin;
+                }
+
+                // Update vibrato state with precise frequency
+                self.update_vibrato_state(tracking_bin, peak_freq, true);
+                active_bins.insert(tracking_bin);
             }
         }
 
         // Mark inactive bins (clear history after delay)
+        // Use active_bins (from continuous peaks) instead of discrete peaks
+        // because continuous peaks may round to different bins than discrete peaks
         let inactive_bins: Vec<usize> = self
             .vibrato_states
             .iter()
             .enumerate()
-            .filter(|(bin_idx, _)| !peaks.contains(bin_idx))
+            .filter(|(bin_idx, _)| !active_bins.contains(bin_idx))
             .map(|(bin_idx, _)| bin_idx)
             .collect();
 
@@ -1706,5 +1770,78 @@ mod tests {
         println!("  Extent: {:.1} cents", vibrato_state.extent);
         println!("  Regularity: {:.2}", vibrato_state.regularity);
         println!("  Confidence: {:.2}", vibrato_state.confidence);
+    }
+
+    #[test]
+    fn test_vibrato_detection_with_large_extent() {
+        // Test vibrato with large extent that causes discrete peak to jump between bins
+        // This tests that we maintain stable bin tracking even when discrete peaks move
+        let range = VqtRange {
+            min_freq: 55.0,
+            octaves: 5,
+            buckets_per_octave: 24,
+        };
+        let mut analysis = AnalysisState::new(range.clone(), AnalysisParameters::default());
+
+        // Simulate vibrato with 100 cents extent (2 semitones peak-to-peak)
+        // This is large enough that discrete peak will jump between bins
+        let base_bin = 96.0;
+        let vibrato_rate_hz = 5.0;
+        let vibrato_extent_cents = 100.0;
+        let vibrato_extent_bins = vibrato_extent_cents / 100.0 * range.buckets_per_octave as f32 / 12.0; // ~2 bins
+
+        let frame_duration = Duration::from_millis(16);
+        let n_buckets = range.n_buckets();
+        let n_frames = 120;
+
+        for frame_idx in 0..n_frames {
+            let time = frame_idx as f32 * 0.016667;
+            let vibrato_phase = 2.0 * std::f32::consts::PI * vibrato_rate_hz * time;
+            let peak_center = base_bin + vibrato_extent_bins / 2.0 * vibrato_phase.sin();
+
+            // Create Gaussian peak
+            let mut vqt = vec![0.0; n_buckets];
+            let peak_width = 1.5;
+            for bin in 0..n_buckets {
+                let distance = (bin as f32 - peak_center).abs();
+                if distance < 5.0 {
+                    let amplitude = 50.0 * (-0.5 * (distance / peak_width).powi(2)).exp();
+                    vqt[bin] = amplitude;
+                }
+            }
+
+            analysis.preprocess(&vqt, frame_duration);
+        }
+
+        // Check if vibrato was detected in either bin 95, 96, or 97
+        // (since large vibrato might be tracked in any of these bins)
+        let mut found_vibrato = false;
+        let mut detected_bin = 0;
+        for check_bin in 95..=97 {
+            if check_bin < analysis.vibrato_states.len() {
+                let state = &analysis.vibrato_states[check_bin];
+                if state.is_active && state.confidence > 0.7 {
+                    found_vibrato = true;
+                    detected_bin = check_bin;
+                    println!("✓ Large-extent vibrato detected in bin {}!", check_bin);
+                    println!("  Rate: {:.2} Hz", state.rate);
+                    println!("  Extent: {:.1} cents", state.extent);
+                    println!("  Confidence: {:.2}", state.confidence);
+                    break;
+                }
+            }
+        }
+
+        assert!(
+            found_vibrato,
+            "Vibrato with large extent should be detected in at least one bin (checked 95-97)"
+        );
+
+        let state = &analysis.vibrato_states[detected_bin];
+        assert!(
+            state.extent > 50.0,
+            "Large vibrato extent should be detected (>50 cents), got {} cents",
+            state.extent
+        );
     }
 }
