@@ -84,13 +84,20 @@ pub fn detect_chord_enhanced(
     }
 
     // Convert VQT bins to pitch classes (0-11) with their summed amplitudes
+    // NOTE: VQT values are in dB (logarithmic scale), so we must convert to linear power
+    // before summing across octaves for the same pitch class
     let mut pitch_class_power: HashMap<usize, f32> = HashMap::new();
-    for (bin_idx, power) in active_bins {
+    for (bin_idx, amplitude_db) in active_bins {
         let pitch_class = (bin_idx % buckets_per_octave) * 12 / buckets_per_octave;
         // Convert from A-based (A=0) to C-based (C=0)
         // Since C is 3 semitones above A, to make C=0 we subtract 3 (or add 9 and mod 12)
         let pitch_class_c = (pitch_class + 9) % 12;
-        *pitch_class_power.entry(pitch_class_c).or_insert(0.0) += power;
+
+        // Convert dB to linear power: power = 10^(dB/10)
+        let linear_power = 10.0_f32.powf(amplitude_db / 10.0);
+
+        // Sum linear power values (correct way to combine power across octaves)
+        *pitch_class_power.entry(pitch_class_c).or_insert(0.0) += linear_power;
     }
 
     let detected_pitch_classes: Vec<usize> = pitch_class_power.keys().cloned().collect();
