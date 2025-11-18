@@ -22,7 +22,7 @@ use std::fs;
 use std::fs::File;
 use std::io;
 use std::io::Write;
-use std::mem::transmute;
+// use std::mem::transmute;
 use std::sync::Arc;
 
 // increasing BUCKETS_PER_SEMITONE or Q will improve frequency resolution at cost of time resolution,
@@ -110,16 +110,19 @@ fn fit(positive: Vec<(Vec<f32>, f32)>, negative: Vec<(Vec<f32>, f32)>) {
 }
 
 pub fn train() -> Result<()> {
-    let mut vqt = pitchvis_analysis::vqt::Vqt::new(
-        SR,
-        N_FFT,
-        FREQ_A1,
-        BUCKETS_PER_OCTAVE,
-        OCTAVES,
-        SPARSITY_QUANTILE,
-        Q,
-        GAMMA,
-    );
+    let params = pitchvis_analysis::vqt::VqtParameters {
+        sr: SR as f32,
+        n_fft: N_FFT,
+        range: pitchvis_analysis::vqt::VqtRange {
+            min_freq: FREQ_A1,
+            octaves: OCTAVES as u8,
+            buckets_per_octave: BUCKETS_PER_OCTAVE as u16,
+        },
+        sparsity_quantile: SPARSITY_QUANTILE,
+        quality: Q,
+        gamma: GAMMA,
+    };
+    let mut vqt = pitchvis_analysis::vqt::Vqt::new(&params);
 
     let vqt_delay_in_samples = (vqt.delay.as_millis() as usize * SR) / 1000;
     let vqt_delay_in_samples = (vqt_delay_in_samples / 64) * 64; // round to multiple of 64
@@ -326,7 +329,7 @@ fn synthesize_midi_to_wav(
 
         // perform vqt analysis
         let x_vqt =
-            vqt.calculate_vqt_instant_in_db(&ring_buffer[(ring_buffer.len() - vqt.n_fft)..]);
+            vqt.calculate_vqt_instant_in_db(&ring_buffer[(ring_buffer.len() - N_FFT)..]);
 
         // println!("Active keys: {:?}\nvqt:", prev_active_keys);
         // x_vqt.chunks(BUCKETS_PER_OCTAVE).for_each(|x| {
