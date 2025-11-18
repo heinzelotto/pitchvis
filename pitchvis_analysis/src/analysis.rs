@@ -115,12 +115,12 @@ pub struct AttackEvent {
 /// Vibrato health category for feedback
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VibratoCategory {
-    StraightTone,   // No vibrato detected
-    Healthy,        // Good vibrato (4.5-8 Hz, 40-120 cents)
-    Wobble,         // Too slow (< 4.5 Hz)
-    Tremolo,        // Too fast (> 8 Hz)
-    Excessive,      // Too wide (> 120 cents)
-    Minimal,        // Too narrow (< 40 cents)
+    StraightTone, // No vibrato detected
+    Healthy,      // Good vibrato (4.5-8 Hz, 40-120 cents)
+    Wobble,       // Too slow (< 4.5 Hz)
+    Tremolo,      // Too fast (> 8 Hz)
+    Excessive,    // Too wide (> 120 cents)
+    Minimal,      // Too narrow (< 40 cents)
 }
 
 /// Per-note vibrato state tracking
@@ -161,7 +161,7 @@ impl VibratoState {
     /// Check if vibrato is healthy (rate and extent in acceptable ranges)
     pub fn is_healthy(&self) -> bool {
         if !self.is_active {
-            return true;  // No vibrato is fine
+            return true; // No vibrato is fine
         }
 
         // Healthy vibrato: 4.5-8 Hz rate, 40-120 cents extent
@@ -179,13 +179,13 @@ impl VibratoState {
         }
 
         if self.rate < 4.5 {
-            VibratoCategory::Wobble  // Too slow
+            VibratoCategory::Wobble // Too slow
         } else if self.rate > 8.0 {
-            VibratoCategory::Tremolo  // Too fast
+            VibratoCategory::Tremolo // Too fast
         } else if self.extent > 120.0 {
-            VibratoCategory::Excessive  // Too wide
+            VibratoCategory::Excessive // Too wide
         } else if self.extent < 40.0 {
-            VibratoCategory::Minimal  // Too narrow
+            VibratoCategory::Minimal // Too narrow
         } else {
             VibratoCategory::Healthy
         }
@@ -484,10 +484,8 @@ impl AnalysisState {
         let n_buckets = range.n_buckets();
 
         // Initialize VQT smoothing with uniform duration
-        let x_vqt_smoothed = vec![
-            EmaMeasurement::new(params.vqt_smoothing_duration, 0.0);
-            n_buckets
-        ];
+        let x_vqt_smoothed =
+            vec![EmaMeasurement::new(params.vqt_smoothing_duration, 0.0); n_buckets];
 
         Self {
             // history: (0..SMOOTH_LENGTH)
@@ -510,7 +508,10 @@ impl AnalysisState {
                 n_buckets
             ],
             released_note_calmness: vec![
-                EmaMeasurement::new(Some(params.note_calmness_smoothing_duration), 0.0);
+                EmaMeasurement::new(
+                    Some(params.note_calmness_smoothing_duration),
+                    0.0
+                );
                 n_buckets
             ],
             pitch_accuracy: vec![0.0; n_buckets],
@@ -644,7 +645,9 @@ impl AnalysisState {
         }
 
         // Mark inactive bins (clear history after delay)
-        let inactive_bins: Vec<usize> = self.vibrato_states.iter()
+        let inactive_bins: Vec<usize> = self
+            .vibrato_states
+            .iter()
             .enumerate()
             .filter(|(bin_idx, _)| !peaks.contains(bin_idx))
             .map(|(bin_idx, _)| bin_idx)
@@ -836,17 +839,16 @@ impl AnalysisState {
         for (bin_idx, state) in self.attack_state.iter_mut().enumerate() {
             let current_amp = x_vqt_smoothed[bin_idx];
             let amp_change = current_amp - state.previous_amplitude;
-            let rate_of_change = amp_change / dt.max(0.001);  // dB/s
+            let rate_of_change = amp_change / dt.max(0.001); // dB/s
 
             // Update time since last attack
             state.time_since_attack += dt;
 
             // ATTACK DETECTION CRITERIA
-            let attack_detected =
-                rate_of_change > params.min_attack_rate &&           // Rapid increase
+            let attack_detected = rate_of_change > params.min_attack_rate &&           // Rapid increase
                 current_amp > params.min_attack_amplitude &&         // Above noise floor
                 amp_change > params.min_attack_delta &&              // Minimum delta
-                state.time_since_attack > params.attack_cooldown;    // Cooldown period
+                state.time_since_attack > params.attack_cooldown; // Cooldown period
 
             if attack_detected {
                 // Record attack event
@@ -855,11 +857,8 @@ impl AnalysisState {
                 state.in_attack_phase = true;
 
                 // Calculate percussion score inline to avoid borrowing issues
-                let percussion = Self::calculate_percussion_score_static(
-                    state,
-                    rate_of_change,
-                    &params,
-                );
+                let percussion =
+                    Self::calculate_percussion_score_static(state, rate_of_change, &params);
                 self.percussion_score[bin_idx] = percussion;
 
                 // Calculate frequency inline
@@ -912,7 +911,9 @@ impl AnalysisState {
         // FACTOR 1: Decay Rate
         // Percussion decays quickly after attack
         if state.amplitude_history.len() >= 5 {
-            let recent_amps: Vec<f32> = state.amplitude_history.iter()
+            let recent_amps: Vec<f32> = state
+                .amplitude_history
+                .iter()
                 .rev()
                 .take(5)
                 .copied()
@@ -930,9 +931,9 @@ impl AnalysisState {
         // FACTOR 2: Attack Sharpness
         // Very sharp attacks (> 200 dB/s) are percussive
         // Slow attacks (< 50 dB/s) are melodic
-        let attack_factor = ((attack_rate - params.min_attack_rate) /
-                           (params.percussion_attack_threshold - params.min_attack_rate))
-                           .clamp(0.0, 1.0);
+        let attack_factor = ((attack_rate - params.min_attack_rate)
+            / (params.percussion_attack_threshold - params.min_attack_rate))
+            .clamp(0.0, 1.0);
         percussion_score += attack_factor;
         factor_count += 1;
 
@@ -954,11 +955,15 @@ impl AnalysisState {
         // Simple linear regression: find slope of amplitude vs. sample index
         // We approximate time using frame count (assumes ~60 FPS)
         let n = amplitudes.len() as f32;
-        let frame_duration = 1.0 / 60.0;  // Approximate frame time
+        let frame_duration = 1.0 / 60.0; // Approximate frame time
 
         let sum_a: f32 = amplitudes.iter().sum();
-        let sum_t: f32 = (0..amplitudes.len()).map(|i| i as f32 * frame_duration).sum();
-        let sum_ta: f32 = amplitudes.iter().enumerate()
+        let sum_t: f32 = (0..amplitudes.len())
+            .map(|i| i as f32 * frame_duration)
+            .sum();
+        let sum_ta: f32 = amplitudes
+            .iter()
+            .enumerate()
             .map(|(i, a)| i as f32 * frame_duration * a)
             .sum();
         let sum_tt: f32 = (0..amplitudes.len())
@@ -980,12 +985,7 @@ impl AnalysisState {
     }
 
     /// Update vibrato state for a specific bin
-    fn update_vibrato_state(
-        &mut self,
-        bin_idx: usize,
-        current_freq: f32,
-        is_peak_active: bool,
-    ) {
+    fn update_vibrato_state(&mut self, bin_idx: usize, current_freq: f32, is_peak_active: bool) {
         let state = &mut self.vibrato_states[bin_idx];
         let current_time = self.accumulated_time;
 
@@ -995,7 +995,8 @@ impl AnalysisState {
             state.time_history.push_back(current_time);
 
             // Keep last 2 seconds (120 samples at 60 FPS)
-            let history_length = (self.params.vibrato_detection_config.history_duration * 60.0) as usize;
+            let history_length =
+                (self.params.vibrato_detection_config.history_duration * 60.0) as usize;
             if state.frequency_history.len() > history_length {
                 state.frequency_history.pop_front();
                 state.time_history.pop_front();
@@ -1026,11 +1027,13 @@ impl AnalysisState {
         let params = &self.params.vibrato_detection_config;
 
         // Convert frequency history to cents deviation from mean
-        let mean_freq: f32 = state.frequency_history.iter().sum::<f32>()
-                             / state.frequency_history.len() as f32;
+        let mean_freq: f32 =
+            state.frequency_history.iter().sum::<f32>() / state.frequency_history.len() as f32;
         state.center_frequency = mean_freq;
 
-        let cents_history: Vec<f32> = state.frequency_history.iter()
+        let cents_history: Vec<f32> = state
+            .frequency_history
+            .iter()
             .map(|f| 1200.0 * (f / mean_freq).log2())
             .collect();
 
@@ -1041,11 +1044,14 @@ impl AnalysisState {
         if correlation_strength > params.min_correlation && vibrato_period > 0.0 {
             // Vibrato detected!
             state.is_active = true;
-            state.rate = 1.0 / vibrato_period;  // Convert period to Hz
+            state.rate = 1.0 / vibrato_period; // Convert period to Hz
             state.regularity = correlation_strength;
 
             // Measure extent (peak-to-peak deviation)
-            let max_cents = cents_history.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+            let max_cents = cents_history
+                .iter()
+                .cloned()
+                .fold(f32::NEG_INFINITY, f32::max);
             let min_cents = cents_history.iter().cloned().fold(f32::INFINITY, f32::min);
             state.extent = max_cents - min_cents;
 
@@ -1054,8 +1060,8 @@ impl AnalysisState {
                 state.is_active = false;
             } else {
                 // Confidence based on history length and correlation
-                state.confidence = (state.frequency_history.len() as f32 / 120.0).min(1.0)
-                                 * correlation_strength;
+                state.confidence =
+                    (state.frequency_history.len() as f32 / 120.0).min(1.0) * correlation_strength;
             }
         } else {
             // No clear periodicity - not vibrato
@@ -1077,11 +1083,11 @@ impl AnalysisState {
 
         // Expected vibrato period range: min_rate to max_rate Hz
         // At 60 FPS: calculate min/max lags
-        let max_period = 1.0 / params.min_rate;  // Maximum period in seconds
-        let min_period = 1.0 / params.max_rate;  // Minimum period in seconds
+        let max_period = 1.0 / params.min_rate; // Maximum period in seconds
+        let min_period = 1.0 / params.max_rate; // Minimum period in seconds
 
         // Convert to frame counts (assuming 60 FPS average)
-        let min_lag = (min_period * 60.0).max(5.0) as usize;   // At least 5 frames
+        let min_lag = (min_period * 60.0).max(5.0) as usize; // At least 5 frames
         let max_lag = (max_period * 60.0).min(centered.len() as f32 / 2.0) as usize;
 
         let mut best_lag = 0;
@@ -1104,8 +1110,7 @@ impl AnalysisState {
             let correlation = sum / count as f32;
 
             // Normalize by variance
-            let variance: f32 = centered.iter().map(|x| x * x).sum::<f32>()
-                                / centered.len() as f32;
+            let variance: f32 = centered.iter().map(|x| x * x).sum::<f32>() / centered.len() as f32;
             let normalized_correlation = if variance > 0.1 {
                 correlation / variance
             } else {
@@ -1133,7 +1138,7 @@ impl AnalysisState {
     /// Consolidate peaks that are part of the same vibrato note
     fn consolidate_vibrato_peaks(&self, peaks_continuous: &mut Vec<ContinuousPeak>) {
         if !self.params.vibrato_detection_config.consolidate_peaks {
-            return;  // Peak consolidation disabled
+            return; // Peak consolidation disabled
         }
 
         let mut consolidated = Vec::new();
@@ -1157,11 +1162,12 @@ impl AnalysisState {
 
             if vibrato.is_active && vibrato.confidence > 0.7 {
                 // This is a vibrato note - find all peaks within vibrato extent
-                let extent_bins = vibrato.extent / 100.0 * self.range.buckets_per_octave as f32 / 12.0;
-                let search_range = extent_bins * 1.2;  // 20% margin
+                let extent_bins =
+                    vibrato.extent / 100.0 * self.range.buckets_per_octave as f32 / 12.0;
+                let search_range = extent_bins * 1.2; // 20% margin
 
                 // Find all peaks within vibrato extent
-                for j in (i+1)..peaks_continuous.len() {
+                for j in (i + 1)..peaks_continuous.len() {
                     if used[j] {
                         continue;
                     }
@@ -1184,7 +1190,7 @@ impl AnalysisState {
                 // Create consolidated peak at vibrato center
                 let consolidated_peak = ContinuousPeak {
                     center: self.frequency_to_bin(vibrato.center_frequency),
-                    size: peak.size,  // Keep original amplitude
+                    size: peak.size, // Keep original amplitude
                 };
 
                 consolidated.push(consolidated_peak);
@@ -1345,8 +1351,7 @@ impl AnalysisState {
 
                     if total_distance >= self.params.glissando_min_distance {
                         // Create a glissando
-                        let average_size =
-                            tracked.size; // Could compute average from history if we stored it
+                        let average_size = tracked.size; // Could compute average from history if we stored it
 
                         self.glissandos.push(Glissando {
                             path: tracked.position_history.clone(),
@@ -1478,8 +1483,7 @@ fn enhance_peaks_continuous(
             // => log2(f_peak / min_freq) = bin_index / bins_per_octave
             // => bin_index = bins_per_octave * log2(f_peak / min_freq)
             let f_peak = log_f_peak.exp();
-            let estimated_precise_center =
-                bins_per_octave * (f_peak / range.min_freq).log2();
+            let estimated_precise_center = bins_per_octave * (f_peak / range.min_freq).log2();
 
             // For amplitude, use linear interpolation of VQT values at the estimated peak
             // This is more robust than evaluating the parabola, which can produce
@@ -1491,8 +1495,7 @@ fn enhance_peaks_continuous(
             let upper_bin = (lower_bin + 1).min(range.n_buckets() - 1);
             let fract = estimated_precise_center_clamped.fract();
 
-            let estimated_precise_size =
-                vqt[lower_bin] * (1.0 - fract) + vqt[upper_bin] * fract;
+            let estimated_precise_size = vqt[lower_bin] * (1.0 - fract) + vqt[upper_bin] * fract;
 
             Some(ContinuousPeak {
                 center: estimated_precise_center_clamped,

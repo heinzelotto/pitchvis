@@ -155,6 +155,16 @@ pub fn update_display_to_system(
             &Mesh2d,
             &mut MeshMaterial2d<ColorMaterial>,
         )>,
+        Query<
+            (
+                &mut Visibility,
+                &mut Transform,
+                &mut Mesh2d,
+                &mut MeshMaterial2d<ColorMaterial>,
+            ),
+            With<HarmonicLine>,
+        >,
+        Query<(&mut Text2d, &mut Visibility), With<ChordDisplay>>,
     )>,
     ResMut<Assets<ColorMaterial>>,
     ResMut<Assets<NoisyColorMaterial>>,
@@ -166,13 +176,6 @@ pub fn update_display_to_system(
     Res<Persistent<SettingsState>>,
     Res<Time>,
     Query<(&mut Camera, Option<&mut Bloom>, Ref<Projection>)>,
-    Query<(
-        &mut Visibility,
-        &mut Transform,
-        &mut Mesh2d,
-        &mut MeshMaterial2d<ColorMaterial>,
-    ), With<HarmonicLine>>,
-    Query<(&mut Text2d, &mut Visibility), With<ChordDisplay>>,
 ) -> Result<()> {
     let range = range.clone();
     move |set: ParamSet<(
@@ -196,12 +199,15 @@ pub fn update_display_to_system(
             &Mesh2d,
             &mut MeshMaterial2d<ColorMaterial>,
         )>,
-        Query<(
-            &mut Visibility,
-            &mut Transform,
-            &mut Mesh2d,
-            &mut MeshMaterial2d<ColorMaterial>,
-        ), With<HarmonicLine>>,
+        Query<
+            (
+                &mut Visibility,
+                &mut Transform,
+                &mut Mesh2d,
+                &mut MeshMaterial2d<ColorMaterial>,
+            ),
+            With<HarmonicLine>,
+        >,
         Query<(&mut Text2d, &mut Visibility), With<ChordDisplay>>,
     )>,
           color_materials: ResMut<Assets<ColorMaterial>>,

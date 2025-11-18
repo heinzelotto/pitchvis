@@ -939,10 +939,7 @@ impl Vqt {
         // Apply normalization factor
         // The old code did: FFT[N] → IFFT/N → decimate by M → FFT[N/M]
         // Mathematical analysis shows: FFT_decimated[k] = FFT_original[k] / M
-        result
-            .iter()
-            .map(|z| z / sr_scaling as f32)
-            .collect()
+        result.iter().map(|z| z / sr_scaling as f32).collect()
     }
     //#
 

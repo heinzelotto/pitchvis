@@ -1,6 +1,9 @@
 use super::util::calculate_spiral_points;
 use super::{material::NoisyColorMaterial, LineList, PitchBall, PitchNameText, Spectrum};
-use super::{CylinderEntityListResource, GlissandoCurve, GlissandoCurveEntityListResource, SpiderNetSegment, CLEAR_COLOR_NEUTRAL};
+use super::{
+    CylinderEntityListResource, GlissandoCurve, GlissandoCurveEntityListResource, SpiderNetSegment,
+    CLEAR_COLOR_NEUTRAL,
+};
 use bevy::camera::ScalingMode;
 use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::post_process::bloom::{Bloom, BloomCompositeMode, BloomPrefilter};
@@ -327,7 +330,11 @@ fn spawn_pitch_names_text(
     }
 }
 
-fn spawn_harmonic_lines(commands: &mut Commands, meshes: &mut ResMut<Assets<Mesh>>, color_materials: &mut ResMut<Assets<ColorMaterial>>) {
+fn spawn_harmonic_lines(
+    commands: &mut Commands,
+    meshes: &mut ResMut<Assets<Mesh>>,
+    color_materials: &mut ResMut<Assets<ColorMaterial>>,
+) {
     // Spawn a single entity that will hold all harmonic lines
     // The mesh will be dynamically updated in the update system
     use super::{HarmonicLine, LineList};
@@ -347,7 +354,7 @@ fn spawn_harmonic_lines(commands: &mut Commands, meshes: &mut ResMut<Assets<Mesh
             ..default()
         })),
         Transform::from_xyz(0.0, 0.0, -0.015), // Behind pitch balls but in front of background
-        Visibility::Hidden, // Hidden by default, shown when chords are detected
+        Visibility::Hidden,                    // Hidden by default, shown when chords are detected
     ));
 }
 
@@ -388,9 +395,8 @@ fn spawn_glissando_curves(
             thickness: 0.05,
         });
 
-        let material = color_materials.add(ColorMaterial::from_color(Color::srgba(
-            1.0, 1.0, 1.0, 0.0,
-        )));
+        let material =
+            color_materials.add(ColorMaterial::from_color(Color::srgba(1.0, 1.0, 1.0, 0.0)));
 
         let entity = commands
             .spawn((

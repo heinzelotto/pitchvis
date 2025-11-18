@@ -72,7 +72,8 @@ pub fn detect_chord(
     let mut pitch_classes: HashMap<usize, f32> = HashMap::new();
     for (&bin, &strength) in active_bins.iter() {
         let semitone = (bin * 12) / buckets_per_octave as usize;
-        let pitch_class = semitone % 12;
+        // the bins are indexed starting from A, the chords from C, three semitones higher
+        let pitch_class = (semitone + 3) % 12;
         *pitch_classes.entry(pitch_class).or_insert(0.0) += strength;
     }
 
@@ -82,7 +83,8 @@ pub fn detect_chord(
     }
 
     // Find the pitch class with the highest power (likely root)
-    let mut pitch_classes_vec: Vec<(usize, f32)> = pitch_classes.iter()
+    let mut pitch_classes_vec: Vec<(usize, f32)> = pitch_classes
+        .iter()
         .map(|(&pc, &power)| (pc, power))
         .collect();
     pitch_classes_vec.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
@@ -107,7 +109,8 @@ pub fn detect_chord(
             // 2. Root note power relative to other notes
             let total_power: f32 = pitch_classes_vec.iter().map(|(_, p)| p).sum();
             let root_ratio = root_power / total_power;
-            let pattern_match = intervals.len() as f32 / expected_notes_for_quality(&quality) as f32;
+            let pattern_match =
+                intervals.len() as f32 / expected_notes_for_quality(&quality) as f32;
             let confidence = (root_ratio * 0.5 + pattern_match * 0.5).min(1.0);
 
             return Some(DetectedChord {

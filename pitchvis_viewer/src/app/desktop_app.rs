@@ -46,7 +46,8 @@ pub fn main_fun() -> Result<()> {
     let update_ml_system = crate::ml_system::update_ml_to_system();
 
     #[cfg(feature = "ml")]
-    let ml_model_resource = crate::ml_system::MlModelResource(crate::ml_system::MlModel::new("model.pt"));
+    let ml_model_resource =
+        crate::ml_system::MlModelResource(crate::ml_system::MlModel::new("model.pt"));
 
     // Platform-specific window configuration
     let window_config = Window {

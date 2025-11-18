@@ -96,7 +96,10 @@ fn build(target: BuildTarget) -> Result<()> {
     match target {
         BuildTarget::Desktop { release } => build_desktop(release)?,
         BuildTarget::Wasm { release, rust_only } => build_wasm(release, rust_only)?,
-        BuildTarget::Android { release, skip_setup } => build_android(release, skip_setup)?,
+        BuildTarget::Android {
+            release,
+            skip_setup,
+        } => build_android(release, skip_setup)?,
     }
     Ok(())
 }
@@ -119,8 +122,7 @@ fn build_desktop(release: bool) -> Result<()> {
         cmd.arg("--features").arg("bevy/dynamic_linking");
     }
 
-    let status = cmd.status()
-        .context("Failed to execute cargo build")?;
+    let status = cmd.status().context("Failed to execute cargo build")?;
 
     if !status.success() {
         anyhow::bail!("Build failed");
@@ -221,8 +223,7 @@ fn build_android(release: bool, skip_setup: bool) -> Result<()> {
             .join("toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so");
         let jni_libs = android_dir.join("app/src/main/jniLibs/arm64-v8a");
 
-        std::fs::create_dir_all(&jni_libs)
-            .context("Failed to create jniLibs directory")?;
+        std::fs::create_dir_all(&jni_libs).context("Failed to create jniLibs directory")?;
 
         std::fs::copy(&libcpp, jni_libs.join("libc++_shared.so"))
             .context("Failed to copy libc++_shared.so")?;
@@ -260,8 +261,9 @@ fn build_android(release: bool, skip_setup: bool) -> Result<()> {
         cmd.arg("--release");
     }
 
-    let status = cmd.status()
-        .context("Failed to execute cargo ndk. Make sure cargo-ndk is installed: cargo install cargo-ndk")?;
+    let status = cmd.status().context(
+        "Failed to execute cargo ndk. Make sure cargo-ndk is installed: cargo install cargo-ndk",
+    )?;
 
     if !status.success() {
         anyhow::bail!("cargo ndk build failed");
@@ -269,8 +271,16 @@ fn build_android(release: bool, skip_setup: bool) -> Result<()> {
 
     // Build Android app with Gradle
     println!("📱 Building Android app with Gradle...");
-    let gradle_cmd = if cfg!(windows) { "gradlew.bat" } else { "./gradlew" };
-    let gradle_task = if release { "bundleRelease" } else { "assembleDebug" };
+    let gradle_cmd = if cfg!(windows) {
+        "gradlew.bat"
+    } else {
+        "./gradlew"
+    };
+    let gradle_task = if release {
+        "bundleRelease"
+    } else {
+        "assembleDebug"
+    };
 
     let status = Command::new(gradle_cmd)
         .current_dir(&android_dir)
@@ -324,8 +334,7 @@ fn run(profile: Profile, extra_args: Vec<String>) -> Result<()> {
         cmd.env("RUST_LOG", "error,pitchvis_analysis=debug");
     }
 
-    let status = cmd.status()
-        .context("Failed to execute cargo run")?;
+    let status = cmd.status().context("Failed to execute cargo run")?;
 
     if !status.success() {
         anyhow::bail!("Run failed");
@@ -366,7 +375,11 @@ fn clean(target: CleanTarget) -> Result<()> {
         CleanTarget::Android => {
             println!("🧹 Cleaning Android build artifacts...");
             let android_dir = project_root().join("pitchvis_viewer/android");
-            let gradle_cmd = if cfg!(windows) { "gradlew.bat" } else { "./gradlew" };
+            let gradle_cmd = if cfg!(windows) {
+                "gradlew.bat"
+            } else {
+                "./gradlew"
+            };
 
             let status = Command::new(gradle_cmd)
                 .current_dir(&android_dir)

@@ -362,7 +362,10 @@ fn main() -> AppExit {
     );
 
     // Android-specific: Add lifecycle event handler and UI visibility handler
-    app.add_systems(Update, (handle_lifetime_events_system, handle_android_ui_visibility));
+    app.add_systems(
+        Update,
+        (handle_lifetime_events_system, handle_android_ui_visibility),
+    );
 
     app.run()
 }
