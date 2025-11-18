@@ -55,7 +55,7 @@ pub fn update_display(
             ),
             With<HarmonicLine>,
         >,
-        Query<(&mut Text2d, &mut Visibility), With<ChordDisplay>>,
+        Query<(&mut Text2d, &mut TextColor, &mut Visibility), With<ChordDisplay>>,
     )>,
     mut color_materials: ResMut<Assets<ColorMaterial>>,
     mut noisy_color_materials: ResMut<Assets<NoisyColorMaterial>>,
@@ -786,7 +786,7 @@ fn toggle_background(
 }
 
 fn update_chord_display(
-    chord_display_query: &mut Query<(&mut Text2d, &mut Visibility), With<ChordDisplay>>,
+    chord_display_query: &mut Query<(&mut Text2d, &mut TextColor, &mut Visibility), With<ChordDisplay>>,
     analysis_state: &AnalysisState,
     settings_state: &Res<Persistent<SettingsState>>,
 ) {
@@ -797,11 +797,16 @@ fn update_chord_display(
     );
 
     // Update chord display
-    if let Ok((mut text, mut visibility)) = chord_display_query.single_mut() {
+    if let Ok((mut text, mut text_color, mut visibility)) = chord_display_query.single_mut() {
         if settings_state.enable_chord_recognition {
             if let Some(chord) = &analysis_state.detected_chord {
                 if should_show_visuals && chord.confidence > 0.3 {
                     **text = chord.name();
+
+                    // Set color based on root note
+                    let root_color = pitchvis_colors::COLORS[chord.root];
+                    **text_color = Color::srgba(root_color[0], root_color[1], root_color[2], 0.9);
+
                     *visibility = Visibility::Visible;
                 } else {
                     *visibility = Visibility::Hidden;
