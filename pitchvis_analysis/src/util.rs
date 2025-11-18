@@ -156,7 +156,7 @@ mod tests {
 
     #[test]
     fn test_ema_basic() {
-        let mut ema_low_fps = EmaMeasurement::new(Duration::from_secs(1), 0.0);
+        let mut ema_low_fps = EmaMeasurement::new(Some(Duration::from_secs(1)), 0.0);
         ema_low_fps.update_with_timestep(1.0, Duration::from_millis(250));
         ema_low_fps.update_with_timestep(1.0, Duration::from_millis(250));
         println!("Low FPS EMA: {:.02}", ema_low_fps.get());
@@ -170,7 +170,7 @@ mod tests {
         ema_low_fps.update_with_timestep(4.0, Duration::from_millis(250));
         println!("Low FPS EMA: {:.02}", ema_low_fps.get());
 
-        let mut ema_high_fps = EmaMeasurement::new(Duration::from_secs(1), 0.0);
+        let mut ema_high_fps = EmaMeasurement::new(Some(Duration::from_secs(1)), 0.0);
         ema_high_fps.update_with_timestep(1.0, Duration::from_millis(125));
         ema_high_fps.update_with_timestep(1.0, Duration::from_millis(125));
         ema_high_fps.update_with_timestep(1.0, Duration::from_millis(125));
@@ -209,25 +209,25 @@ mod tests {
         const N_LOW: usize = 3;
         const TIMESTEP_LOW_FPS: Duration = Duration::from_millis(500 / N_LOW as u64);
 
-        let mut ema_high_fps = EmaMeasurement::new(TIME_HORIZON, 0.0);
+        let mut ema_high_fps = EmaMeasurement::new(Some(TIME_HORIZON), 0.0);
         for _ in 0..N_HIGH {
             ema_high_fps.update_with_timestep(NEW_VALUE, TIMESTEP_HIGH_FPS);
         }
         println!("High FPS EMA: {:.02}", ema_high_fps.get());
 
-        let mut ema_medium_fps = EmaMeasurement::new(Duration::from_secs(1), 0.0);
+        let mut ema_medium_fps = EmaMeasurement::new(Some(Duration::from_secs(1)), 0.0);
         for _ in 0..N_MEDIUM {
             ema_medium_fps.update_with_timestep(NEW_VALUE, TIMESTEP_MEDIUM_FPS);
         }
         println!("Medium FPS EMA: {:.02}", ema_medium_fps.get());
 
-        let mut ema_low_fps = EmaMeasurement::new(Duration::from_secs(1), 0.0);
+        let mut ema_low_fps = EmaMeasurement::new(Some(Duration::from_secs(1)), 0.0);
         for _ in 0..N_LOW {
             ema_low_fps.update_with_timestep(NEW_VALUE, TIMESTEP_LOW_FPS);
         }
         println!("Low FPS EMA: {:.02}", ema_low_fps.get());
 
-        let mut ema_calculated = EmaMeasurement::new(Duration::from_secs(1), 0.0);
+        let mut ema_calculated = EmaMeasurement::new(Some(Duration::from_secs(1)), 0.0);
         let n_horizon_high_fps = TIME_HORIZON.as_secs_f32() / TIMESTEP_HIGH_FPS.as_secs_f32();
         let alpha_high_fps = 2.0 / (n_horizon_high_fps + 1.0);
         ema_calculated.update_with_alpha(NEW_VALUE, 1.0 - (-alpha_high_fps * N_HIGH as f32).exp());
