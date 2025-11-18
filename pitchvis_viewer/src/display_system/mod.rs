@@ -51,6 +51,9 @@ pub struct GlissandoCurve {
     pub index: usize,
 }
 
+#[derive(Component)]
+pub struct RootNoteSlice;
+
 #[derive(PartialEq, Serialize, Deserialize)]
 pub enum DisplayMode {
     Normal,
@@ -165,6 +168,7 @@ pub fn update_display_to_system(
             With<HarmonicLine>,
         >,
         Query<(&mut Text2d, &mut Visibility), With<ChordDisplay>>,
+        Query<(&mut Visibility, &Mesh2d, &mut MeshMaterial2d<ColorMaterial>), With<RootNoteSlice>>,
     )>,
     ResMut<Assets<ColorMaterial>>,
     ResMut<Assets<NoisyColorMaterial>>,
@@ -209,6 +213,7 @@ pub fn update_display_to_system(
             With<HarmonicLine>,
         >,
         Query<(&mut Text2d, &mut Visibility), With<ChordDisplay>>,
+        Query<(&mut Visibility, &Mesh2d, &mut MeshMaterial2d<ColorMaterial>), With<RootNoteSlice>>,
     )>,
           color_materials: ResMut<Assets<ColorMaterial>>,
           noisy_color_materials: ResMut<Assets<NoisyColorMaterial>>,

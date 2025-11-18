@@ -44,6 +44,12 @@ pub struct SettingsState {
     pub enable_chord_recognition: bool,
     #[serde(default = "default_true")]
     pub enable_harmonic_lines: bool,
+    #[serde(default = "default_false")]
+    pub enable_root_note_tinting: bool,
+}
+
+fn default_false() -> bool {
+    false
 }
 
 fn default_true() -> bool {
@@ -661,6 +667,7 @@ pub enum ButtonAction {
     ToggleGlissando,
     ToggleChordRecognition,
     ToggleHarmonicLines,
+    ToggleRootNoteTinting,
 }
 
 #[derive(Component)]
@@ -959,6 +966,33 @@ pub fn setup_feature_toggle_buttons(
                     TextColor(Color::WHITE),
                     text_font.clone(),
                 ));
+
+            // Root Note Tinting toggle
+            let (bg_color, border_color) = button_colors(settings.enable_root_note_tinting);
+            parent
+                .spawn((
+                    Button,
+                    Node {
+                        ..button_node.clone()
+                    },
+                    bg_color,
+                    border_color,
+                    BorderRadius::MAX,
+                    ButtonAction::ToggleRootNoteTinting,
+                ))
+                .insert(ConsumesPressEvents)
+                .with_child((
+                    Text::new(format!(
+                        "Root Tinting: {}",
+                        if settings.enable_root_note_tinting {
+                            "On"
+                        } else {
+                            "Off"
+                        }
+                    )),
+                    TextColor(Color::WHITE),
+                    text_font.clone(),
+                ));
         });
 }
 
@@ -1119,6 +1153,27 @@ pub fn update_button_system(
                     update_toggle_button_colors(
                         entity,
                         settings.enable_harmonic_lines,
+                        &mut bg_color_query,
+                        &mut border_color_query,
+                    );
+                }
+                ButtonAction::ToggleRootNoteTinting => {
+                    settings
+                        .update(|settings| {
+                            settings.enable_root_note_tinting = !settings.enable_root_note_tinting;
+                        })
+                        .expect("failed to update settings");
+                    **text = format!(
+                        "Root Tinting: {}",
+                        if settings.enable_root_note_tinting {
+                            "On"
+                        } else {
+                            "Off"
+                        }
+                    );
+                    update_toggle_button_colors(
+                        entity,
+                        settings.enable_root_note_tinting,
                         &mut bg_color_query,
                         &mut border_color_query,
                     );
@@ -1368,6 +1423,7 @@ pub fn create_persistent_settings(
             enable_glissando: true,
             enable_chord_recognition: true,
             enable_harmonic_lines: true,
+            enable_root_note_tinting: false,
         })
         .revertible(true)
         .revert_to_default_on_deserialization_errors(true)

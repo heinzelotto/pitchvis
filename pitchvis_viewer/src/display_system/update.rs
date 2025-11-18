@@ -1,8 +1,8 @@
 use super::{
     material::NoisyColorMaterial, util::bin_to_spiral, BassCylinder, ChordDisplay,
     CylinderEntityListResource, DisplayMode, GlissandoCurve, GlissandoCurveEntityListResource,
-    HarmonicLine, LineList, PitchBall, PitchNameText, Spectrum, SpiderNetSegment, VisualsMode,
-    CLEAR_COLOR_GALAXY, CLEAR_COLOR_NEUTRAL,
+    HarmonicLine, LineList, PitchBall, PitchNameText, RootNoteSlice, Spectrum, SpiderNetSegment,
+    VisualsMode, CLEAR_COLOR_GALAXY, CLEAR_COLOR_NEUTRAL,
 };
 use bevy::{post_process::bloom::Bloom, prelude::*};
 use bevy_persistent::Persistent;
@@ -56,6 +56,7 @@ pub fn update_display(
             With<HarmonicLine>,
         >,
         Query<(&mut Text2d, &mut Visibility), With<ChordDisplay>>,
+        Query<(&mut Visibility, &Mesh2d, &mut MeshMaterial2d<ColorMaterial>), With<RootNoteSlice>>,
     )>,
     mut color_materials: ResMut<Assets<ColorMaterial>>,
     mut noisy_color_materials: ResMut<Assets<NoisyColorMaterial>>,
@@ -165,6 +166,18 @@ pub fn update_display(
                 *visibility = Visibility::Hidden;
             }
         }
+    }
+
+    // Update root note slice visualization
+    {
+        let mut root_slice = set.p8();
+        update_root_note_slice(
+            &mut root_slice,
+            &mut meshes,
+            &mut color_materials,
+            &analysis_state.0,
+            &settings_state,
+        );
     }
 
     Ok(())
@@ -932,6 +945,110 @@ fn hide_all_glissandos(
 ) {
     for (_, mut visibility, _, _) in &mut glissando_curves {
         *visibility = Visibility::Hidden;
+    }
+}
+
+fn update_root_note_slice(
+    mut root_slice_query: Query<(
+        &mut Visibility,
+        &Mesh2d,
+        &mut MeshMaterial2d<ColorMaterial>,
+    ), With<RootNoteSlice>>,
+    meshes: &mut ResMut<Assets<Mesh>>,
+    color_materials: &mut ResMut<Assets<ColorMaterial>>,
+    analysis_state: &AnalysisState,
+    settings_state: &Res<Persistent<SettingsState>>,
+) {
+    if let Ok((mut visibility, mesh_handle, material_handle)) = root_slice_query.single_mut() {
+        // Check if feature is enabled and chord is detected
+        if !settings_state.enable_root_note_tinting {
+            *visibility = Visibility::Hidden;
+            return;
+        }
+
+        if let Some(chord) = &analysis_state.detected_chord {
+            if chord.confidence > 0.5 {
+                // Get the root note color
+                let root_color_rgb = COLORS[chord.root];
+
+                // Calculate the angle for the root note
+                // Notes are arranged in a circle, starting from C at 3 o'clock (0 radians)
+                // and going counter-clockwise
+                let angle_per_note = std::f32::consts::PI * 2.0 / 12.0;
+                let root_angle = chord.root as f32 * angle_per_note;
+
+                // Create a pizza slice that spans about 30 degrees (PI/6) on each side
+                let slice_width = std::f32::consts::PI / 6.0;
+                let start_angle = root_angle - slice_width / 2.0;
+                let end_angle = root_angle + slice_width / 2.0;
+
+                // Create the slice mesh - from center to outer radius
+                let outer_radius = 20.0; // Make it large enough to cover the entire view
+                let segments = 20; // Number of segments for smooth curve
+
+                let mut vertices = Vec::new();
+                let mut indices = Vec::new();
+
+                // Center point
+                vertices.push(([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], [0.5, 0.5]));
+
+                // Create arc vertices
+                for i in 0..=segments {
+                    let t = i as f32 / segments as f32;
+                    let angle = start_angle + t * (end_angle - start_angle);
+                    let x = angle.cos() * outer_radius;
+                    let y = angle.sin() * outer_radius;
+                    vertices.push(([x, y, 0.0], [0.0, 0.0, 1.0], [0.0, 0.0]));
+                }
+
+                // Create triangles
+                for i in 0..segments {
+                    indices.push(0); // Center
+                    indices.push((i + 1) as u32);
+                    indices.push((i + 2) as u32);
+                }
+
+                // Create the mesh
+                use bevy::render::mesh::{Indices, PrimitiveTopology};
+                use bevy::render::render_asset::RenderAssetUsages;
+
+                let mut mesh = Mesh::new(
+                    PrimitiveTopology::TriangleList,
+                    RenderAssetUsages::default(),
+                );
+
+                let positions: Vec<_> = vertices.iter().map(|(p, _, _)| *p).collect();
+                let normals: Vec<_> = vertices.iter().map(|(_, n, _)| *n).collect();
+                let uvs: Vec<_> = vertices.iter().map(|(_, _, uv)| *uv).collect();
+
+                mesh.insert_indices(Indices::U32(indices));
+                mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+                mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+                mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
+
+                // Update the mesh
+                if let Some(mesh_asset) = meshes.get_mut(&mesh_handle.0) {
+                    *mesh_asset = mesh;
+                }
+
+                // Update the color with alpha based on confidence
+                let alpha = (chord.confidence - 0.5) * 0.3; // Scale 0.5-1.0 confidence to 0.0-0.15 alpha
+                if let Some(material) = color_materials.get_mut(&material_handle.0) {
+                    material.color = Color::srgba(
+                        root_color_rgb[0],
+                        root_color_rgb[1],
+                        root_color_rgb[2],
+                        alpha.clamp(0.0, 0.15),
+                    );
+                }
+
+                *visibility = Visibility::Visible;
+            } else {
+                *visibility = Visibility::Hidden;
+            }
+        } else {
+            *visibility = Visibility::Hidden;
+        }
     }
 }
 
