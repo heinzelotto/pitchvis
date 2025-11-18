@@ -180,6 +180,7 @@ pub fn update_display_to_system(
     Res<Persistent<SettingsState>>,
     Res<Time>,
     Query<(&mut Camera, Option<&mut Bloom>, Ref<Projection>)>,
+    Query<(&mut Visibility, &Mesh2d, &mut MeshMaterial2d<ColorMaterial>), With<RootNoteSlice>>,
 ) -> Result<()> {
     let range = range.clone();
     move |set: ParamSet<(
@@ -212,7 +213,7 @@ pub fn update_display_to_system(
             ),
             With<HarmonicLine>,
         >,
-        Query<(&mut Text2d, &mut TextColor, &mut Visibility), With<ChordDisplay>>,
+        Query<(&mut Text2d, &mut Visibility), With<ChordDisplay>>,
     )>,
           root_node_query: Query<
         (&mut Visibility, &Mesh2d, &mut MeshMaterial2d<ColorMaterial>),
@@ -227,7 +228,8 @@ pub fn update_display_to_system(
           glissando_curve_entities: Res<GlissandoCurveEntityListResource>,
           settings_state: Res<Persistent<SettingsState>>,
           run_time: Res<Time>,
-          camera: Query<(&mut Camera, Option<&mut Bloom>, Ref<Projection>)>| {
+          camera: Query<(&mut Camera, Option<&mut Bloom>, Ref<Projection>)>,
+          root_slice: Query<(&mut Visibility, &Mesh2d, &mut MeshMaterial2d<ColorMaterial>), With<RootNoteSlice>>| {
         update::update_display(
             &range,
             set,
@@ -242,6 +244,7 @@ pub fn update_display_to_system(
             settings_state,
             run_time,
             camera,
+            root_slice,
         )?;
 
         Ok(())

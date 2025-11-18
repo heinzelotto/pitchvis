@@ -75,6 +75,10 @@ pub fn update_display(
         Option<&mut Bloom>,
         Ref<Projection>, // Ref because we want to check `is_changed` later
     )>,
+    mut root_slice: Query<
+        (&mut Visibility, &Mesh2d, &mut MeshMaterial2d<ColorMaterial>),
+        With<RootNoteSlice>,
+    >,
 ) -> Result<()> {
     fade_pitch_balls(set.p0(), &mut noisy_color_materials, &run_time, range);
 
