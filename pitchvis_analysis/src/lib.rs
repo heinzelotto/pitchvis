@@ -1,5 +1,6 @@
 pub mod analysis;
 pub mod chord;
+pub mod chord_enhanced;
 pub mod util;
 pub mod vqt;
 

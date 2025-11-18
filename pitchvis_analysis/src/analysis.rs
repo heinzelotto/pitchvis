@@ -1339,12 +1339,15 @@ impl AnalysisState {
         }
 
         // Detect chord (minimum 2 notes)
-        let new_detection = crate::chord::detect_chord(
-            &active_bins,
-            self.range.buckets_per_octave,
-            self.range.min_freq,
-            2,
-        );
+        // let new_detection = crate::chord::detect_chord(
+        //     &active_bins,
+        //     self.range.buckets_per_octave,
+        //     self.range.min_freq,
+        //     2,
+        // );
+        // Detect chord using enhanced algorithm with rust-music-theory (minimum 2 notes)
+        let new_detection =
+            crate::chord_enhanced::detect_chord_enhanced(&active_bins, self.range.buckets_per_octave as usize, 2);
 
         // Apply temporal smoothing and hysteresis to prevent oscillation
         const MIN_CONFIDENCE_THRESHOLD: f32 = 0.5; // Minimum confidence to display a chord
