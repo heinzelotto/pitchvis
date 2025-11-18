@@ -1331,8 +1331,12 @@ impl AnalysisState {
         }
 
         // Detect chord (minimum 2 notes)
-        self.detected_chord =
-            crate::chord::detect_chord(&active_bins, self.range.buckets_per_octave, 2);
+        self.detected_chord = crate::chord::detect_chord(
+            &active_bins,
+            self.range.buckets_per_octave,
+            self.range.min_freq,
+            2,
+        );
     }
 
     fn update_peak_tracking(&mut self, frame_time: Duration) {
