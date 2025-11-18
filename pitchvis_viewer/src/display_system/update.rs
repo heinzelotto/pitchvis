@@ -971,7 +971,7 @@ fn update_root_note_slice(
     >,
     meshes: &mut ResMut<Assets<Mesh>>,
     color_materials: &mut ResMut<Assets<ColorMaterial>>,
-    analysis_state: &AnalysisState,
+    analysis_state: &AnalysisStateResource,
     settings_state: &Res<Persistent<SettingsState>>,
 ) {
     if let Ok((mut visibility, mesh_handle, material_handle)) = root_slice_query.single_mut() {
@@ -981,7 +981,7 @@ fn update_root_note_slice(
             return;
         }
 
-        if let Some(chord) = &analysis_state.detected_chord {
+        if let Some(chord) = &analysis_state.0.detected_chord {
             if chord.confidence > 0.5 {
                 // Get the root note color
                 let root_color_rgb = COLORS[chord.root];
