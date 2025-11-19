@@ -1345,6 +1345,10 @@ impl AnalysisState {
             }
         }
 
+        // TODO: experiment with separate (longer) smoothing just for the purpose of chord detection.
+        // Later, smoothing of the result is done, but this makes no sense. The smoothing must take
+        // place before the chord analysis.
+
         // Detect chord (minimum 2 notes)
         // let new_detection = crate::chord::detect_chord(
         //     &active_bins,
@@ -1352,11 +1356,11 @@ impl AnalysisState {
         //     self.range.min_freq,
         //     2,
         // );
-        // Detect chord using enhanced algorithm with rust-music-theory (minimum 2 notes)
+        // Detect chord using enhanced algorithm with rust-music-theory (minimum 3 notes)
         let new_detection = crate::chord_enhanced::detect_chord_enhanced(
             &active_bins,
             self.range.buckets_per_octave as usize,
-            2,
+            3,
         );
 
         // Apply temporal smoothing and hysteresis to prevent oscillation

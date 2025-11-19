@@ -43,6 +43,7 @@ enum BuildTarget {
         /// Build in release mode
         #[arg(short, long)]
         release: bool,
+        // TODO: always build in release, but toggle `--features bevy/dynamic_linking,bevy/file_watcher`
     },
     /// Build for WASM/web
     Wasm {
