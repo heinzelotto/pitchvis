@@ -446,4 +446,5 @@ fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
     // high 1-(1-calmness)^3 => more full disk, less ring
     let ring_strength = clamp(1.0-calmness * 1.65, 0.0, 1.0)*clamp(1.0-calmness * 1.65, 0.0, 1.0)*clamp(1.0-calmness * 1.65, 0.0, 1.0);
     return smooth_circle_boundary(mix(material_color, final_color, ring_strength), uv);
+    //return smooth_circle_boundary(material_color, uv);
 }

@@ -143,7 +143,7 @@ pub fn update_display(
 
     show_hide_spider_net(set.p4(), &settings_state);
 
-    //toggle_background(&mut camera, &settings_state, analysis_state)?;
+    toggle_background(&mut camera, &settings_state, analysis_state)?;
 
     // Handle harmonic lines and chord display
     // ParamSet doesn't allow extracting multiple queries at once, so we handle them in sequence
@@ -429,7 +429,7 @@ fn update_pitch_balls(
 
             // scale down balls in Performance Mode
             let ball_scale_factor = if settings_state.visuals_mode == VisualsMode::Performance {
-                0.5
+                0.7
             } else {
                 1.0
             };
@@ -771,7 +771,7 @@ fn show_hide_spider_net(
 fn toggle_background(
     camera: &mut Query<(&mut Camera, Option<&mut Bloom>, Ref<Projection>)>,
     settings_state: &Res<Persistent<SettingsState>>,
-    analysis_state: &AnalysisState,
+    _analysis_state: &AnalysisState,
 ) -> Result<()> {
     let (mut cam, _, _) = camera.single_mut()?;
 
@@ -781,32 +781,32 @@ fn toggle_background(
     };
 
     // Tint background based on detected chord root note
-    if let Some(chord) = &analysis_state.detected_chord {
-        if chord.confidence > 0.5 {
-            // Get color for the root note
-            let root_color_rgb = COLORS[chord.root];
-            let tint_strength = 0.05; // Subtle tint
+    // if let Some(chord) = &analysis_state.detected_chord {
+    //     if chord.confidence > 0.5 {
+    //         // Get color for the root note
+    //         let root_color_rgb = COLORS[chord.root];
+    //         let tint_strength = 0.05; // Subtle tint
 
-            // Mix base color with root note color
-            let base = match base_color {
-                ClearColorConfig::Custom(c) => c,
-                _ => Color::srgb(0.23, 0.23, 0.25),
-            };
+    //         // Mix base color with root note color
+    //         let base = match base_color {
+    //             ClearColorConfig::Custom(c) => c,
+    //             _ => Color::srgb(0.23, 0.23, 0.25),
+    //         };
 
-            let base_srgba = base.to_srgba();
-            let tinted = Color::srgb(
-                base_srgba.red * (1.0 - tint_strength) + root_color_rgb[0] * tint_strength,
-                base_srgba.green * (1.0 - tint_strength) + root_color_rgb[1] * tint_strength,
-                base_srgba.blue * (1.0 - tint_strength) + root_color_rgb[2] * tint_strength,
-            );
+    //         let base_srgba = base.to_srgba();
+    //         let tinted = Color::srgb(
+    //             base_srgba.red * (1.0 - tint_strength) + root_color_rgb[0] * tint_strength,
+    //             base_srgba.green * (1.0 - tint_strength) + root_color_rgb[1] * tint_strength,
+    //             base_srgba.blue * (1.0 - tint_strength) + root_color_rgb[2] * tint_strength,
+    //         );
 
-            cam.clear_color = ClearColorConfig::Custom(tinted);
-        } else {
-            cam.clear_color = base_color;
-        }
-    } else {
-        cam.clear_color = base_color;
-    }
+    //         cam.clear_color = ClearColorConfig::Custom(tinted);
+    //     } else {
+    //         cam.clear_color = base_color;
+    //     }
+    // } else {
+    cam.clear_color = base_color;
+    // }
 
     Ok(())
 }
