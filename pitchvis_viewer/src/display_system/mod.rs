@@ -13,9 +13,7 @@ use bevy_persistent::Persistent;
 use material::NoisyColorMaterial;
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    analysis_system::AnalysisStateResource, app::SettingsState, vqt_system::VqtResultResource,
-};
+use crate::{analysis_system::AnalysisStateResource, app::SettingsState};
 use pitchvis_analysis::vqt::VqtRange;
 
 const CLEAR_COLOR_NEUTRAL: ClearColorConfig =
@@ -173,7 +171,6 @@ pub fn update_display_to_system(
     ResMut<Assets<NoisyColorMaterial>>,
     ResMut<Assets<Mesh>>,
     Res<AnalysisStateResource>,
-    Res<VqtResultResource>,
     Res<CylinderEntityListResource>,
     Res<GlissandoCurveEntityListResource>,
     Res<Persistent<SettingsState>>,
@@ -231,7 +228,6 @@ pub fn update_display_to_system(
           noisy_color_materials: ResMut<Assets<NoisyColorMaterial>>,
           meshes: ResMut<Assets<Mesh>>,
           analysis_state: Res<AnalysisStateResource>,
-          vqt_result: Res<VqtResultResource>,
           cylinder_entities: Res<CylinderEntityListResource>,
           glissando_curve_entities: Res<GlissandoCurveEntityListResource>,
           settings_state: Res<Persistent<SettingsState>>,
@@ -258,7 +254,6 @@ pub fn update_display_to_system(
             noisy_color_materials,
             meshes,
             analysis_state,
-            vqt_result,
             cylinder_entities,
             glissando_curve_entities,
             settings_state,

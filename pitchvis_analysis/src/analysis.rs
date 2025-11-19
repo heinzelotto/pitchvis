@@ -507,9 +507,11 @@ impl AnalysisState {
         // Octave 0 (bass): 1.5x, Octave N (treble): 1.0x
         let x_vqt_smoothed = (0..n_buckets)
             .map(|bin_idx| {
-                let octave_fraction = bin_idx as f32 / range.buckets_per_octave as f32 / range.octaves as f32;
+                let octave_fraction =
+                    bin_idx as f32 / range.buckets_per_octave as f32 / range.octaves as f32;
                 let frequency_multiplier = 1.5 - 0.5 * octave_fraction;
-                let duration_ms = params.vqt_smoothing_duration_base.as_millis() as f32 * frequency_multiplier; // TODO: ?zero smoothing allowed
+                let duration_ms =
+                    params.vqt_smoothing_duration_base.as_millis() as f32 * frequency_multiplier; // TODO: ?zero smoothing allowed
                 EmaMeasurement::new(Some(Duration::from_millis(duration_ms as u64)), 0.0)
             })
             .collect::<Vec<_>>();
@@ -575,6 +577,7 @@ impl AnalysisState {
     /// - `new_duration`: The new smoothing duration to apply.
     pub fn update_vqt_smoothing_duration(&mut self, new_duration: Option<Duration>) {
         self.params.vqt_smoothing_duration_base = new_duration.unwrap_or(Duration::from_millis(90)); // FIXME: allow None
+                                                                                                     // FIXME: frequency based initialization is not done
         for ema in &mut self.x_vqt_smoothed {
             let current_value = ema.get();
             *ema = EmaMeasurement::new(new_duration, current_value);
@@ -626,7 +629,9 @@ impl AnalysisState {
             .zip(x_vqt.iter())
             .for_each(|((bin_idx, smoothed), x)| {
                 // Get base frequency-dependent duration
-                let octave_fraction = bin_idx as f32 / self.range.buckets_per_octave as f32 / self.range.octaves as f32;
+                let octave_fraction = bin_idx as f32
+                    / self.range.buckets_per_octave as f32
+                    / self.range.octaves as f32;
                 let frequency_multiplier = 1.5 - 0.5 * octave_fraction;
 
                 // Apply calmness multiplier

@@ -9,9 +9,7 @@ use bevy_persistent::Persistent;
 use itertools::Itertools;
 use std::collections::HashMap;
 
-use crate::{
-    analysis_system::AnalysisStateResource, app::SettingsState, vqt_system::VqtResultResource,
-};
+use crate::{analysis_system::AnalysisStateResource, app::SettingsState};
 use pitchvis_analysis::{
     analysis::{AnalysisState, ContinuousPeak, VibratoCategory},
     util::*,
@@ -61,7 +59,6 @@ pub fn update_display(
     mut noisy_color_materials: ResMut<Assets<NoisyColorMaterial>>,
     mut meshes: ResMut<Assets<Mesh>>,
     analysis_state: Res<AnalysisStateResource>,
-    vqt_result: Res<VqtResultResource>,
     cylinder_entities: Res<CylinderEntityListResource>,
     glissando_curve_entities: Res<GlissandoCurveEntityListResource>,
     settings_state: Res<Persistent<SettingsState>>,
@@ -135,7 +132,7 @@ pub fn update_display(
         &camera,
         &mut meshes,
         &settings_state,
-        &vqt_result,
+        analysis_state,
         range,
     )?;
 
@@ -651,7 +648,7 @@ fn update_spectrum(
     camera: &Query<(&mut Camera, Option<&mut Bloom>, Ref<Projection>)>,
     meshes: &mut ResMut<Assets<Mesh>>,
     settings_state: &Res<Persistent<SettingsState>>,
-    vqt_result: &Res<VqtResultResource>,
+    analysis_state: &AnalysisState,
     range: &VqtRange,
 ) -> Result<()> {
     let (mut visibility, mesh_handle, mut transform) = spectrum.single_mut()?;
@@ -679,28 +676,26 @@ fn update_spectrum(
             }
         }
 
-        let k_max = arg_max(
-            &vqt_result
-                .x_vqt
-                .iter()
-                .map(|p| p)
-                .cloned()
-                .collect::<Vec<f32>>(),
-        );
-        let max_size = vqt_result.x_vqt[k_max];
+        let x_vqt_smoothed = &analysis_state
+            .x_vqt_smoothed
+            .iter()
+            .map(|ema| ema.get())
+            .collect::<Vec<f32>>();
+
+        let k_max = arg_max(&x_vqt_smoothed);
+        let max_size = x_vqt_smoothed[k_max];
 
         let mut spectrum_mesh: Mesh = LineList {
-            lines: vqt_result
-                .x_vqt
+            lines: x_vqt_smoothed
                 .iter()
                 .enumerate()
-                .map(|(i, amp)| Vec3::new(i as f32 * 0.022, *amp / 10.0, 0.0))
+                .map(|(i, amp)| Vec3::new(i as f32 * 0.022, amp / 10.0, 0.0))
                 .tuple_windows()
                 .collect::<Vec<(Vec3, Vec3)>>(),
             thickness: 0.02,
         }
         .into();
-        let colors = (0..(vqt_result.x_vqt.len() - 1))
+        let colors = (0..(x_vqt_smoothed.len() - 1))
             .map(|i| {
                 let (r, g, b) = calculate_color(
                     range.buckets_per_octave,
@@ -712,8 +707,7 @@ fn update_spectrum(
                     GRAY_LEVEL,
                     10.0,
                 );
-                let color_coefficient =
-                    1.0 - (0.5 - vqt_result.x_vqt[i] / max_size / 2.0).powf(0.5);
+                let color_coefficient = 1.0 - (0.5 - x_vqt_smoothed[i] / max_size / 2.0).powf(0.5);
                 [
                     [r, g, b, color_coefficient],
                     [r, g, b, color_coefficient],
