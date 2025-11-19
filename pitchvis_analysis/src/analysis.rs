@@ -1328,6 +1328,10 @@ impl AnalysisState {
     }
 
     fn update_chord_detection(&mut self) {
+        // TODO: Make chord detection work not on root notes, but on actual precise pitch locations,
+        // so that we could also have e. g. a C#m chord that is actually centered around a frequency
+        // slightly lower than C#.
+
         use std::collections::HashMap;
 
         // Build map of active bins with their strengths

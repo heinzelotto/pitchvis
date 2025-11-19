@@ -997,6 +997,9 @@ fn update_root_note_slice(
             return;
         }
 
+        // TODO: make pizza slice be centered around actual precise bass note position and use color
+        // interpolation between pitch color and off-pitch gray.
+
         if let Some(chord) = &analysis_state.detected_chord {
             if chord.confidence > 0.5 {
                 // Get the root note color
@@ -1063,7 +1066,7 @@ fn update_root_note_slice(
                 }
 
                 // Update the color with alpha based on confidence
-                let alpha = (chord.confidence - 0.5) * 0.3; // Scale 0.5-1.0 confidence to 0.0-0.15 alpha
+                let alpha = (chord.confidence * chord.confidence - 0.5) * 0.3; // Scale 0.5-1.0 confidence to 0.0-0.15 alpha
                 if let Some(material) = color_materials.get_mut(&material_handle.0) {
                     material.color = Color::srgba(
                         root_color_rgb[0],
