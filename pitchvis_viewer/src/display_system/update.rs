@@ -288,6 +288,7 @@ fn update_pitch_balls(
                 EASING_POW,
             );
 
+            // FIXME: colors of pitch balls are not the same as colors of pitch names.
             let color_coefficient = 1.0 - (1.0 - size / max_size).powf(2.0);
 
             let (x, y, _) = bin_to_spiral(range.buckets_per_octave, center);
@@ -393,34 +394,41 @@ fn update_pitch_balls(
 
             // Tuning accuracy feedback for choir singers
             // Boost brightness for notes close to perfect tuning
-            let tuning_accuracy_boost = if settings_state.display_mode == DisplayMode::Normal
-                || settings_state.display_mode == DisplayMode::Debugging
-            {
-                // Calculate how far this note is from perfect tuning (in semitones)
-                let center_in_semitones = center * 12.0 / range.buckets_per_octave as f32;
-                let tuning_deviation_semitones =
-                    (center_in_semitones - center_in_semitones.round()).abs();
-                let tuning_deviation_cents = tuning_deviation_semitones * 100.0;
+            // let tuning_accuracy_boost = if settings_state.display_mode == DisplayMode::Normal
+            //     || settings_state.display_mode == DisplayMode::Debugging
+            // {
+            //     // Calculate how far this note is from perfect tuning (in semitones)
+            //     let center_in_semitones = center * 12.0 / range.buckets_per_octave as f32;
+            //     let tuning_deviation_semitones =
+            //         (center_in_semitones - center_in_semitones.round()).abs();
+            //     let tuning_deviation_cents = tuning_deviation_semitones * 100.0;
 
-                // Brightness boost for in-tune notes (< 10 cents = full boost)
-                // Linear falloff from 0-30 cents
-                let tuning_accuracy = (1.0 - (tuning_deviation_cents / 30.0).min(1.0)).max(0.0);
+            //     // Brightness boost for in-tune notes (< 10 cents = full boost)
+            //     // Linear falloff from 0-30 cents
+            //     let tuning_accuracy = (1.0 - (tuning_deviation_cents / 30.0).min(1.0)).max(0.0);
 
-                // Apply subtle brightness boost (10% max) for in-tune notes
-                1.0 + 0.1 * tuning_accuracy
-            } else {
-                1.0
-            };
+            //     // Apply subtle brightness boost (10% max) for in-tune notes
+            //     0.1 * tuning_accuracy
+            // } else {
+            //     0.0
+            // };
 
             // Apply tuning accuracy to color brightness
-            let current_color = color_mat.color;
-            color_mat.color = Color::srgba(
-                current_color.red * tuning_accuracy_boost,
-                current_color.green * tuning_accuracy_boost,
-                current_color.blue * tuning_accuracy_boost,
-                current_color.alpha,
-            )
-            .into();
+            // TODO: this is not together with the lightening already done in the shader, choose one
+            //color_mat.color = color_mat.color.lighter(tuning_accuracy_boost);
+
+            // Check that there is no clipping with the color values and clip if necessary
+            if (color_mat.color.red < 0.0 || color_mat.color.red > 1.0)
+                || (color_mat.color.green < 0.0 || color_mat.color.green > 1.0)
+                || (color_mat.color.blue < 0.0 || color_mat.color.blue > 1.0)
+            {
+                warn!("color out of bounds");
+                color_mat.color.red = color_mat.color.red.clamp(0.0, 1.0);
+                color_mat.color.green = color_mat.color.green.clamp(0.0, 1.0);
+                color_mat.color.blue = color_mat.color.blue.clamp(0.0, 1.0);
+            }
+
+            // FIXME: colors are glitching out, I don't know where it happens yet...
 
             // TODO: scale up new notes to make them more prominent
 
