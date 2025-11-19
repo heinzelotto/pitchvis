@@ -19,6 +19,7 @@ use super::common::{
     build_common_app, register_common_update_systems, register_startup_systems, PlatformConfig,
 };
 use crate::analysis_system;
+use crate::app::common::ScreenLockState;
 use crate::display_system;
 use crate::vqt_system;
 use pitchvis_analysis::vqt::VqtParameters;
@@ -65,10 +66,6 @@ fn handle_lifetime_events_system(
         }
     }
 }
-
-/// Resource to track the last applied UI visibility state
-#[derive(Resource)]
-struct LastUiVisibilityState(bool);
 
 /// System to hide/show Android navigation bar based on screen lock state
 ///
