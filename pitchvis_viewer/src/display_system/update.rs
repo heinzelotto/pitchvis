@@ -57,10 +57,6 @@ pub fn update_display(
         >,
         Query<(&mut Text2d, &mut TextColor, &mut Visibility), With<ChordDisplay>>,
     )>,
-    mut root_node: Query<
-        (&mut Visibility, &Mesh2d, &mut MeshMaterial2d<ColorMaterial>),
-        With<RootNoteSlice>,
-    >,
     mut color_materials: ResMut<Assets<ColorMaterial>>,
     mut noisy_color_materials: ResMut<Assets<NoisyColorMaterial>>,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -75,9 +71,19 @@ pub fn update_display(
         Option<&mut Bloom>,
         Ref<Projection>, // Ref because we want to check `is_changed` later
     )>,
-    mut root_slice: Query<
+    root_slice: Query<
         (&mut Visibility, &Mesh2d, &mut MeshMaterial2d<ColorMaterial>),
-        With<RootNoteSlice>,
+        (
+            With<RootNoteSlice>,
+            Without<PitchBall>,
+            Without<BassCylinder>,
+            Without<PitchNameText>,
+            Without<Spectrum>,
+            Without<SpiderNetSegment>,
+            Without<GlissandoCurve>,
+            Without<HarmonicLine>,
+            Without<ChordDisplay>,
+        ),
     >,
 ) -> Result<()> {
     fade_pitch_balls(set.p0(), &mut noisy_color_materials, &run_time, range);
@@ -178,10 +184,10 @@ pub fn update_display(
     // Update root note slice visualization
     {
         update_root_note_slice(
-            root_node,
+            root_slice,
             &mut meshes,
             &mut color_materials,
-            &analysis_state,
+            analysis_state,
             &settings_state,
         );
     }
@@ -967,11 +973,21 @@ fn hide_all_glissandos(
 fn update_root_note_slice(
     mut root_slice_query: Query<
         (&mut Visibility, &Mesh2d, &mut MeshMaterial2d<ColorMaterial>),
-        With<RootNoteSlice>,
+        (
+            With<RootNoteSlice>,
+            Without<PitchBall>,
+            Without<BassCylinder>,
+            Without<PitchNameText>,
+            Without<Spectrum>,
+            Without<SpiderNetSegment>,
+            Without<GlissandoCurve>,
+            Without<HarmonicLine>,
+            Without<ChordDisplay>,
+        ),
     >,
     meshes: &mut ResMut<Assets<Mesh>>,
     color_materials: &mut ResMut<Assets<ColorMaterial>>,
-    analysis_state: &AnalysisStateResource,
+    analysis_state: &AnalysisState,
     settings_state: &Res<Persistent<SettingsState>>,
 ) {
     if let Ok((mut visibility, mesh_handle, material_handle)) = root_slice_query.single_mut() {
@@ -981,16 +997,16 @@ fn update_root_note_slice(
             return;
         }
 
-        if let Some(chord) = &analysis_state.0.detected_chord {
+        if let Some(chord) = &analysis_state.detected_chord {
             if chord.confidence > 0.5 {
                 // Get the root note color
                 let root_color_rgb = COLORS[chord.root];
 
                 // Calculate the angle for the root note
-                // Notes are arranged in a circle, starting from C at 3 o'clock (0 radians)
-                // and going counter-clockwise
+                // Notes are arranged in a circle, starting from C at 12 o'clock (pi/2 radians)
+                // and going clockwise
                 let angle_per_note = std::f32::consts::PI * 2.0 / 12.0;
-                let root_angle = chord.root as f32 * angle_per_note;
+                let root_angle = chord.root as f32 * angle_per_note * -1.0 + 3.0 * angle_per_note;
 
                 // Create a pizza slice that spans about 30 degrees (PI/6) on each side
                 let slice_width = std::f32::consts::PI / 6.0;

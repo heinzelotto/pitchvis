@@ -169,7 +169,6 @@ pub fn update_display_to_system(
         >,
         Query<(&mut Text2d, &mut TextColor, &mut Visibility), With<ChordDisplay>>,
     )>,
-    Query<(&mut Visibility, &Mesh2d, &mut MeshMaterial2d<ColorMaterial>), With<RootNoteSlice>>,
     ResMut<Assets<ColorMaterial>>,
     ResMut<Assets<NoisyColorMaterial>>,
     ResMut<Assets<Mesh>>,
@@ -180,7 +179,20 @@ pub fn update_display_to_system(
     Res<Persistent<SettingsState>>,
     Res<Time>,
     Query<(&mut Camera, Option<&mut Bloom>, Ref<Projection>)>,
-    Query<(&mut Visibility, &Mesh2d, &mut MeshMaterial2d<ColorMaterial>), With<RootNoteSlice>>,
+    Query<
+        (&mut Visibility, &Mesh2d, &mut MeshMaterial2d<ColorMaterial>),
+        (
+            With<RootNoteSlice>,
+            Without<PitchBall>,
+            Without<BassCylinder>,
+            Without<PitchNameText>,
+            Without<Spectrum>,
+            Without<SpiderNetSegment>,
+            Without<GlissandoCurve>,
+            Without<HarmonicLine>,
+            Without<ChordDisplay>,
+        ),
+    >,
 ) -> Result<()> {
     let range = range.clone();
     move |set: ParamSet<(
@@ -213,12 +225,8 @@ pub fn update_display_to_system(
             ),
             With<HarmonicLine>,
         >,
-        Query<(&mut Text2d, &mut Visibility), With<ChordDisplay>>,
+        Query<(&mut Text2d, &mut TextColor, &mut Visibility), With<ChordDisplay>>,
     )>,
-          root_node_query: Query<
-        (&mut Visibility, &Mesh2d, &mut MeshMaterial2d<ColorMaterial>),
-        With<RootNoteSlice>,
-    >,
           color_materials: ResMut<Assets<ColorMaterial>>,
           noisy_color_materials: ResMut<Assets<NoisyColorMaterial>>,
           meshes: ResMut<Assets<Mesh>>,
@@ -229,11 +237,23 @@ pub fn update_display_to_system(
           settings_state: Res<Persistent<SettingsState>>,
           run_time: Res<Time>,
           camera: Query<(&mut Camera, Option<&mut Bloom>, Ref<Projection>)>,
-          root_slice: Query<(&mut Visibility, &Mesh2d, &mut MeshMaterial2d<ColorMaterial>), With<RootNoteSlice>>| {
+          root_slice: Query<
+        (&mut Visibility, &Mesh2d, &mut MeshMaterial2d<ColorMaterial>),
+        (
+            With<RootNoteSlice>,
+            Without<PitchBall>,
+            Without<BassCylinder>,
+            Without<PitchNameText>,
+            Without<Spectrum>,
+            Without<SpiderNetSegment>,
+            Without<GlissandoCurve>,
+            Without<HarmonicLine>,
+            Without<ChordDisplay>,
+        ),
+    >| {
         update::update_display(
             &range,
             set,
-            root_node_query,
             color_materials,
             noisy_color_materials,
             meshes,
