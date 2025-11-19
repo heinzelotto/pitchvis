@@ -21,6 +21,8 @@ const CLEAR_COLOR_NEUTRAL: ClearColorConfig =
 const CLEAR_COLOR_GALAXY: ClearColorConfig = ClearColorConfig::Custom(Color::srgb(0.05, 0.0, 0.05));
 const _CLEAR_COLOR_EINK: ClearColorConfig = ClearColorConfig::Custom(Color::srgb(0.95, 0.95, 0.95));
 
+const GLISSANDO_LINE_THICKNESS: f32 = 0.20;
+
 #[derive(Component)]
 pub struct PitchBall(usize);
 

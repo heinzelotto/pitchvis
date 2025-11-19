@@ -351,7 +351,7 @@ pub fn setup_analysis_text(mut commands: Commands) {
                 text_font.clone(),
             ));
             builder.spawn((
-                TextSpan::new("\nGlissandos: "),
+                TextSpan::new("\nGlissandi: "),
                 TextColor(Color::WHITE),
                 text_font.clone(),
             ));
@@ -432,11 +432,11 @@ pub fn update_analysis_text_system(
         TextColor(Color::WHITE)
     };
 
-    // Glissandos count
-    let glissando_count = analysis.0.glissandos.len();
+    // Glissandi count
+    let glissando_count = analysis.0.glissandi.len();
     *writer.text(entity, 8) = format!("{}", glissando_count);
     *writer.color(entity, 8) = if glissando_count > 0 {
-        TextColor(Color::srgb(1.0, 0.5, 1.0)) // Magenta when glissandos present
+        TextColor(Color::srgb(1.0, 0.5, 1.0)) // Magenta when glissandi present
     } else {
         TextColor(Color::WHITE)
     };

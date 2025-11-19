@@ -279,7 +279,7 @@ pub struct AnalysisParameters {
     peak_tracking_history_length: usize,
     /// Minimum distance traveled (in buckets) for a tracked peak to become a glissando
     glissando_min_distance: f32,
-    /// Duration (in seconds) to keep glissandos for rendering before removal
+    /// Duration (in seconds) to keep glissandi for rendering before removal
     glissando_lifetime: f32,
 }
 
@@ -315,11 +315,11 @@ impl Default for AnalysisParameters {
             attack_detection_config: AttackDetectionParameters::default(),
             vibrato_detection_config: VibratoDetectionParameters::default(),
             // Peak tracking parameters (glissando detection)
-            peak_tracking_max_distance: 3.0, // ~3 bins (~1.5 semitones for 24 buckets/octave)
-            peak_tracking_timeout: 0.15,     // 150ms without match -> remove
+            peak_tracking_max_distance: 10.5, // ~11 bins (~1.5 semitones for 7 buckets/semitone)
+            peak_tracking_timeout: 0.15,      // 150ms without match -> remove
             peak_tracking_history_length: 120, // Keep last 120 samples (~2 seconds at 60fps)
-            glissando_min_distance: 2.0,     // Minimum 2 buckets (~1 semitone) traveled
-            glissando_lifetime: 2.0,         // Keep glissandos visible for 2 seconds
+            glissando_min_distance: 14.0,     // Minimum 14 buckets (1 semitone) traveled
+            glissando_lifetime: 1.0,          // Keep glissandi visible for 1 second
         }
     }
 }
@@ -475,8 +475,8 @@ pub struct AnalysisState {
     /// Tracked peaks for glissando detection
     pub tracked_peaks: Vec<TrackedPeak>,
 
-    /// Active glissandos for rendering
-    pub glissandos: Vec<Glissando>,
+    /// Active glissandi for rendering
+    pub glissandi: Vec<Glissando>,
 
     /// Counter for generating unique peak IDs
     next_peak_id: u64,
@@ -562,7 +562,7 @@ impl AnalysisState {
             prev_chord_detection: None,
             time_since_chord_change: 0.0,
             tracked_peaks: Vec::new(),
-            glissandos: Vec::new(),
+            glissandi: Vec::new(),
             next_peak_id: 0,
             elapsed_time: 0.0,
         }
@@ -1544,7 +1544,7 @@ impl AnalysisState {
             }
         }
 
-        // Remove timed-out tracked peaks and create glissandos for significant movements
+        // Remove timed-out tracked peaks and create glissandi for significant movements
         let mut i = 0;
         while i < self.tracked_peaks.len() {
             let tracked = &self.tracked_peaks[i];
@@ -1560,7 +1560,7 @@ impl AnalysisState {
                         // Create a glissando
                         let average_size = tracked.size; // Could compute average from history if we stored it
 
-                        self.glissandos.push(Glissando {
+                        self.glissandi.push(Glissando {
                             path: tracked.position_history.clone(),
                             average_size,
                             creation_time: self.elapsed_time,
@@ -1583,8 +1583,8 @@ impl AnalysisState {
             }
         }
 
-        // Age and remove old glissandos
-        self.glissandos.retain(|g| {
+        // Age and remove old glissandi
+        self.glissandi.retain(|g| {
             let age = self.elapsed_time - g.creation_time;
             age < self.params.glissando_lifetime
         });

@@ -2,7 +2,7 @@ use super::{
     material::NoisyColorMaterial, util::bin_to_spiral, BassCylinder, ChordDisplay,
     CylinderEntityListResource, DisplayMode, GlissandoCurve, GlissandoCurveEntityListResource,
     HarmonicLine, LineList, PitchBall, PitchNameText, RootNoteSlice, Spectrum, SpiderNetSegment,
-    VisualsMode, CLEAR_COLOR_GALAXY, CLEAR_COLOR_NEUTRAL,
+    VisualsMode, CLEAR_COLOR_GALAXY, CLEAR_COLOR_NEUTRAL, GLISSANDO_LINE_THICKNESS,
 };
 use bevy::{post_process::bloom::Bloom, prelude::*};
 use bevy_persistent::Persistent;
@@ -113,18 +113,18 @@ pub fn update_display(
     );
 
     if settings_state.enable_glissando {
-        update_glissandos(
+        update_glissandi(
             set.p5(),
             &mut meshes,
             &mut color_materials,
             &glissando_curve_entities,
-            &analysis_state.glissandos,
+            &analysis_state.glissandi,
             range.buckets_per_octave,
             run_time.elapsed_secs(),
         );
     } else {
-        // Hide all glissandos when disabled
-        hide_all_glissandos(set.p5());
+        // Hide all glissandi when disabled
+        hide_all_glissandi(set.p5());
     }
 
     update_spectrum(
@@ -316,6 +316,8 @@ fn update_pitch_balls(
                     color_mat.color = Color::srgba(r, g, b, color_coefficient * 0.1);
                 }
             }
+
+            // FIXME: this is currently useless. Either repair it or remove.
 
             // Apply vibrato health color feedback for choir singers
             // Must come AFTER ML feature to avoid being overwritten
@@ -570,7 +572,7 @@ fn update_bass_spiral(
     }
 }
 
-fn update_glissandos(
+fn update_glissandi(
     mut glissando_curves: Query<(
         &GlissandoCurve,
         &mut Visibility,
@@ -580,7 +582,7 @@ fn update_glissandos(
     meshes: &mut ResMut<Assets<Mesh>>,
     materials: &mut ResMut<Assets<ColorMaterial>>,
     glissando_curve_entities: &Res<GlissandoCurveEntityListResource>,
-    glissandos: &[pitchvis_analysis::analysis::Glissando],
+    glissandi: &[pitchvis_analysis::analysis::Glissando],
     buckets_per_octave: u16,
     current_time: f32,
 ) {
@@ -589,10 +591,10 @@ fn update_glissandos(
         *visibility = Visibility::Hidden;
     }
 
-    // Render active glissandos using the entity pool
-    for (glissando_idx, glissando) in glissandos.iter().enumerate() {
+    // Render active glissandi using the entity pool
+    for (glissando_idx, glissando) in glissandi.iter().enumerate() {
         if glissando_idx >= glissando_curve_entities.0.len() {
-            // Pool exhausted, skip remaining glissandos
+            // Pool exhausted, skip remaining glissandi
             break;
         }
 
@@ -618,7 +620,7 @@ fn update_glissandos(
             // Update mesh
             let mesh = LineList {
                 lines: line_segments,
-                thickness: 0.05,
+                thickness: GLISSANDO_LINE_THICKNESS,
             };
 
             if let Some(mesh_asset) = meshes.get_mut(&mesh_handle.0) {
@@ -959,7 +961,7 @@ fn update_harmonic_lines(
     }
 }
 
-fn hide_all_glissandos(
+fn hide_all_glissandi(
     mut glissando_curves: Query<(
         &GlissandoCurve,
         &mut Visibility,

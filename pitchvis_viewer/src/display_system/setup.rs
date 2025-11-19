@@ -13,7 +13,7 @@ use itertools::Itertools;
 use nalgebra::{Rotation3, Vector3};
 use std::f32::consts::PI;
 
-use crate::display_system::BassCylinder;
+use super::{BassCylinder, GLISSANDO_LINE_THICKNESS};
 use pitchvis_analysis::vqt::VqtRange;
 use pitchvis_colors::{COLORS, PITCH_NAMES};
 
@@ -388,14 +388,18 @@ fn spawn_glissando_curves(
     meshes: &mut ResMut<Assets<Mesh>>,
     color_materials: &mut ResMut<Assets<ColorMaterial>>,
 ) {
-    // Create a pool of glissando curve entities (max 20 concurrent glissandos)
-    const MAX_GLISSANDOS: usize = 20;
+    // TODO: Make this useful. actually track glissandi. Decide which color a glissando line shall have
+    // (rainbow, starting color, ending color). Make it work for actual isolated glissandi sung into
+    // the microphone.
 
-    for index in 0..MAX_GLISSANDOS {
+    // Create a pool of glissando curve entities (max 50 concurrent glissandi)
+    const MAX_GLISSANDI: usize = 50;
+
+    for index in 0..MAX_GLISSANDI {
         // Create an empty line mesh
         let mesh = meshes.add(LineList {
             lines: vec![],
-            thickness: 0.05,
+            thickness: GLISSANDO_LINE_THICKNESS,
         });
 
         let material =
@@ -406,7 +410,7 @@ fn spawn_glissando_curves(
                 GlissandoCurve { index },
                 Mesh2d(mesh),
                 MeshMaterial2d(material),
-                Transform::from_xyz(0.0, 0.0, -0.02), // Behind pitch balls (more negative = farther back)
+                Transform::from_xyz(0.0, 0.0, -13.00), // Behind bass spiral (more negative = farther back)
                 Visibility::Hidden,
             ))
             .id();
