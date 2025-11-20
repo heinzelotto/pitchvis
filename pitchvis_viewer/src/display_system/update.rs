@@ -144,37 +144,33 @@ pub fn update_display(
 
     // Handle harmonic lines and chord display
     // ParamSet doesn't allow extracting multiple queries at once, so we handle them in sequence
-    if settings_state.enable_harmonic_lines || settings_state.enable_chord_recognition {
-        // First, update chord display
-        {
-            let mut chord_display = set.p7();
-            update_chord_display(&mut chord_display, analysis_state, &settings_state);
-        }
-        // Then, update harmonic lines
-        {
-            let mut harmonic_lines = set.p6();
-            update_harmonic_lines(
-                &mut harmonic_lines,
-                analysis_state,
-                &mut meshes,
-                &mut color_materials,
-                &settings_state,
-                range,
-            );
-        }
+    if settings_state.enable_harmonic_lines {
+        // Update harmonic lines
+        let mut harmonic_lines = set.p6();
+        update_harmonic_lines(
+            &mut harmonic_lines,
+            analysis_state,
+            &mut meshes,
+            &mut color_materials,
+            &settings_state,
+            range,
+        );
     } else {
-        // Hide all harmonic lines and chord display when disabled
-        {
-            let mut harmonic_lines = set.p6();
-            for (mut visibility, _, _, _) in &mut harmonic_lines {
-                *visibility = Visibility::Hidden;
-            }
+        // Hide all harmonic lines when disabled
+        let mut harmonic_lines = set.p6();
+        for (mut visibility, _, _, _) in &mut harmonic_lines {
+            *visibility = Visibility::Hidden;
         }
-        {
-            let mut chord_display = set.p7();
-            if let Ok((_, _, mut visibility)) = chord_display.single_mut() {
-                *visibility = Visibility::Hidden;
-            }
+    }
+
+    if settings_state.enable_chord_recognition {
+        // Update chord display
+        let mut chord_display = set.p7();
+        update_chord_display(&mut chord_display, analysis_state, &settings_state);
+    } else {
+        let mut chord_display = set.p7();
+        if let Ok((_, _, mut visibility)) = chord_display.single_mut() {
+            *visibility = Visibility::Hidden;
         }
     }
 

@@ -713,99 +713,100 @@ impl AnalysisState {
         .collect();
         let mut peaks_continuous = enhance_peaks_continuous(&peaks, &x_vqt_smoothed, &self.range);
 
-        // Update vibrato state for all active peaks
-        // IMPORTANT: We need stable bin assignment across frames for vibrato detection.
-        // Strategy: Check nearby bins for existing vibrato states and continue tracking there.
-        // This handles cases where the discrete peak jumps between adjacent bins due to vibrato.
-        let mut active_bins = HashSet::new();
-        for peak in &peaks_continuous {
-            let peak_freq = self.range.min_freq
-                * 2.0_f32.powf(peak.center / self.range.buckets_per_octave as f32);
-            let nominal_bin = peak.center.round() as usize;
+        // TEMPORARILY DISABLED: Vibrato detection is currently in a broken/unreleasable state
+        // // Update vibrato state for all active peaks
+        // // IMPORTANT: We need stable bin assignment across frames for vibrato detection.
+        // // Strategy: Check nearby bins for existing vibrato states and continue tracking there.
+        // // This handles cases where the discrete peak jumps between adjacent bins due to vibrato.
+        // let mut active_bins = HashSet::new();
+        // for peak in &peaks_continuous {
+        //     let peak_freq = self.range.min_freq
+        //         * 2.0_f32.powf(peak.center / self.range.buckets_per_octave as f32);
+        //     let nominal_bin = peak.center.round() as usize;
 
-            // Find the best bin to track this peak in:
-            // 1. Check if any nearby bin (±2) already has active vibrato with similar frequency
-            // 2. If found, continue tracking in that bin (maintains continuity)
-            // 3. Otherwise, use the nominal bin
-            let mut tracking_bin = nominal_bin;
-            let search_radius = 2; // Check ±2 bins
+        //     // Find the best bin to track this peak in:
+        //     // 1. Check if any nearby bin (±2) already has active vibrato with similar frequency
+        //     // 2. If found, continue tracking in that bin (maintains continuity)
+        //     // 3. Otherwise, use the nominal bin
+        //     let mut tracking_bin = nominal_bin;
+        //     let search_radius = 2; // Check ±2 bins
 
-            if nominal_bin < self.vibrato_states.len() {
-                let mut best_match: Option<(usize, f32)> = None;
+        //     if nominal_bin < self.vibrato_states.len() {
+        //         let mut best_match: Option<(usize, f32)> = None;
 
-                for offset in 0..=search_radius {
-                    for &sign in &[-1, 1] {
-                        let check_bin = (nominal_bin as i32 + sign * offset) as usize;
-                        if check_bin < self.vibrato_states.len() {
-                            let state = &self.vibrato_states[check_bin];
-                            // Check if this bin has frequency history (even if not yet "active")
-                            if !state.frequency_history.is_empty() {
-                                // Use average of frequency history for matching
-                                let avg_freq: f32 = state.frequency_history.iter().sum::<f32>()
-                                    / state.frequency_history.len() as f32;
-                                if avg_freq > 0.0 {
-                                    let freq_ratio = peak_freq / avg_freq;
-                                    let cents_diff = 1200.0 * freq_ratio.log2().abs();
+        //         for offset in 0..=search_radius {
+        //             for &sign in &[-1, 1] {
+        //                 let check_bin = (nominal_bin as i32 + sign * offset) as usize;
+        //                 if check_bin < self.vibrato_states.len() {
+        //                     let state = &self.vibrato_states[check_bin];
+        //                     // Check if this bin has frequency history (even if not yet "active")
+        //                     if !state.frequency_history.is_empty() {
+        //                         // Use average of frequency history for matching
+        //                         let avg_freq: f32 = state.frequency_history.iter().sum::<f32>()
+        //                             / state.frequency_history.len() as f32;
+        //                         if avg_freq > 0.0 {
+        //                             let freq_ratio = peak_freq / avg_freq;
+        //                             let cents_diff = 1200.0 * freq_ratio.log2().abs();
 
-                                    // If within 150 cents (1.5 semitones), consider it the same note
-                                    if cents_diff < 150.0 {
-                                        if best_match.is_none()
-                                            || cents_diff < best_match.unwrap().1
-                                        {
-                                            best_match = Some((check_bin, cents_diff));
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
+        //                             // If within 150 cents (1.5 semitones), consider it the same note
+        //                             if cents_diff < 150.0 {
+        //                                 if best_match.is_none()
+        //                                     || cents_diff < best_match.unwrap().1
+        //                                 {
+        //                                     best_match = Some((check_bin, cents_diff));
+        //                                 }
+        //                             }
+        //                         }
+        //                     }
+        //                 }
+        //             }
 
-                    // Check the center bin (offset 0) first
-                    if offset == 0 {
-                        let state = &self.vibrato_states[nominal_bin];
-                        if !state.frequency_history.is_empty() {
-                            let avg_freq: f32 = state.frequency_history.iter().sum::<f32>()
-                                / state.frequency_history.len() as f32;
-                            if avg_freq > 0.0 {
-                                let freq_ratio = peak_freq / avg_freq;
-                                let cents_diff = 1200.0 * freq_ratio.log2().abs();
-                                if cents_diff < 150.0 {
-                                    if best_match.is_none() || cents_diff < best_match.unwrap().1 {
-                                        best_match = Some((nominal_bin, cents_diff));
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+        //             // Check the center bin (offset 0) first
+        //             if offset == 0 {
+        //                 let state = &self.vibrato_states[nominal_bin];
+        //                 if !state.frequency_history.is_empty() {
+        //                     let avg_freq: f32 = state.frequency_history.iter().sum::<f32>()
+        //                         / state.frequency_history.len() as f32;
+        //                     if avg_freq > 0.0 {
+        //                         let freq_ratio = peak_freq / avg_freq;
+        //                         let cents_diff = 1200.0 * freq_ratio.log2().abs();
+        //                         if cents_diff < 150.0 {
+        //                             if best_match.is_none() || cents_diff < best_match.unwrap().1 {
+        //                                 best_match = Some((nominal_bin, cents_diff));
+        //                             }
+        //                         }
+        //                     }
+        //                 }
+        //             }
+        //         }
 
-                if let Some((matched_bin, _)) = best_match {
-                    tracking_bin = matched_bin;
-                }
+        //         if let Some((matched_bin, _)) = best_match {
+        //             tracking_bin = matched_bin;
+        //         }
 
-                // Update vibrato state with precise frequency
-                self.update_vibrato_state(tracking_bin, peak_freq, true);
-                active_bins.insert(tracking_bin);
-            }
-        }
+        //         // Update vibrato state with precise frequency
+        //         self.update_vibrato_state(tracking_bin, peak_freq, true);
+        //         active_bins.insert(tracking_bin);
+        //     }
+        // }
 
-        // Mark inactive bins (clear history after delay)
-        // Use active_bins (from continuous peaks) instead of discrete peaks
-        // because continuous peaks may round to different bins than discrete peaks
-        let inactive_bins: Vec<usize> = self
-            .vibrato_states
-            .iter()
-            .enumerate()
-            .filter(|(bin_idx, _)| !active_bins.contains(bin_idx))
-            .map(|(bin_idx, _)| bin_idx)
-            .collect();
+        // // Mark inactive bins (clear history after delay)
+        // // Use active_bins (from continuous peaks) instead of discrete peaks
+        // // because continuous peaks may round to different bins than discrete peaks
+        // let inactive_bins: Vec<usize> = self
+        //     .vibrato_states
+        //     .iter()
+        //     .enumerate()
+        //     .filter(|(bin_idx, _)| !active_bins.contains(bin_idx))
+        //     .map(|(bin_idx, _)| bin_idx)
+        //     .collect();
 
-        for bin_idx in inactive_bins {
-            self.update_vibrato_state(bin_idx, 0.0, false);
-        }
+        // for bin_idx in inactive_bins {
+        //     self.update_vibrato_state(bin_idx, 0.0, false);
+        // }
 
-        // Consolidate peaks that are part of same vibrato note (fixes double peak glitch!)
-        self.consolidate_vibrato_peaks(&mut peaks_continuous);
+        // // Consolidate peaks that are part of same vibrato note (fixes double peak glitch!)
+        // self.consolidate_vibrato_peaks(&mut peaks_continuous);
 
         // Boost bass peaks based on harmonic content
         // Peaks with strong harmonics are more likely to be real bass notes vs rumble/noise
@@ -846,9 +847,10 @@ impl AnalysisState {
 
         self.update_calmness(x_vqt, frame_time);
 
+        // TEMPORARILY DISABLED: Attack detection is currently in a broken/unreleasable state
         // Detect attack events (note onsets) and calculate percussion scores
         // Uses smoothed VQT for noise rejection
-        self.detect_attacks(&x_vqt_smoothed, frame_time);
+        // self.detect_attacks(&x_vqt_smoothed, frame_time);
 
         // needs to be run after the continuous peaks have been calculated
         self.update_tuning_inaccuracy(frame_time);
