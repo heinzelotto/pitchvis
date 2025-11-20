@@ -418,4 +418,112 @@ mod tests {
         assert_eq!(chord.root, 0); // C
         assert_eq!(chord.quality, ChordQuality::Major);
     }
+
+    #[test]
+    fn test_c_major_in_tune_detected() {
+        let mut active_bins = HashMap::new();
+        // C major in tune with 84 buckets per octave (7 buckets per semitone)
+        // Starting at C (261.626 Hz)
+        // C = bin 0, E = bin 28 (4 semitones * 7), G = bin 49 (7 semitones * 7)
+        active_bins.insert(0, 1.0);  // C
+        active_bins.insert(28, 0.8); // E
+        active_bins.insert(49, 0.9); // G
+
+        let chord = detect_chord(&active_bins, 84, 261.626, 2);
+        assert!(chord.is_some(), "In-tune C major should be detected");
+
+        let chord = chord.unwrap();
+        assert_eq!(chord.root, 0, "Root should be C (pitch class 0)");
+        assert_eq!(chord.quality, ChordQuality::Major, "Quality should be Major");
+        assert_eq!(chord.name(), "C", "Chord name should be C");
+    }
+
+    #[test]
+    fn test_c_major_plus_50_cents_not_detected() {
+        let mut active_bins = HashMap::new();
+        // C major +50 cents (half semitone sharp)
+        // With 84 buckets per octave: 1 semitone = 7 buckets, 0.5 semitones = 3.5 buckets
+        // We offset each note by 3-4 buckets to represent +50 cents
+        // C+50¢ = bin 3, E+50¢ = bin 31, G+50¢ = bin 52
+        active_bins.insert(3, 1.0);  // C + 50 cents
+        active_bins.insert(31, 0.8); // E + 50 cents
+        active_bins.insert(52, 0.9); // G + 50 cents
+
+        let chord = detect_chord(&active_bins, 84, 261.626, 2);
+
+        // The detuned chord should either:
+        // 1. Not be detected at all, OR
+        // 2. Be detected but NOT as a valid chord (wrong pitch classes)
+        if let Some(chord) = chord {
+            // If a chord is detected, it should not be a clean major chord
+            // due to the pitch offset causing wrong pitch class assignments
+            println!("Detected chord: {} (root: {}, confidence: {})",
+                     chord.name(), chord.root, chord.confidence);
+
+            // With +50 cents offset, the pitch classes should be misaligned
+            // This test documents the current behavior
+            // Expected: Should NOT detect as C major, or should have low confidence
+
+            // Check if it's detecting as C major (which would be wrong)
+            if chord.root == 0 && chord.quality == ChordQuality::Major {
+                panic!("C major +50 cents should NOT be detected as clean C major. \
+                        This indicates a pitch quantization issue.");
+            }
+        }
+    }
+
+    #[test]
+    fn test_c_major_minus_50_cents_not_detected() {
+        let mut active_bins = HashMap::new();
+        // C major -50 cents (half semitone flat)
+        // We offset each note by -3 to -4 buckets to represent -50 cents
+        // Since we can't use negative bins, we need to think about this differently.
+        // C-50¢ = bin -3 (not valid), so let's use higher octave positions
+        // Actually, for a cleaner test, let's shift the reference frequency
+        // If we use min_freq slightly higher, the bins will represent flatter notes
+
+        // Alternative approach: use bins that are 3-4 buckets below the target
+        // For E and G, we can use bins 24-25 and 45-46
+        // For C (bin 0), we'd need to wrap around, so let's start from a higher base
+
+        // Using bins that represent -50 cents offset:
+        // C-50¢ ≈ bin 80 (from previous octave wrap-around, or we can use bin 0 with different min_freq)
+        // E-50¢ = bin 25, G-50¢ = bin 46
+        active_bins.insert(0, 1.0);  // C (but we'll adjust min_freq to simulate -50 cents)
+        active_bins.insert(25, 0.8); // E - 50 cents (28 - 3)
+        active_bins.insert(46, 0.9); // G - 50 cents (49 - 3)
+
+        // To simulate -50 cents, we increase min_freq by 50 cents
+        // This makes the algorithm think the notes are 50 cents flatter than they are
+        let min_freq_plus_50_cents = 261.626 * 2_f32.powf(0.5 / 12.0); // ≈ 269.03 Hz
+
+        let chord = detect_chord(&active_bins, 84, min_freq_plus_50_cents, 2);
+
+        // Similar to +50 cents test, this should either not detect or detect incorrectly
+        if let Some(chord) = chord {
+            println!("Detected chord: {} (root: {}, confidence: {})",
+                     chord.name(), chord.root, chord.confidence);
+
+            // The pitch classes should be misaligned due to the -50 cents offset
+            // If it still detects as a clean major chord, that's the bug
+
+            // Check intervals to see if they match a proper chord
+            let mut pitch_classes: Vec<usize> = chord.notes.clone();
+            pitch_classes.sort();
+
+            // Calculate intervals from root
+            let intervals: Vec<usize> = pitch_classes.iter()
+                .map(|&pc| (pc + 12 - chord.root) % 12)
+                .filter(|&i| i != 0)
+                .collect();
+
+            println!("  Detected intervals: {:?}", intervals);
+
+            // If it detects clean major intervals [4, 7], that's wrong
+            if intervals.contains(&4) && intervals.contains(&7) && intervals.len() == 2 {
+                panic!("C major -50 cents should NOT be detected as clean major chord. \
+                        This indicates a pitch quantization issue.");
+            }
+        }
+    }
 }
