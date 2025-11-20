@@ -1,4 +1,5 @@
 pub mod analysis;
+pub mod analysis_modules;
 pub mod chord;
 pub mod chord_enhanced;
 pub mod util;
