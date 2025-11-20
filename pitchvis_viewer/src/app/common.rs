@@ -1455,11 +1455,11 @@ pub fn create_persistent_settings(
             visuals_mode: display_system::VisualsMode::Full,
             fps_limit: Some(default_fps),
             vqt_smoothing_mode: display_system::VQTSmoothingMode::Default,
-            enable_vibrato: true,
-            enable_attack_detection: true,
+            enable_vibrato: false,
+            enable_attack_detection: false,
             enable_glissando: true,
             enable_chord_recognition: true,
-            enable_harmonic_lines: true,
+            enable_harmonic_lines: false,
             enable_root_note_tinting: false,
         })
         .revertible(true)
