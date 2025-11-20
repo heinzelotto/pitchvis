@@ -204,6 +204,7 @@ pub fn update_fps_text_system(
     settings: Res<Persistent<SettingsState>>,
     audio_buffer: Res<AudioBufferResource>,
     vqt: Res<VqtResource>,
+    analysis: Res<AnalysisStateResource>,
 ) {
     let entity = query.single().expect("Failed to get entity.");
 
@@ -262,11 +263,26 @@ pub fn update_fps_text_system(
     );
     *writer.text(entity, 8) = format!("{}ms", vqt.0.delay.as_millis());
 
-    let smoothing_duration_ms = settings
-        .vqt_smoothing_mode
-        .to_duration()
-        .map_or(0, |d| d.as_millis());
-    *writer.text(entity, 10) = format!("{}ms", smoothing_duration_ms);
+    // Display VQT smoothing as min-max range (varies by frequency and calmness)
+    if let Some(base_duration) = settings.vqt_smoothing_mode.to_duration() {
+        let base_ms = base_duration.as_millis() as f32;
+
+        // Get current calmness from analysis state
+        let calmness = analysis.0.smoothed_scene_calmness.get();
+        let calmness_multiplier = analysis.0.params.vqt_smoothing_calmness_min
+            + (analysis.0.params.vqt_smoothing_calmness_max - analysis.0.params.vqt_smoothing_calmness_min)
+                * calmness;
+
+        // Frequency multiplier range: bass (1.5x) to treble (1.0x)
+        // Calmness multiplier range: energetic (0.6x) to calm (2.0x)
+        let min_duration_ms = (base_ms * 1.0 * calmness_multiplier) as u32;  // Treble with current calmness
+        let max_duration_ms = (base_ms * 1.5 * calmness_multiplier) as u32;  // Bass with current calmness
+
+        *writer.text(entity, 10) = format!("{}-{}ms", min_duration_ms, max_duration_ms);
+    } else {
+        // None mode - no smoothing
+        *writer.text(entity, 10) = "None".to_string();
+    }
 }
 
 /// Toggle the FPS counter based on the display mode

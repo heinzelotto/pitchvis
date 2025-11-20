@@ -141,8 +141,9 @@ impl EmaMeasurement {
 
     /// Update the time horizon for this EMA measurement.
     /// This allows for adaptive smoothing based on external conditions (e.g., calmness, frequency).
-    pub fn set_time_horizon(&mut self, time_horizon: Duration) {
-        self.time_horizon = Some(time_horizon);
+    /// When time_horizon is None, no smoothing is applied (direct passthrough).
+    pub fn set_time_horizon(&mut self, time_horizon: Option<Duration>) {
+        self.time_horizon = time_horizon;
     }
 
     pub fn get(&self) -> f32 {
