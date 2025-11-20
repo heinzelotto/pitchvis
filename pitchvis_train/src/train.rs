@@ -328,8 +328,7 @@ fn synthesize_midi_to_wav(
             });
 
         // perform vqt analysis
-        let x_vqt =
-            vqt.calculate_vqt_instant_in_db(&ring_buffer[(ring_buffer.len() - N_FFT)..]);
+        let x_vqt = vqt.calculate_vqt_instant_in_db(&ring_buffer[(ring_buffer.len() - N_FFT)..]);
 
         // println!("Active keys: {:?}\nvqt:", prev_active_keys);
         // x_vqt.chunks(BUCKETS_PER_OCTAVE).for_each(|x| {

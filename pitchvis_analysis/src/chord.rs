@@ -427,7 +427,7 @@ mod tests {
         // C major in tune with 84 buckets per octave (7 buckets per semitone)
         // Starting at C (261.626 Hz)
         // C = bin 0, E = bin 28 (4 semitones * 7), G = bin 49 (7 semitones * 7)
-        active_bins.insert(0, 1.0);  // C
+        active_bins.insert(0, 1.0); // C
         active_bins.insert(28, 0.8); // E
         active_bins.insert(49, 0.9); // G
 
@@ -436,7 +436,11 @@ mod tests {
 
         let chord = chord.unwrap();
         assert_eq!(chord.root, 0, "Root should be C (pitch class 0)");
-        assert_eq!(chord.quality, ChordQuality::Major, "Quality should be Major");
+        assert_eq!(
+            chord.quality,
+            ChordQuality::Major,
+            "Quality should be Major"
+        );
         assert_eq!(chord.name(), "C", "Chord name should be C");
     }
 
@@ -459,10 +463,17 @@ mod tests {
 
         // With proper rounding, +43 cents is within tolerance (< 50 cents)
         // so it should still be detected as C major
-        assert!(chord.is_some(), "C major +43 cents should be detected (within tolerance)");
+        assert!(
+            chord.is_some(),
+            "C major +43 cents should be detected (within tolerance)"
+        );
         let chord = chord.unwrap();
         assert_eq!(chord.root, 0, "Root should be C");
-        assert_eq!(chord.quality, ChordQuality::Major, "Quality should be Major");
+        assert_eq!(
+            chord.quality,
+            ChordQuality::Major,
+            "Quality should be Major"
+        );
     }
 
     #[test]
@@ -488,13 +499,18 @@ mod tests {
         if let Some(chord) = chord {
             // The fix causes this to be detected as C# major instead of C major
             // This is better because it shows the notes are consistently offset
-            assert_ne!((chord.root, chord.quality), (0, ChordQuality::Major),
-                      "Heavily detuned chord should not be detected as C major");
+            assert_ne!(
+                (chord.root, chord.quality),
+                (0, ChordQuality::Major),
+                "Heavily detuned chord should not be detected as C major"
+            );
 
             // With the fix, it should detect as C# major (showing the offset)
             if chord.quality == ChordQuality::Major {
-                assert_eq!(chord.root, 1,
-                          "With proper rounding, +71 cent offset should transpose the detected chord");
+                assert_eq!(
+                    chord.root, 1,
+                    "With proper rounding, +71 cent offset should transpose the detected chord"
+                );
             }
         }
     }

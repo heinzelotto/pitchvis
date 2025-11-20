@@ -255,8 +255,8 @@ pub struct AnalysisParameters {
     /// Range: [vqt_smoothing_calmness_min, vqt_smoothing_calmness_max]
     /// At calmness=0 (energetic): uses min multiplier
     /// At calmness=1 (calm): uses max multiplier
-    vqt_smoothing_calmness_min: f32,
-    vqt_smoothing_calmness_max: f32,
+    pub vqt_smoothing_calmness_min: f32,
+    pub vqt_smoothing_calmness_max: f32,
     /// The duration over which the calmness of a indivitual pitch bin is smoothed.
     note_calmness_smoothing_duration: Duration,
     /// The duration over which the calmness of the scene is smoothed.
@@ -570,17 +570,30 @@ impl AnalysisState {
 
     /// Updates the VQT smoothing duration parameter.
     ///
-    /// This recreates the EmaMeasurement objects with the new time horizon while preserving
-    /// their current values.
+    /// This updates the EmaMeasurement objects with the new time horizon while preserving
+    /// their current values. When new_duration is None, smoothing is disabled and the VQT
+    /// passes through without EMA filtering (direct passthrough as it was before frequency-dependent smoothing).
     ///
     /// # Parameters:
-    /// - `new_duration`: The new smoothing duration to apply.
+    /// - `new_duration`: The new base smoothing duration to apply, or None to disable smoothing.
     pub fn update_vqt_smoothing_duration(&mut self, new_duration: Option<Duration>) {
-        self.params.vqt_smoothing_duration_base = new_duration.unwrap_or(Duration::from_millis(90)); // FIXME: allow None
-                                                                                                     // FIXME: frequency based initialization is not done
-        for ema in &mut self.x_vqt_smoothed {
-            let current_value = ema.get();
-            *ema = EmaMeasurement::new(new_duration, current_value);
+        // Store the base duration - use 0ms as a marker for "None" mode
+        self.params.vqt_smoothing_duration_base = new_duration.unwrap_or(Duration::from_millis(0));
+
+        // Update each bin's EMA with frequency-dependent duration
+        for (bin_idx, ema) in self.x_vqt_smoothed.iter_mut().enumerate() {
+            if let Some(base_duration) = new_duration {
+                // Apply frequency-dependent multiplier only when smoothing is enabled
+                let octave_fraction = bin_idx as f32
+                    / self.range.buckets_per_octave as f32
+                    / self.range.octaves as f32;
+                let frequency_multiplier = 1.5 - 0.5 * octave_fraction;
+                let duration_ms = base_duration.as_millis() as f32 * frequency_multiplier;
+                ema.set_time_horizon(Some(Duration::from_millis(duration_ms as u64)));
+            } else {
+                // No smoothing - set to None for direct passthrough
+                ema.set_time_horizon(None);
+            }
         }
     }
 
@@ -614,9 +627,10 @@ impl AnalysisState {
         let _max = x_vqt[k_max];
         // println!("x_vqt[{k_min}] = {min}, x_vqt[{k_max}] = {max}");
 
-        // Adapt smoothing duration based on scene calmness
+        // Adapt smoothing duration based on scene calmness (only if smoothing is enabled)
         // More calm = longer smoothing (less responsive but cleaner)
         // More energetic = shorter smoothing (more responsive to transients)
+        // When base duration is 0ms, smoothing is disabled (None mode)
         let calmness = self.smoothed_scene_calmness.get();
         let calmness_multiplier = self.params.vqt_smoothing_calmness_min
             + (self.params.vqt_smoothing_calmness_max - self.params.vqt_smoothing_calmness_min)
@@ -628,18 +642,29 @@ impl AnalysisState {
             .enumerate()
             .zip(x_vqt.iter())
             .for_each(|((bin_idx, smoothed), x)| {
-                // Get base frequency-dependent duration
-                let octave_fraction = bin_idx as f32
-                    / self.range.buckets_per_octave as f32
-                    / self.range.octaves as f32;
-                let frequency_multiplier = 1.5 - 0.5 * octave_fraction;
+                // Check if this EMA currently has smoothing enabled
+                // We determine this by checking if we would calculate a duration
+                // In "None" mode, update_vqt_smoothing_duration sets time_horizon to None,
+                // and we preserve that by not calling set_time_horizon here
 
-                // Apply calmness multiplier
-                let duration_ms = self.params.vqt_smoothing_duration_base.as_millis() as f32
-                    * frequency_multiplier
-                    * calmness_multiplier;
+                // Only update time horizon if base duration is non-zero
+                // (A simple heuristic: if base > 0, then smoothing was configured)
+                if self.params.vqt_smoothing_duration_base.as_millis() > 0 {
+                    // Get base frequency-dependent duration
+                    let octave_fraction = bin_idx as f32
+                        / self.range.buckets_per_octave as f32
+                        / self.range.octaves as f32;
+                    let frequency_multiplier = 1.5 - 0.5 * octave_fraction;
 
-                smoothed.set_time_horizon(Duration::from_millis(duration_ms as u64));
+                    // Apply calmness multiplier
+                    let duration_ms = self.params.vqt_smoothing_duration_base.as_millis() as f32
+                        * frequency_multiplier
+                        * calmness_multiplier;
+
+                    smoothed.set_time_horizon(Some(Duration::from_millis(duration_ms as u64)));
+                }
+                // If base duration is 0, we don't update the time horizon, preserving any None set earlier
+
                 smoothed.update_with_timestep(*x, frame_time);
             });
         let x_vqt_smoothed = self
