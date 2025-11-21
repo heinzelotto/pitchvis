@@ -43,12 +43,12 @@ pub struct AnalysisParameters {
     /// Peak detection parameters for the general peaks.
     peak_config: PeakDetectionParameters,
     /// Peak detection parameters for the bassline peaks.
-    bassline_peak_config: PeakDetectionParameters,
+    pub bassline_peak_config: PeakDetectionParameters,
     /// The highest bass note to be considered.
-    highest_bassnote: usize,
+    pub highest_bassnote: usize,
     /// Base duration for VQT smoothing (will be modulated by frequency and calmness).
     /// Bass notes use longer smoothing, treble notes use shorter smoothing.
-    vqt_smoothing_duration_base: Duration,
+    pub vqt_smoothing_duration_base: Duration,
     /// Multiplier for smoothing duration based on scene calmness.
     /// Range: [vqt_smoothing_calmness_min, vqt_smoothing_calmness_max]
     /// At calmness=0 (energetic): uses min multiplier
@@ -56,11 +56,11 @@ pub struct AnalysisParameters {
     pub vqt_smoothing_calmness_min: f32,
     pub vqt_smoothing_calmness_max: f32,
     /// The duration over which the calmness of a indivitual pitch bin is smoothed.
-    note_calmness_smoothing_duration: Duration,
+    pub note_calmness_smoothing_duration: Duration,
     /// The duration over which the calmness of the scene is smoothed.
-    scene_calmness_smoothing_duration: Duration,
+    pub scene_calmness_smoothing_duration: Duration,
     /// The duration over which the tuning inaccuracy is smoothed.
-    tuning_inaccuracy_smoothing_duration: Duration,
+    pub tuning_inaccuracy_smoothing_duration: Duration,
     /// Threshold for harmonic presence (as fraction of fundamental **power**, not dB).
     /// A harmonic is considered present if its power >= threshold * fundamental_power.
     /// Note: VQT is in dB, so we convert: power = 10^(dB/10)
