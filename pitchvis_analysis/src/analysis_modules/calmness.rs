@@ -31,7 +31,10 @@ pub fn update_calmness(
     smoothed_scene_calmness: &mut EmaMeasurement,
 ) {
     let mut peaks_around = vec![false; range.n_buckets()];
-    let radius = range.buckets_per_octave / 12 / 2;
+    // we update the bins around ~ +- 30 ct of a currently detected pitch. This way a small vibrato will
+    // not decrease calmness.
+    // TODO: test whether /3 or /2 is better
+    let radius = range.buckets_per_octave / 12 / 3;
 
     // We want unsmoothed peaks for this (more responsive)
     let peaks = find_peaks(peak_config, x_vqt, range.buckets_per_octave);
@@ -83,6 +86,7 @@ pub fn update_calmness(
     }
 
     if weight_sum > 0.0 {
-        smoothed_scene_calmness.update_with_timestep(weighted_calmness_sum / weight_sum, frame_time);
+        smoothed_scene_calmness
+            .update_with_timestep(weighted_calmness_sum / weight_sum, frame_time);
     }
 }

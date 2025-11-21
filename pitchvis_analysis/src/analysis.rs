@@ -99,8 +99,8 @@ impl Default for AnalysisParameters {
             // Calmness multiplier range: energetic 0.6x (42ms), calm 2.0x (140ms)
             vqt_smoothing_calmness_min: 0.6,
             vqt_smoothing_calmness_max: 2.0,
-            note_calmness_smoothing_duration: Duration::from_millis(4_500),
-            scene_calmness_smoothing_duration: Duration::from_millis(1_100),
+            note_calmness_smoothing_duration: Duration::from_millis(3_500), // TODO: was: 4_500
+            scene_calmness_smoothing_duration: Duration::from_millis(800),  // TODO: was: 1_100),
             tuning_inaccuracy_smoothing_duration: Duration::from_millis(4_000),
             // Harmonics need to have at least 30% of fundamental's **power** (not dB!)
             harmonic_threshold: 0.3,
