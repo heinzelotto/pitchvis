@@ -309,6 +309,10 @@ pub fn fps_counter_showhide(
 #[derive(Component)]
 pub struct AnalysisRoot;
 
+/// Marker to find the container entity for debug info (bottom left)
+#[derive(Component)]
+pub struct DebugRoot;
+
 /// Marker to find the screen lock indicator
 #[derive(Component)]
 pub struct ScreenLockIndicator;
@@ -484,6 +488,258 @@ pub fn analysis_text_showhide(
     settings: Res<Persistent<SettingsState>>,
 ) -> Result<()> {
     // TODO: move all showhides into one system that updates the scene based on the display mode
+    let mut vis = q.single_mut()?;
+    if settings.display_mode == display_system::DisplayMode::Debugging {
+        *vis = Visibility::Visible;
+    } else {
+        *vis = Visibility::Hidden;
+    }
+
+    Ok(())
+}
+
+/// Setup debug text (bottom left)
+pub fn setup_debug_text(mut commands: Commands) {
+    let text_font = TextFont {
+        font_size: 14.0,
+        ..default()
+    };
+
+    commands
+        .spawn((
+            DebugRoot,
+            Text::default(),
+            text_font.clone(),
+            Node {
+                position_type: PositionType::Absolute,
+                left: Val::Percent(1.),
+                bottom: Val::Percent(1.),
+                padding: UiRect::all(Val::Px(4.0)),
+                ..default()
+            },
+            TextLayout::new_with_justify(Justify::Left),
+            BackgroundColor(Color::BLACK.with_alpha(0.5)),
+            ZIndex(i32::MAX),
+            Visibility::Visible,
+        ))
+        .with_children(|builder| {
+            // AnalysisParameters section
+            builder.spawn((
+                TextSpan::new("=== AnalysisParameters ===\n"),
+                TextColor(Color::srgb(0.8, 0.8, 1.0)),
+                text_font.clone(),
+            ));
+
+            // bassline_peak_config
+            builder.spawn((
+                TextSpan::new("bassline_peak_config:\n"),
+                TextColor(Color::WHITE),
+                text_font.clone(),
+            ));
+            builder.spawn((
+                TextSpan::new("  prom: X.X, height: X.X\n"),
+                TextColor(Color::srgb(0.9, 0.9, 0.9)),
+                text_font.clone(),
+            ));
+
+            // highest_bassnote
+            builder.spawn((
+                TextSpan::new("highest_bassnote: "),
+                TextColor(Color::WHITE),
+                text_font.clone(),
+            ));
+            builder.spawn((
+                TextSpan::new("N/A\n"),
+                TextColor(Color::srgb(0.9, 0.9, 0.9)),
+                text_font.clone(),
+            ));
+
+            // vqt_smoothing_duration_base
+            builder.spawn((
+                TextSpan::new("vqt_smoothing_dur_base: "),
+                TextColor(Color::WHITE),
+                text_font.clone(),
+            ));
+            builder.spawn((
+                TextSpan::new("N/A\n"),
+                TextColor(Color::srgb(0.9, 0.9, 0.9)),
+                text_font.clone(),
+            ));
+
+            // vqt_smoothing_calmness min/max
+            builder.spawn((
+                TextSpan::new("vqt_smooth_calmness: "),
+                TextColor(Color::WHITE),
+                text_font.clone(),
+            ));
+            builder.spawn((
+                TextSpan::new("N/A\n"),
+                TextColor(Color::srgb(0.9, 0.9, 0.9)),
+                text_font.clone(),
+            ));
+
+            // note_calmness_smoothing_duration
+            builder.spawn((
+                TextSpan::new("note_calmness_dur: "),
+                TextColor(Color::WHITE),
+                text_font.clone(),
+            ));
+            builder.spawn((
+                TextSpan::new("N/A\n"),
+                TextColor(Color::srgb(0.9, 0.9, 0.9)),
+                text_font.clone(),
+            ));
+
+            // scene_calmness_smoothing_duration
+            builder.spawn((
+                TextSpan::new("scene_calmness_dur: "),
+                TextColor(Color::WHITE),
+                text_font.clone(),
+            ));
+            builder.spawn((
+                TextSpan::new("N/A\n"),
+                TextColor(Color::srgb(0.9, 0.9, 0.9)),
+                text_font.clone(),
+            ));
+
+            // tuning_inaccuracy_smoothing_duration
+            builder.spawn((
+                TextSpan::new("tuning_inaccuracy_dur: "),
+                TextColor(Color::WHITE),
+                text_font.clone(),
+            ));
+            builder.spawn((
+                TextSpan::new("N/A\n"),
+                TextColor(Color::srgb(0.9, 0.9, 0.9)),
+                text_font.clone(),
+            ));
+
+            // Separator
+            builder.spawn((
+                TextSpan::new("------------------------\n"),
+                TextColor(Color::srgb(0.5, 0.5, 0.5)),
+                text_font.clone(),
+            ));
+
+            // AnalysisState section
+            builder.spawn((
+                TextSpan::new("=== AnalysisState ===\n"),
+                TextColor(Color::srgb(1.0, 0.8, 0.8)),
+                text_font.clone(),
+            ));
+
+            // smoothed_scene_calmness
+            builder.spawn((
+                TextSpan::new("scene_calmness: "),
+                TextColor(Color::WHITE),
+                text_font.clone(),
+            ));
+            builder.spawn((
+                TextSpan::new("N/A\n"),
+                TextColor(Color::srgb(0.9, 0.9, 0.9)),
+                text_font.clone(),
+            ));
+
+            // number of detected peaks
+            builder.spawn((
+                TextSpan::new("detected peaks: "),
+                TextColor(Color::WHITE),
+                text_font.clone(),
+            ));
+            builder.spawn((
+                TextSpan::new("N/A"),
+                TextColor(Color::srgb(0.9, 0.9, 0.9)),
+                text_font.clone(),
+            ));
+        });
+}
+
+pub fn update_debug_text_system(
+    query: Query<Entity, With<DebugRoot>>,
+    analysis: Res<AnalysisStateResource>,
+    mut writer: TextUiWriter,
+) -> Result<()> {
+    let entity = query.single()?;
+
+    // bassline_peak_config (index 2)
+    let bassline_config = &analysis.0.params.bassline_peak_config;
+    *writer.text(entity, 2) = format!(
+        "  prom: {:.1}, height: {:.1}\n",
+        bassline_config.min_prominence, bassline_config.min_height
+    );
+
+    // highest_bassnote (index 4)
+    *writer.text(entity, 4) = format!("{}\n", analysis.0.params.highest_bassnote);
+
+    // vqt_smoothing_duration_base (index 6)
+    let vqt_smooth_ms = analysis.0.params.vqt_smoothing_duration_base.as_millis();
+    *writer.text(entity, 6) = if vqt_smooth_ms > 0 {
+        format!("{}ms\n", vqt_smooth_ms)
+    } else {
+        "None\n".to_string()
+    };
+
+    // vqt_smoothing_calmness min/max (index 8)
+    *writer.text(entity, 8) = format!(
+        "{:.2} - {:.2}\n",
+        analysis.0.params.vqt_smoothing_calmness_min,
+        analysis.0.params.vqt_smoothing_calmness_max
+    );
+
+    // note_calmness_smoothing_duration (index 10)
+    *writer.text(entity, 10) = format!(
+        "{}ms\n",
+        analysis.0.params.note_calmness_smoothing_duration.as_millis()
+    );
+
+    // scene_calmness_smoothing_duration (index 12)
+    *writer.text(entity, 12) = format!(
+        "{}ms\n",
+        analysis.0.params.scene_calmness_smoothing_duration.as_millis()
+    );
+
+    // tuning_inaccuracy_smoothing_duration (index 14)
+    *writer.text(entity, 14) = format!(
+        "{}ms\n",
+        analysis.0.params.tuning_inaccuracy_smoothing_duration.as_millis()
+    );
+
+    // smoothed_scene_calmness (index 18)
+    let scene_calmness = analysis.0.smoothed_scene_calmness.get();
+    *writer.text(entity, 18) = format!("{:.3}\n", scene_calmness);
+
+    // Color code the calmness value
+    *writer.color(entity, 18) = TextColor(if scene_calmness > 0.7 {
+        Color::srgb(0.5, 0.8, 1.0) // Cyan for calm
+    } else if scene_calmness > 0.3 {
+        Color::srgb(1.0, 1.0, 0.5) // Yellow for medium
+    } else {
+        Color::srgb(1.0, 0.5, 0.5) // Red for energetic
+    });
+
+    // number of detected peaks (index 20)
+    let num_peaks = analysis.0.peaks.len();
+    *writer.text(entity, 20) = format!("{}", num_peaks);
+
+    // Color code based on number of peaks
+    *writer.color(entity, 20) = TextColor(if num_peaks == 0 {
+        Color::srgb(0.5, 0.5, 0.5) // Gray for no peaks
+    } else if num_peaks <= 3 {
+        Color::srgb(0.5, 1.0, 0.5) // Green for few peaks
+    } else if num_peaks <= 8 {
+        Color::srgb(1.0, 1.0, 0.5) // Yellow for moderate
+    } else {
+        Color::srgb(1.0, 0.5, 0.5) // Red for many peaks
+    });
+
+    Ok(())
+}
+
+/// Toggle the debug text based on the display mode
+pub fn debug_text_showhide(
+    mut q: Query<&mut Visibility, With<DebugRoot>>,
+    settings: Res<Persistent<SettingsState>>,
+) -> Result<()> {
     let mut vis = q.single_mut()?;
     if settings.display_mode == display_system::DisplayMode::Debugging {
         *vis = Visibility::Visible;
@@ -1555,6 +1811,7 @@ pub fn register_startup_systems(app: &mut App, vqt_range: &VqtRange) {
             setup_feature_toggle_buttons,
             // setup_bloom_ui,
             setup_analysis_text,
+            setup_debug_text,
             setup_screen_lock_indicator,
         ),
     );
@@ -1581,6 +1838,8 @@ pub fn register_common_update_systems<M1, M2, M3>(
             user_input_system.after(update_button_system),
             update_analysis_text_system,
             analysis_text_showhide,
+            update_debug_text_system,
+            debug_text_showhide,
             update_screen_lock_indicator,
             handle_screen_lock_indicator_press,
             set_frame_limiter_system,
