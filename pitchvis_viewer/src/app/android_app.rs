@@ -24,6 +24,15 @@ use crate::display_system;
 use crate::vqt_system;
 use pitchvis_analysis::vqt::VqtParameters;
 
+/// Resource to track suspension state and timing
+#[derive(Resource, Default)]
+struct SuspensionState {
+    /// Timestamp when suspension started (if currently suspended)
+    suspended_since: Option<std::time::Instant>,
+    /// Whether we've already initiated exit
+    exit_initiated: bool,
+}
+
 #[cfg_attr(not(feature = "ml"), link(name = "c++_shared"))]
 extern "C" {}
 
@@ -32,37 +41,52 @@ const DEFAULT_FPS: u32 = 60;
 
 fn handle_lifetime_events_system(
     mut lifetime_events: MessageReader<AppLifecycle>,
-    // audio_control_tx: ResMut<AudioControlChannelResource>,
-    mut exit: MessageWriter<AppExit>,
+    mut suspension_state: ResMut<SuspensionState>,
 ) {
     use bevy::window::AppLifecycle;
 
     for event in lifetime_events.read() {
         match event {
-            // Upon receiving the `Suspended` event, the application has 1 frame before it is paused
-            // As audio happens in an independent thread, it needs to be stopped
+            // Upon receiving the `Suspended` event, mark the suspension time
+            // We don't exit immediately because this event is also triggered during window resizing
             AppLifecycle::WillSuspend | AppLifecycle::Suspended => {
-                // FIXME: suspending audio does not seem to be good enough, we still get crashes
-                // that block the entire android UI and sometimes seem to require a reboot.
-                // audio_control_tx.0.send(AudioControl::Pause).unwrap();
-
-                // log
-                log::warn!("Application suspended, exiting.");
-
-                // For now, just quit.
-                exit.write(AppExit::Success);
-
-                // This is a workaround to exit the app, but it's not clean. One of them seems to
-                // work after the change from native-activity to game-activity and since update to
-                // bevy 0.15.
-                std::process::exit(0);
+                if suspension_state.suspended_since.is_none() {
+                    log::info!("Application suspended, monitoring for resize vs background...");
+                    suspension_state.suspended_since = Some(std::time::Instant::now());
+                    suspension_state.exit_initiated = false;
+                }
             }
-            // On `Resumed``, audio can continue playing
-            AppLifecycle::WillResume => {
-                // audio_control_tx.0.send(AudioControl::Play).unwrap();
+            // On resume, clear the suspension state (this indicates a resize, not true backgrounding)
+            AppLifecycle::WillResume | AppLifecycle::Resumed => {
+                if suspension_state.suspended_since.is_some() {
+                    log::info!("Application resumed, cancelling suspension exit");
+                    suspension_state.suspended_since = None;
+                    suspension_state.exit_initiated = false;
+                }
             }
             // `Idle`, `Running`
             _ => (),
+        }
+    }
+}
+
+/// System to check if suspension has persisted long enough to indicate true backgrounding
+/// If so, exit the application to avoid crashes
+fn check_suspension_timeout_system(
+    mut suspension_state: ResMut<SuspensionState>,
+    mut exit: MessageWriter<AppExit>,
+) {
+    // Threshold: if suspended for more than this duration, assume true backgrounding
+    const SUSPENSION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+
+    if let Some(suspended_since) = suspension_state.suspended_since {
+        if !suspension_state.exit_initiated && suspended_since.elapsed() > SUSPENSION_TIMEOUT {
+            log::warn!("Application backgrounded (not just resize), exiting to avoid crashes.");
+            suspension_state.exit_initiated = true;
+            exit.write(AppExit::Success);
+
+            // Force exit as fallback (Bevy's AppExit may not work reliably on Android)
+            std::process::exit(0);
         }
     }
 }
@@ -357,10 +381,17 @@ fn main() -> AppExit {
         update_display_system,
     );
 
-    // Android-specific: Add lifecycle event handler and UI visibility handler
+    // Initialize suspension tracking resource
+    app.insert_resource(SuspensionState::default());
+
+    // Android-specific: Add lifecycle event handler, suspension timeout checker, and UI visibility handler
     app.add_systems(
         Update,
-        (handle_lifetime_events_system, handle_android_ui_visibility),
+        (
+            handle_lifetime_events_system,
+            check_suspension_timeout_system,
+            handle_android_ui_visibility,
+        ),
     );
 
     app.run()
