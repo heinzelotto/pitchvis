@@ -523,6 +523,13 @@ pub fn setup_debug_text(mut commands: Commands) {
             Visibility::Visible,
         ))
         .with_children(|builder| {
+            // Keyboard shortcuts hint
+            builder.spawn((
+                TextSpan::new("Press digit (1-9) + +/- to tune\n"),
+                TextColor(Color::srgb(0.5, 1.0, 0.5)),
+                text_font.clone(),
+            ));
+
             // AnalysisParameters section
             builder.spawn((
                 TextSpan::new("=== AnalysisParameters ===\n"),
@@ -532,7 +539,7 @@ pub fn setup_debug_text(mut commands: Commands) {
 
             // bassline_peak_config
             builder.spawn((
-                TextSpan::new("bassline_peak_config:\n"),
+                TextSpan::new("[1/2] bassline_peak_config:\n"),
                 TextColor(Color::WHITE),
                 text_font.clone(),
             ));
@@ -544,7 +551,7 @@ pub fn setup_debug_text(mut commands: Commands) {
 
             // highest_bassnote
             builder.spawn((
-                TextSpan::new("highest_bassnote: "),
+                TextSpan::new("[3] highest_bassnote: "),
                 TextColor(Color::WHITE),
                 text_font.clone(),
             ));
@@ -556,7 +563,7 @@ pub fn setup_debug_text(mut commands: Commands) {
 
             // vqt_smoothing_duration_base
             builder.spawn((
-                TextSpan::new("vqt_smoothing_dur_base: "),
+                TextSpan::new("[4] vqt_smoothing_dur_base: "),
                 TextColor(Color::WHITE),
                 text_font.clone(),
             ));
@@ -568,7 +575,7 @@ pub fn setup_debug_text(mut commands: Commands) {
 
             // vqt_smoothing_calmness min/max
             builder.spawn((
-                TextSpan::new("vqt_smooth_calmness: "),
+                TextSpan::new("[5/6] vqt_smooth_calmness: "),
                 TextColor(Color::WHITE),
                 text_font.clone(),
             ));
@@ -580,7 +587,7 @@ pub fn setup_debug_text(mut commands: Commands) {
 
             // note_calmness_smoothing_duration
             builder.spawn((
-                TextSpan::new("note_calmness_dur: "),
+                TextSpan::new("[7] note_calmness_dur: "),
                 TextColor(Color::WHITE),
                 text_font.clone(),
             ));
@@ -592,7 +599,7 @@ pub fn setup_debug_text(mut commands: Commands) {
 
             // scene_calmness_smoothing_duration
             builder.spawn((
-                TextSpan::new("scene_calmness_dur: "),
+                TextSpan::new("[8] scene_calmness_dur: "),
                 TextColor(Color::WHITE),
                 text_font.clone(),
             ));
@@ -604,7 +611,7 @@ pub fn setup_debug_text(mut commands: Commands) {
 
             // tuning_inaccuracy_smoothing_duration
             builder.spawn((
-                TextSpan::new("tuning_inaccuracy_dur: "),
+                TextSpan::new("[9] tuning_inaccuracy_dur: "),
                 TextColor(Color::WHITE),
                 text_font.clone(),
             ));
@@ -661,32 +668,32 @@ pub fn update_debug_text_system(
 ) -> Result<()> {
     let entity = query.single()?;
 
-    // bassline_peak_config (index 3 - parent is 0, children start at 1)
+    // bassline_peak_config (index 4 - parent is 0, keyboard hint is 1, section header is 2, label is 3, value is 4)
     let bassline_config = &analysis.0.params.bassline_peak_config;
-    *writer.text(entity, 3) = format!(
+    *writer.text(entity, 4) = format!(
         "  prom: {:.1}, height: {:.1}\n",
         bassline_config.min_prominence, bassline_config.min_height
     );
 
-    // highest_bassnote (index 5)
-    *writer.text(entity, 5) = format!("{}\n", analysis.0.params.highest_bassnote);
+    // highest_bassnote (index 6)
+    *writer.text(entity, 6) = format!("{}\n", analysis.0.params.highest_bassnote);
 
-    // vqt_smoothing_duration_base (index 7)
+    // vqt_smoothing_duration_base (index 8)
     let vqt_smooth_ms = analysis.0.params.vqt_smoothing_duration_base.as_millis();
-    *writer.text(entity, 7) = if vqt_smooth_ms > 0 {
+    *writer.text(entity, 8) = if vqt_smooth_ms > 0 {
         format!("{}ms\n", vqt_smooth_ms)
     } else {
         "None\n".to_string()
     };
 
-    // vqt_smoothing_calmness min/max (index 9)
-    *writer.text(entity, 9) = format!(
+    // vqt_smoothing_calmness min/max (index 10)
+    *writer.text(entity, 10) = format!(
         "{:.2} - {:.2}\n",
         analysis.0.params.vqt_smoothing_calmness_min, analysis.0.params.vqt_smoothing_calmness_max
     );
 
-    // note_calmness_smoothing_duration (index 11)
-    *writer.text(entity, 11) = format!(
+    // note_calmness_smoothing_duration (index 12)
+    *writer.text(entity, 12) = format!(
         "{}ms\n",
         analysis
             .0
@@ -695,8 +702,8 @@ pub fn update_debug_text_system(
             .as_millis()
     );
 
-    // scene_calmness_smoothing_duration (index 13)
-    *writer.text(entity, 13) = format!(
+    // scene_calmness_smoothing_duration (index 14)
+    *writer.text(entity, 14) = format!(
         "{}ms\n",
         analysis
             .0
@@ -705,8 +712,8 @@ pub fn update_debug_text_system(
             .as_millis()
     );
 
-    // tuning_inaccuracy_smoothing_duration (index 15)
-    *writer.text(entity, 15) = format!(
+    // tuning_inaccuracy_smoothing_duration (index 16)
+    *writer.text(entity, 16) = format!(
         "{}ms\n",
         analysis
             .0
@@ -715,12 +722,12 @@ pub fn update_debug_text_system(
             .as_millis()
     );
 
-    // smoothed_scene_calmness (index 19)
+    // smoothed_scene_calmness (index 20)
     let scene_calmness = analysis.0.smoothed_scene_calmness.get();
-    *writer.text(entity, 19) = format!("{:.3}\n", scene_calmness);
+    *writer.text(entity, 20) = format!("{:.3}\n", scene_calmness);
 
     // Color code the calmness value
-    *writer.color(entity, 19) = TextColor(if scene_calmness > 0.7 {
+    *writer.color(entity, 20) = TextColor(if scene_calmness > 0.7 {
         Color::srgb(0.5, 0.8, 1.0) // Cyan for calm
     } else if scene_calmness > 0.3 {
         Color::srgb(1.0, 1.0, 0.5) // Yellow for medium
@@ -728,12 +735,12 @@ pub fn update_debug_text_system(
         Color::srgb(1.0, 0.5, 0.5) // Red for energetic
     });
 
-    // number of detected peaks (index 21)
+    // number of detected peaks (index 22)
     let num_peaks = analysis.0.peaks.len();
-    *writer.text(entity, 21) = format!("{}", num_peaks);
+    *writer.text(entity, 22) = format!("{}", num_peaks);
 
     // Color code based on number of peaks
-    *writer.color(entity, 21) = TextColor(if num_peaks == 0 {
+    *writer.color(entity, 22) = TextColor(if num_peaks == 0 {
         Color::srgb(0.5, 0.5, 0.5) // Gray for no peaks
     } else if num_peaks <= 3 {
         Color::srgb(0.5, 1.0, 0.5) // Green for few peaks
@@ -756,6 +763,92 @@ pub fn debug_text_showhide(
         *vis = Visibility::Visible;
     } else {
         *vis = Visibility::Hidden;
+    }
+
+    Ok(())
+}
+
+/// Update analysis parameters based on keyboard input (digit + plus/minus keys)
+pub fn update_analysis_parameters_system(
+    mut analysis: ResMut<AnalysisStateResource>,
+    keycode: Res<ButtonInput<KeyCode>>,
+    time: Res<Time>,
+    settings: Res<Persistent<SettingsState>>,
+) -> Result<()> {
+    // Only allow parameter tuning in debug mode
+    if settings.display_mode != display_system::DisplayMode::Debugging {
+        return Ok(());
+    }
+
+    let dt = time.delta_secs();
+    let params = &mut analysis.0.params;
+
+    // Check which digit key is pressed (1-9) and which direction (+/-)
+    let plus_pressed = keycode.pressed(KeyCode::Equal) || keycode.pressed(KeyCode::NumpadAdd);
+    let minus_pressed = keycode.pressed(KeyCode::Minus) || keycode.pressed(KeyCode::NumpadSubtract);
+
+    if !plus_pressed && !minus_pressed {
+        return Ok(());
+    }
+
+    let direction = if plus_pressed { 1.0 } else { -1.0 };
+
+    // Parameter 1: Bassline peak prominence
+    if keycode.pressed(KeyCode::Digit1) {
+        params.bassline_peak_config.min_prominence += direction * 5.0 * dt;
+        params.bassline_peak_config.min_prominence = params.bassline_peak_config.min_prominence.clamp(1.0, 20.0);
+    }
+
+    // Parameter 2: Bassline peak height
+    if keycode.pressed(KeyCode::Digit2) {
+        params.bassline_peak_config.min_height += direction * 2.5 * dt;
+        params.bassline_peak_config.min_height = params.bassline_peak_config.min_height.clamp(1.0, 10.0);
+    }
+
+    // Parameter 3: Highest bass note
+    if keycode.pressed(KeyCode::Digit3) {
+        params.highest_bassnote = (params.highest_bassnote as f32 + direction * 12.0 * dt).round() as usize;
+        params.highest_bassnote = params.highest_bassnote.clamp(12, 60);
+    }
+
+    // Parameter 4: VQT smoothing base duration
+    if keycode.pressed(KeyCode::Digit4) {
+        let current_ms = params.vqt_smoothing_duration_base.as_millis() as f32;
+        let new_ms = (current_ms + direction * 100.0 * dt).max(0.0).min(500.0);
+        params.vqt_smoothing_duration_base = std::time::Duration::from_millis(new_ms as u64);
+    }
+
+    // Parameter 5: VQT smoothing calmness min
+    if keycode.pressed(KeyCode::Digit5) {
+        params.vqt_smoothing_calmness_min += direction * 0.5 * dt;
+        params.vqt_smoothing_calmness_min = params.vqt_smoothing_calmness_min.clamp(0.1, 2.0);
+    }
+
+    // Parameter 6: VQT smoothing calmness max
+    if keycode.pressed(KeyCode::Digit6) {
+        params.vqt_smoothing_calmness_max += direction * 1.0 * dt;
+        params.vqt_smoothing_calmness_max = params.vqt_smoothing_calmness_max.clamp(0.5, 5.0);
+    }
+
+    // Parameter 7: Note calmness smoothing duration
+    if keycode.pressed(KeyCode::Digit7) {
+        let current_ms = params.note_calmness_smoothing_duration.as_millis() as f32;
+        let new_ms = (current_ms + direction * 2000.0 * dt).max(100.0).min(10000.0);
+        params.note_calmness_smoothing_duration = std::time::Duration::from_millis(new_ms as u64);
+    }
+
+    // Parameter 8: Scene calmness smoothing duration
+    if keycode.pressed(KeyCode::Digit8) {
+        let current_ms = params.scene_calmness_smoothing_duration.as_millis() as f32;
+        let new_ms = (current_ms + direction * 1000.0 * dt).max(100.0).min(5000.0);
+        params.scene_calmness_smoothing_duration = std::time::Duration::from_millis(new_ms as u64);
+    }
+
+    // Parameter 9: Tuning inaccuracy smoothing duration
+    if keycode.pressed(KeyCode::Digit9) {
+        let current_ms = params.tuning_inaccuracy_smoothing_duration.as_millis() as f32;
+        let new_ms = (current_ms + direction * 2000.0 * dt).max(100.0).min(10000.0);
+        params.tuning_inaccuracy_smoothing_duration = std::time::Duration::from_millis(new_ms as u64);
     }
 
     Ok(())
@@ -1850,6 +1943,7 @@ pub fn register_common_update_systems<M1, M2, M3>(
             user_input_system.after(update_button_system),
             update_analysis_text_system,
             analysis_text_showhide,
+            update_analysis_parameters_system.before(update_debug_text_system),
             update_debug_text_system,
             debug_text_showhide,
             update_screen_lock_indicator,
