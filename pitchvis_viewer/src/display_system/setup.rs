@@ -95,13 +95,21 @@ fn spawn_pitch_balls(
             params: Default::default(),
         };
 
+        // We don't make all pitch balls visible initially. This will create a nice shape for the intro.
+        // 12 * 7 = 84 and 17 * 5 = 85, so we get a curved 5-star
+        let is_intro_ball = idx % 17 == 0;
+
         commands.spawn((
             PitchBall(idx),
             Mesh2d(meshes.add(Rectangle::new(20.0, 20.0)).into()),
             MeshMaterial2d(noisy_color_materials.add(noisy_color_material)),
-            Transform::from_xyz(*x * 1.0, *y * 1.0, -0.01), // needs to be slightly behind the 2d camera
-            if idx % 17 == 0 {
-                // 12 * 7 = 84 and 17 * 5 = 85, so we get a curved 5-star
+            Transform::from_xyz(*x * 1.0, *y * 1.0, -0.01) // needs to be slightly behind the 2d camera
+                .with_scale(if is_intro_ball {
+                    Vec3::ONE * 3.0
+                } else {
+                    Vec3::ZERO
+                }),
+            if is_intro_ball {
                 Visibility::Visible
             } else {
                 Visibility::Hidden

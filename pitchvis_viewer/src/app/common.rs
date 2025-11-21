@@ -682,26 +682,37 @@ pub fn update_debug_text_system(
     // vqt_smoothing_calmness min/max (index 9)
     *writer.text(entity, 9) = format!(
         "{:.2} - {:.2}\n",
-        analysis.0.params.vqt_smoothing_calmness_min,
-        analysis.0.params.vqt_smoothing_calmness_max
+        analysis.0.params.vqt_smoothing_calmness_min, analysis.0.params.vqt_smoothing_calmness_max
     );
 
     // note_calmness_smoothing_duration (index 11)
     *writer.text(entity, 11) = format!(
         "{}ms\n",
-        analysis.0.params.note_calmness_smoothing_duration.as_millis()
+        analysis
+            .0
+            .params
+            .note_calmness_smoothing_duration
+            .as_millis()
     );
 
     // scene_calmness_smoothing_duration (index 13)
     *writer.text(entity, 13) = format!(
         "{}ms\n",
-        analysis.0.params.scene_calmness_smoothing_duration.as_millis()
+        analysis
+            .0
+            .params
+            .scene_calmness_smoothing_duration
+            .as_millis()
     );
 
     // tuning_inaccuracy_smoothing_duration (index 15)
     *writer.text(entity, 15) = format!(
         "{}ms\n",
-        analysis.0.params.tuning_inaccuracy_smoothing_duration.as_millis()
+        analysis
+            .0
+            .params
+            .tuning_inaccuracy_smoothing_duration
+            .as_millis()
     );
 
     // smoothed_scene_calmness (index 19)
@@ -808,7 +819,8 @@ pub fn handle_screen_lock_indicator_press(
     mut mouse_consumed: ResMut<PressEventConsumed>,
 ) {
     if let Ok(interaction) = interaction_query.single() {
-        let is_pressed = *interaction == Interaction::Pressed || *interaction == Interaction::Hovered;
+        let is_pressed =
+            *interaction == Interaction::Pressed || *interaction == Interaction::Hovered;
 
         // Update the pressed state
         indicator_pressed.0 = is_pressed;
