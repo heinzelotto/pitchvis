@@ -661,55 +661,55 @@ pub fn update_debug_text_system(
 ) -> Result<()> {
     let entity = query.single()?;
 
-    // bassline_peak_config (index 2)
+    // bassline_peak_config (index 3 - parent is 0, children start at 1)
     let bassline_config = &analysis.0.params.bassline_peak_config;
-    *writer.text(entity, 2) = format!(
+    *writer.text(entity, 3) = format!(
         "  prom: {:.1}, height: {:.1}\n",
         bassline_config.min_prominence, bassline_config.min_height
     );
 
-    // highest_bassnote (index 4)
-    *writer.text(entity, 4) = format!("{}\n", analysis.0.params.highest_bassnote);
+    // highest_bassnote (index 5)
+    *writer.text(entity, 5) = format!("{}\n", analysis.0.params.highest_bassnote);
 
-    // vqt_smoothing_duration_base (index 6)
+    // vqt_smoothing_duration_base (index 7)
     let vqt_smooth_ms = analysis.0.params.vqt_smoothing_duration_base.as_millis();
-    *writer.text(entity, 6) = if vqt_smooth_ms > 0 {
+    *writer.text(entity, 7) = if vqt_smooth_ms > 0 {
         format!("{}ms\n", vqt_smooth_ms)
     } else {
         "None\n".to_string()
     };
 
-    // vqt_smoothing_calmness min/max (index 8)
-    *writer.text(entity, 8) = format!(
+    // vqt_smoothing_calmness min/max (index 9)
+    *writer.text(entity, 9) = format!(
         "{:.2} - {:.2}\n",
         analysis.0.params.vqt_smoothing_calmness_min,
         analysis.0.params.vqt_smoothing_calmness_max
     );
 
-    // note_calmness_smoothing_duration (index 10)
-    *writer.text(entity, 10) = format!(
+    // note_calmness_smoothing_duration (index 11)
+    *writer.text(entity, 11) = format!(
         "{}ms\n",
         analysis.0.params.note_calmness_smoothing_duration.as_millis()
     );
 
-    // scene_calmness_smoothing_duration (index 12)
-    *writer.text(entity, 12) = format!(
+    // scene_calmness_smoothing_duration (index 13)
+    *writer.text(entity, 13) = format!(
         "{}ms\n",
         analysis.0.params.scene_calmness_smoothing_duration.as_millis()
     );
 
-    // tuning_inaccuracy_smoothing_duration (index 14)
-    *writer.text(entity, 14) = format!(
+    // tuning_inaccuracy_smoothing_duration (index 15)
+    *writer.text(entity, 15) = format!(
         "{}ms\n",
         analysis.0.params.tuning_inaccuracy_smoothing_duration.as_millis()
     );
 
-    // smoothed_scene_calmness (index 18)
+    // smoothed_scene_calmness (index 19)
     let scene_calmness = analysis.0.smoothed_scene_calmness.get();
-    *writer.text(entity, 18) = format!("{:.3}\n", scene_calmness);
+    *writer.text(entity, 19) = format!("{:.3}\n", scene_calmness);
 
     // Color code the calmness value
-    *writer.color(entity, 18) = TextColor(if scene_calmness > 0.7 {
+    *writer.color(entity, 19) = TextColor(if scene_calmness > 0.7 {
         Color::srgb(0.5, 0.8, 1.0) // Cyan for calm
     } else if scene_calmness > 0.3 {
         Color::srgb(1.0, 1.0, 0.5) // Yellow for medium
@@ -717,12 +717,12 @@ pub fn update_debug_text_system(
         Color::srgb(1.0, 0.5, 0.5) // Red for energetic
     });
 
-    // number of detected peaks (index 20)
+    // number of detected peaks (index 21)
     let num_peaks = analysis.0.peaks.len();
-    *writer.text(entity, 20) = format!("{}", num_peaks);
+    *writer.text(entity, 21) = format!("{}", num_peaks);
 
     // Color code based on number of peaks
-    *writer.color(entity, 20) = TextColor(if num_peaks == 0 {
+    *writer.color(entity, 21) = TextColor(if num_peaks == 0 {
         Color::srgb(0.5, 0.5, 0.5) // Gray for no peaks
     } else if num_peaks <= 3 {
         Color::srgb(0.5, 1.0, 0.5) // Green for few peaks
