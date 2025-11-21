@@ -81,6 +81,10 @@ pub struct ScreenLockState(pub bool);
 #[derive(Resource)]
 pub struct ScreenLockTapTime(pub Option<Instant>);
 
+/// Resource to track if the screen lock indicator button is currently being pressed
+#[derive(Resource)]
+pub struct ScreenLockIndicatorPressed(pub bool);
+
 /// Resource to track active touches for long press detection
 #[derive(Resource)]
 pub struct ActiveTouches(pub Arc<Mutex<HashMap<u64, Instant>>>);
@@ -500,7 +504,7 @@ pub fn setup_screen_lock_indicator(mut commands: Commands) {
     commands.spawn((
         ScreenLockIndicator,
         Button,
-        Text::new("TAP HERE TO UNLOCK"),
+        Text::new("LONG PRESS HERE TO UNLOCK"),
         TextColor(Color::srgb(0.95, 0.95, 0.65)),
         text_font,
         Node {
@@ -541,15 +545,20 @@ pub fn update_screen_lock_indicator(
     }
 }
 
-/// Handle screen lock indicator button press to unlock
+/// Track when screen lock indicator button is being pressed
 pub fn handle_screen_lock_indicator_press(
-    mut interaction_query: Query<&Interaction, (Changed<Interaction>, With<ScreenLockIndicator>)>,
-    mut lock_state: ResMut<ScreenLockState>,
+    interaction_query: Query<&Interaction, With<ScreenLockIndicator>>,
+    mut indicator_pressed: ResMut<ScreenLockIndicatorPressed>,
     mut mouse_consumed: ResMut<PressEventConsumed>,
 ) {
-    for interaction in &mut interaction_query {
-        if *interaction == Interaction::Pressed {
-            lock_state.0 = false;
+    if let Ok(interaction) = interaction_query.single() {
+        let is_pressed = *interaction == Interaction::Pressed || *interaction == Interaction::Hovered;
+
+        // Update the pressed state
+        indicator_pressed.0 = is_pressed;
+
+        // Consume mouse events when interacting with the indicator
+        if is_pressed {
             mouse_consumed.0 = true;
         }
     }
@@ -1324,14 +1333,23 @@ pub fn user_input_system(
     mut lock_state: ResMut<ScreenLockState>,
     mut tap_time: ResMut<ScreenLockTapTime>,
     active_touches: Res<ActiveTouches>,
+    indicator_pressed: Res<ScreenLockIndicatorPressed>,
     mut commands: Commands,
 ) {
     const LONG_PRESS_DURATION: f32 = 1.5;
 
-    // Check for long presses that are still held and toggle lock immediately
+    // Check for long presses that are still held
     active_touches.0.lock().unwrap().retain(|_, touch_start| {
         if touch_start.elapsed().as_secs_f32() >= LONG_PRESS_DURATION {
-            lock_state.0 = !lock_state.0;
+            // When unlocked: long press anywhere locks
+            // When locked: long press only unlocks if on the indicator button
+            if !lock_state.0 {
+                // Unlocked - lock the screen
+                lock_state.0 = true;
+            } else if indicator_pressed.0 {
+                // Locked and pressing indicator - unlock the screen
+                lock_state.0 = false;
+            }
             false // Remove from tracking
         } else {
             true // Keep tracking
@@ -1522,6 +1540,7 @@ pub fn insert_common_resources(
         })
         .insert_resource(ScreenLockState(false))
         .insert_resource(ScreenLockTapTime(None))
+        .insert_resource(ScreenLockIndicatorPressed(false))
         .insert_resource(ActiveTouches(Arc::new(Mutex::new(HashMap::new()))));
 }
 
