@@ -650,6 +650,75 @@ fn update_glissandi(
     }
 }
 
+/// Helper function to add a circle to an existing mesh
+fn add_circle_to_mesh(mesh: &mut Mesh, center: Vec3, radius: f32, color: [f32; 4], segments: u32) {
+    use bevy::mesh::{Indices, PrimitiveTopology};
+
+    // Get existing attributes
+    let mut positions = mesh
+        .attribute(Mesh::ATTRIBUTE_POSITION)
+        .unwrap()
+        .as_float3()
+        .unwrap()
+        .to_vec();
+    let mut normals = mesh
+        .attribute(Mesh::ATTRIBUTE_NORMAL)
+        .unwrap()
+        .as_float3()
+        .unwrap()
+        .to_vec();
+    let mut uvs = mesh
+        .attribute(Mesh::ATTRIBUTE_UV_0)
+        .unwrap()
+        .as_float2()
+        .unwrap()
+        .to_vec();
+    let mut colors = mesh
+        .attribute(Mesh::ATTRIBUTE_COLOR)
+        .unwrap()
+        .as_float4()
+        .unwrap()
+        .to_vec();
+    let mut indices = match mesh.indices().unwrap() {
+        Indices::U32(idx) => idx.to_vec(),
+        _ => panic!("Expected U32 indices"),
+    };
+
+    let base_index = positions.len() as u32;
+
+    // Add center vertex
+    positions.push([center.x, center.y, center.z]);
+    normals.push([0.0, 0.0, 1.0]);
+    uvs.push([0.5, 0.5]);
+    colors.push(color);
+
+    // Add circle perimeter vertices and create triangles
+    for i in 0..segments {
+        let angle = (i as f32 / segments as f32) * std::f32::consts::TAU;
+        let x = center.x + radius * angle.cos();
+        let y = center.y + radius * angle.sin();
+
+        positions.push([x, y, center.z]);
+        normals.push([0.0, 0.0, 1.0]);
+        uvs.push([0.5 + 0.5 * angle.cos(), 0.5 + 0.5 * angle.sin()]);
+        colors.push(color);
+
+        // Create triangle (center, current, next)
+        let current = base_index + 1 + i;
+        let next = base_index + 1 + ((i + 1) % segments);
+        indices.push(base_index);
+        indices.push(current);
+        indices.push(next);
+    }
+
+    // Update mesh attributes
+    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colors);
+    mesh.insert_indices(Indices::U32(indices));
+}
+
 fn update_spectrum(
     mut spectrum: Query<(&mut Visibility, &Mesh2d, &mut Transform), With<Spectrum>>,
     camera: &Query<(&mut Camera, Option<&mut Bloom>, Ref<Projection>)>,
@@ -725,6 +794,37 @@ fn update_spectrum(
             .flatten()
             .collect::<Vec<[f32; 4]>>();
         spectrum_mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colors);
+
+        // Add circles for detected peaks
+        for peak in &analysis_state.peaks_continuous {
+            let peak_x = peak.center * 0.022; // Same scaling as spectrum
+            let peak_y = peak.size / 10.0; // Same scaling as spectrum
+
+            // Calculate color for this peak based on its bin position
+            let bin = peak.center.round() as usize;
+            let (r, g, b) = calculate_color(
+                range.buckets_per_octave,
+                ((bin as f32)
+                    + 0.5
+                    + (range.buckets_per_octave - 3 * (range.buckets_per_octave / 12)) as f32)
+                    % range.buckets_per_octave as f32,
+                COLORS,
+                GRAY_LEVEL,
+                10.0,
+            );
+
+            // Make peaks slightly brighter/more opaque
+            let peak_color = [r, g, b, 0.9];
+
+            // Add circle at peak position
+            add_circle_to_mesh(
+                &mut spectrum_mesh,
+                Vec3::new(peak_x, peak_y, 0.0),
+                0.08, // Circle radius
+                peak_color,
+                12, // Number of segments (12 for a smooth circle)
+            );
+        }
 
         if let Some(mesh) = meshes.get_mut(&mesh_handle.0) {
             *mesh = spectrum_mesh;
