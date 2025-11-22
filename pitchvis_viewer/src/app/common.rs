@@ -471,11 +471,16 @@ pub fn update_analysis_text_system(
     // *writer.text(entity, 10) = format!("{}", tracked_peaks);
 
     // Detected chord
+    let detector_name = match analysis.0.params.chord_detector_type {
+        pitchvis_analysis::analysis::ChordDetectorType::Builtin => "Built-in",
+        pitchvis_analysis::analysis::ChordDetectorType::External => "External",
+    };
+
     if let Some(ref chord) = analysis.0.detected_chord {
-        *writer.text(entity, 4) = format!("{}", chord.name());
+        *writer.text(entity, 4) = format!("{} ({})", chord.name(), detector_name);
         *writer.color(entity, 4) = TextColor(Color::srgb(0.5, 1.0, 0.5)); // Green when chord detected
     } else {
-        *writer.text(entity, 4) = "None".to_string();
+        *writer.text(entity, 4) = format!("None ({})", detector_name);
         *writer.color(entity, 4) = TextColor(Color::srgb(0.6, 0.6, 0.6)); // Gray when no chord
     }
 
@@ -1602,6 +1607,7 @@ pub fn user_input_system(
     mut tap_time: ResMut<ScreenLockTapTime>,
     active_touches: Res<ActiveTouches>,
     indicator_pressed: Res<ScreenLockIndicatorPressed>,
+    mut analysis: ResMut<AnalysisStateResource>,
     mut commands: Commands,
 ) {
     const LONG_PRESS_DURATION: f32 = 1.5;
@@ -1674,6 +1680,15 @@ pub fn user_input_system(
                 KeyCode::KeyL => {
                     // Ctrl+L or just L to toggle lock on desktop
                     lock_state.0 = !lock_state.0;
+                }
+                KeyCode::KeyC => {
+                    // Toggle chord detector type
+                    use pitchvis_analysis::analysis::ChordDetectorType;
+                    analysis.0.params.chord_detector_type = match analysis.0.params.chord_detector_type {
+                        ChordDetectorType::Builtin => ChordDetectorType::External,
+                        ChordDetectorType::External => ChordDetectorType::Builtin,
+                    };
+                    log::info!("Toggled chord detector to: {:?}", analysis.0.params.chord_detector_type);
                 }
                 _ => {}
             }
