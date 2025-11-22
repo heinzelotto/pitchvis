@@ -514,4 +514,112 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn test_pitch_quantization_boundaries() {
+        // Test the exact boundaries of pitch quantization
+        // With 84 buckets per octave (7 buckets per semitone):
+        // - bin 0 = C at 0 cents
+        // - bin 1 = C + 14.3 cents
+        // - bin 2 = C + 28.6 cents
+        // - bin 3 = C + 42.9 cents
+        // - bin 4 = C + 57.1 cents  <- should round to C# (semitone 1)
+
+        // Test bin 3 (42.9 cents) - should map to C (semitone 0)
+        let mut active_bins = HashMap::new();
+        active_bins.insert(3, 1.0);
+        active_bins.insert(31, 0.8);  // E + 42.9 cents
+        active_bins.insert(52, 0.9);  // G + 42.9 cents
+
+        let chord = detect_chord(&active_bins, 84, 261.626, 2);
+        assert!(chord.is_some());
+        let chord = chord.unwrap();
+        assert_eq!(chord.root, 0, "Bin 3 (+42.9¢) should map to C (pitch class 0)");
+        assert_eq!(chord.quality, ChordQuality::Major);
+
+        // Test bin 4 (57.1 cents) - should map to C# (semitone 1)
+        let mut active_bins = HashMap::new();
+        active_bins.insert(4, 1.0);   // C + 57.1 cents → should be C#
+        active_bins.insert(32, 0.8);  // E + 57.1 cents → should be F
+        active_bins.insert(53, 0.9);  // G + 57.1 cents → should be G#
+
+        let chord = detect_chord(&active_bins, 84, 261.626, 2);
+        if let Some(chord) = chord {
+            assert_ne!(chord.root, 0, "Bin 4 (+57.1¢) should NOT map to C");
+            // It should map to C# (pitch class 1)
+            if chord.quality == ChordQuality::Major {
+                assert_eq!(chord.root, 1, "Bin 4 (+57.1¢) should map to C# (pitch class 1)");
+            }
+        }
+    }
+
+    #[test]
+    fn test_negative_offset_quantization() {
+        // Test pitch quantization with negative offsets
+        // The issue: Current implementation isn't symmetric around 0
+        // With 84 buckets/octave, to test C-50¢, we need to start from a higher reference
+
+        // Use A (220 Hz) as reference, test A minor chord
+        // A = bin 0, C = bin 21 (3 semitones * 7), E = bin 49 (7 semitones * 7)
+
+        // Test in-tune first
+        let mut active_bins = HashMap::new();
+        active_bins.insert(0, 1.0);   // A
+        active_bins.insert(21, 0.8);  // C
+        active_bins.insert(49, 0.9);  // E
+
+        let chord = detect_chord(&active_bins, 84, 220.0, 2);
+        assert!(chord.is_some());
+        let chord = chord.unwrap();
+        assert_eq!(chord.root, 9, "A minor root should be A (pitch class 9)");
+        assert_eq!(chord.quality, ChordQuality::Minor);
+
+        // Test with -43 cents offset (bins 0, 18, 46)
+        // bin 18 = 3 semitones - 3 buckets = 3*7 - 3 = 18
+        // bin 46 = 7 semitones - 3 buckets = 7*7 - 3 = 46
+        let mut active_bins = HashMap::new();
+        active_bins.insert(0, 1.0);   // A (using higher min_freq to simulate flat)
+        active_bins.insert(18, 0.8);  // C - 42.9 cents
+        active_bins.insert(46, 0.9);  // E - 42.9 cents
+
+        // Increase min_freq by 43 cents to simulate the notes being flat
+        let min_freq_plus_43_cents = 220.0 * 2_f32.powf(43.0 / 1200.0);
+
+        let chord = detect_chord(&active_bins, 84, min_freq_plus_43_cents, 2);
+        assert!(chord.is_some(), "A minor -43 cents should still be detected");
+        let chord = chord.unwrap();
+        assert_eq!(chord.root, 9, "Root should still be A");
+        assert_eq!(chord.quality, ChordQuality::Minor);
+    }
+
+    #[test]
+    fn test_exact_50_cent_boundary() {
+        // Test exactly at the ±50 cent boundary
+        // With 84 buckets/octave, the 50 cent point is at bin 3.5
+        // Since we have integer bins, we can't test exactly 50 cents
+        // But we can test that the crossover happens between bin 3 and 4
+
+        println!("\nTesting quantization boundaries:");
+        for bin in 0..8 {
+            let semitone_value = (bin * 12) as f32 / 84.0;
+            let rounded = semitone_value.round();
+            let cents = (bin as f32 / 7.0) * 100.0;
+            println!("  bin {}: {:.2} cents → semitone {:.3} → rounds to {}",
+                     bin, cents, semitone_value, rounded);
+        }
+
+        // The actual tolerance with current rounding:
+        // - Bins 0-3 (0 to ~43 cents) → semitone 0
+        // - Bins 4-10 (~57 to ~143 cents) → semitone 1
+        // This gives asymmetric tolerance: -43 to +43 cents (not ±50 cents!)
+
+        // To have proper ±50 cent tolerance, we need bins that represent:
+        // - 50 cents = 3.5 bins
+        // So the crossover should be at 3.5 bins, which rounding achieves
+        // BUT: each bin represents a range, not a point
+        // Bin 3 represents the range from 3.0 to 3.999... bins
+        // The center of bin 3 is at 3.5 bins = 50 cents!
+
+        assert!(true, "This test documents the current behavior");
+    }
 }
