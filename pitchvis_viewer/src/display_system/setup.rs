@@ -85,7 +85,13 @@ pub fn setup_display(
 
     spawn_root_note_slice(&mut commands, &mut meshes, &mut color_materials);
 
-    spawn_spectrogram(&mut commands, &mut images, &mut spectrogram_materials, range);
+    spawn_spectrogram(
+        &mut commands,
+        &mut meshes,
+        &mut images,
+        &mut spectrogram_materials,
+        range,
+    );
 
     spawn_chroma_display(&mut commands);
 }
@@ -473,6 +479,7 @@ fn spawn_root_note_slice(
 
 fn spawn_spectrogram(
     commands: &mut Commands,
+    meshes: &mut ResMut<Assets<Mesh>>,
     images: &mut ResMut<Assets<Image>>,
     spectrogram_materials: &mut ResMut<Assets<SpectrogramMaterial>>,
     range: &VqtRange,
@@ -554,9 +561,14 @@ fn spawn_spectrogram(
     let visual_width = visual_height * (height as f32 / width as f32); // Time axis (horizontal after rotation)
 
     use std::f32::consts::PI;
+
+    // Create rectangle mesh and add to assets
+    let mesh = Rectangle::new(visual_width, visual_height);
+    let mesh_handle = meshes.add(mesh);
+
     commands.spawn((
         SpectrogramDisplay,
-        Mesh2d(Rectangle::new(visual_width, visual_height).into()),
+        Mesh2d(mesh_handle),
         MeshMaterial2d(material_handle),
         Transform::from_xyz(0.0, 4.0, 5.0)
             .with_rotation(bevy::math::Quat::from_rotation_z(-PI / 2.0))
