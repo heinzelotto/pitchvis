@@ -3,7 +3,6 @@
 /// This module tracks peaks over time to detect glissandi (smooth pitch changes).
 /// It maintains a list of tracked peaks and creates glissando objects when peaks
 /// move significant distances.
-
 use super::peak_detection::ContinuousPeak;
 use log::trace;
 use std::time::Duration;

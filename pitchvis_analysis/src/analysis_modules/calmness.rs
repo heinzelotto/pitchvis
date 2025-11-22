@@ -3,7 +3,6 @@
 /// This module calculates the "calmness" of notes and scenes based on how sustained
 /// they are over time. Calmness is high for sustained notes and low for rapidly
 /// changing or transient sounds.
-
 use crate::util::EmaMeasurement;
 use crate::vqt::VqtRange;
 use std::cmp::{max, min};

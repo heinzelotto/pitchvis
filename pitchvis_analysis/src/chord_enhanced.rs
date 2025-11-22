@@ -226,7 +226,8 @@ pub fn detect_chord_enhanced(
 
     // Calculate plausibility score
     let quality = rmt_quality_to_old_quality(&best.quality, &best.number);
-    let plausibility = crate::chord::calculate_plausibility(&pitch_class_power, best.root, &quality);
+    let plausibility =
+        crate::chord::calculate_plausibility(&pitch_class_power, best.root, &quality);
 
     Some(DetectedChord {
         root: best.root,
