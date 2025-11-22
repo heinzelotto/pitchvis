@@ -1150,19 +1150,19 @@ pub fn update_spectrogram_system(
         let (r, g, b) = pitchvis_colors::calculate_color(
             analysis_state.range.buckets_per_octave,
             (bin_idx as f32 + semitone_offset) % analysis_state.range.buckets_per_octave as f32,
-            pitchvis_colors::COLORS,
-            0.5,
-            2.0,
+            COLORS,
+            GRAY_LEVEL,
+            EASING_POW,
         );
 
         // Calculate pixel position (flipped vertically, newest at top)
         let pixel_idx = ((height - 1 - write_idx) * width + bin_idx) * 4;
 
         if pixel_idx + 3 < image_data.len() {
-            image_data[pixel_idx] = (r * brightness * 255.0 * 1.2).clamp(0.0, 255.0) as u8;
-            image_data[pixel_idx + 1] = (g * brightness * 255.0 * 1.2).clamp(0.0, 255.0) as u8;
-            image_data[pixel_idx + 2] = (b * brightness * 255.0 * 1.2).clamp(0.0, 255.0) as u8;
-            image_data[pixel_idx + 3] = if brightness > 0.01 { 255 } else { 0 };
+            image_data[pixel_idx] = (r * 255.0 * 1.2).clamp(0.0, 255.0) as u8;
+            image_data[pixel_idx + 1] = (g * 255.0 * 1.2).clamp(0.0, 255.0) as u8;
+            image_data[pixel_idx + 2] = (b * 255.0 * 1.2).clamp(0.0, 255.0) as u8;
+            image_data[pixel_idx + 3] = (brightness * 255.0 * 1.2).clamp(0.0, 255.0) as u8;
         }
     }
 

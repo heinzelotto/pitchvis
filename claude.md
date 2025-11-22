@@ -225,13 +225,13 @@ When in debugging mode (press Space or click to toggle), additional analysis vis
 - Current scene_calmness value
 - Number of detected peaks
 
-**Spectrogram Display** (Top-middle):
+**Spectrogram Display** (Center):
 - Real-time scrolling spectrogram showing VQT data over time
 - 200 frames of history, scrolls top-to-bottom (newest at top)
 - Width: VQT bins (frequency), Height: time frames
 - Colors: pitch-based coloring from `pitchvis_colors::COLORS`
 - Brightness: VQT magnitude with enhancement for visibility
-- Position: `Transform::from_xyz(0.0, 10.0, 10.0)` (adjustable in `display_system/setup.rs:538`)
+- Position: `Transform::from_xyz(0.0, 4.0, 5.0)` (adjustable in `display_system/setup.rs:539`)
 
 **Chroma Display** (Bottom, UI overlay):
 - 12 colored boxes representing pitch class presence (C, C#, D, etc.)
