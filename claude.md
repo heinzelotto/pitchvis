@@ -20,6 +20,11 @@ cd pitchvis_viewer
 cargo run --features bevy/dynamic_linking --bin pitchvis
 ```
 
+**Quick desktop build check**:
+```bash
+./check-desktop.sh
+```
+
 **Web/WASM**:
 ```bash
 npm install
