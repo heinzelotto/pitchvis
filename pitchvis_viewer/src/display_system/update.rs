@@ -1,8 +1,9 @@
 use super::{
-    material::NoisyColorMaterial, util::bin_to_spiral, BassCylinder, ChordDisplay,
+    material::NoisyColorMaterial, util::bin_to_spiral, BassCylinder, ChordDisplay, ChromaBox,
     CylinderEntityListResource, DisplayMode, GlissandoCurve, GlissandoCurveEntityListResource,
-    HarmonicLine, LineList, PitchBall, PitchNameText, RootNoteSlice, Spectrum, SpiderNetSegment,
-    VisualsMode, CLEAR_COLOR_GALAXY, CLEAR_COLOR_NEUTRAL, GLISSANDO_LINE_THICKNESS,
+    HarmonicLine, LineList, PitchBall, PitchNameText, RootNoteSlice, Spectrum,
+    SpectrogramDisplay, SpectrogramResource, SpiderNetSegment, VisualsMode, CLEAR_COLOR_GALAXY,
+    CLEAR_COLOR_NEUTRAL, GLISSANDO_LINE_THICKNESS,
 };
 use bevy::{post_process::bloom::Bloom, prelude::*};
 use bevy_persistent::Persistent;
@@ -1091,3 +1092,155 @@ fn update_root_note_slice(
 //     Running,
 //     Paused,
 // }
+
+/// Update the spectrogram texture with current VQT data
+pub fn update_spectrogram_system(
+    spectrogram_res: Option<ResMut<SpectrogramResource>>,
+    analysis_state: Res<AnalysisStateResource>,
+    mut images: ResMut<Assets<Image>>,
+    settings: Res<Persistent<SettingsState>>,
+) {
+    // Only update if in debug mode
+    if settings.display_mode != DisplayMode::Debugging {
+        return;
+    }
+
+    let Some(mut spectrogram_res) = spectrogram_res else {
+        return;
+    };
+
+    let Some(image) = images.get_mut(&spectrogram_res.image_handle) else {
+        return;
+    };
+
+    let analysis_state = &analysis_state.0;
+    let width = analysis_state.range.n_buckets();
+    let height = spectrogram_res.height;
+
+    // Get smoothed VQT data
+    let vqt_data = &analysis_state.x_vqt_smoothed;
+
+    // Find max for normalization
+    let max_val = vqt_data.iter().map(|v| v.get()).fold(0.0f32, f32::max);
+
+    // Write current VQT frame as a column at write_index
+    let write_idx = spectrogram_res.write_index;
+
+    for (bin_idx, vqt_value) in vqt_data.iter().enumerate() {
+        let value_db = vqt_value.get();
+
+        // Normalize and enhance for visualization
+        let brightness = if max_val > 0.0 {
+            let normalized = value_db / (max_val + 0.001);
+            ((1.0 - (1.0 - normalized).powf(2.0)) * 1.5).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+
+        // Get pitch color
+        let buckets_per_semitone = analysis_state.range.buckets_per_octave / 12;
+        let semitone_offset = (analysis_state.range.buckets_per_octave - 3 * buckets_per_semitone) as f32;
+        let (r, g, b) = calculate_color(
+            analysis_state.range.buckets_per_octave,
+            (bin_idx as f32 + semitone_offset) % analysis_state.range.buckets_per_octave as f32,
+        );
+
+        // Calculate pixel position (flipped vertically, newest at top)
+        let pixel_idx = ((height - 1 - write_idx) * width + bin_idx) * 4;
+
+        if pixel_idx + 3 < image.data.len() {
+            image.data[pixel_idx] = (r * brightness * 255.0 * 1.2).clamp(0.0, 255.0) as u8;
+            image.data[pixel_idx + 1] = (g * brightness * 255.0 * 1.2).clamp(0.0, 255.0) as u8;
+            image.data[pixel_idx + 2] = (b * brightness * 255.0 * 1.2).clamp(0.0, 255.0) as u8;
+            image.data[pixel_idx + 3] = if brightness > 0.01 { 255 } else { 0 };
+        }
+    }
+
+    // Clear the next line (the one we'll write to next time)
+    let next_idx = (write_idx + 1) % height;
+    for bin_idx in 0..width {
+        let pixel_idx = ((height - 1 - next_idx) * width + bin_idx) * 4;
+        if pixel_idx + 3 < image.data.len() {
+            image.data[pixel_idx] = 0;
+            image.data[pixel_idx + 1] = 0;
+            image.data[pixel_idx + 2] = 0;
+            image.data[pixel_idx + 3] = 0;
+        }
+    }
+
+    // Update write index
+    spectrogram_res.write_index = next_idx;
+}
+
+/// Update chroma display boxes with current pitch class energies
+pub fn update_chroma_system(
+    analysis_state: Res<AnalysisStateResource>,
+    mut chroma_query: Query<(&ChromaBox, &mut BackgroundColor)>,
+    settings: Res<Persistent<SettingsState>>,
+) {
+    // Only update if in debug mode
+    if settings.display_mode != DisplayMode::Debugging {
+        return;
+    }
+
+    let analysis_state = &analysis_state.0;
+
+    // Calculate chroma features (sum of energy per pitch class)
+    let bins_per_semitone = analysis_state.range.buckets_per_octave / 12;
+    let mut chroma = vec![0.0; 12];
+
+    for (bin_idx, measurement) in analysis_state.x_vqt_smoothed.iter().enumerate() {
+        let pitch_class = (bin_idx / bins_per_semitone) % 12;
+        // Convert from dB to power: power = 10^(dB/10)
+        let power = 10f32.powf(measurement.get() / 10.0);
+        chroma[pitch_class] += power;
+    }
+
+    // Normalize to 0-1 range
+    let max_chroma = chroma.iter().copied().fold(0.0, f32::max);
+    if max_chroma > 0.0 {
+        for c in chroma.iter_mut() {
+            *c /= max_chroma;
+        }
+    }
+
+    // Update background colors with alpha based on chroma strength
+    for (chroma_box, mut bg_color) in chroma_query.iter_mut() {
+        let pitch_class = chroma_box.pitch_class;
+        let strength = chroma[pitch_class];
+
+        // Get base color from COLORS
+        let (r, g, b, _) = pitchvis_colors::COLORS[pitch_class];
+
+        // Set alpha based on chroma strength
+        bg_color.0 = Color::srgba(r, g, b, strength);
+    }
+}
+
+/// Show/hide spectrogram based on display mode
+pub fn spectrogram_showhide(
+    mut query: Query<&mut Visibility, With<SpectrogramDisplay>>,
+    settings: Res<Persistent<SettingsState>>,
+) {
+    for mut visibility in query.iter_mut() {
+        *visibility = if settings.display_mode == DisplayMode::Debugging {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        };
+    }
+}
+
+/// Show/hide chroma boxes based on display mode
+pub fn chroma_showhide(
+    mut query: Query<&mut Visibility, With<ChromaBox>>,
+    settings: Res<Persistent<SettingsState>>,
+) {
+    for mut visibility in query.iter_mut() {
+        *visibility = if settings.display_mode == DisplayMode::Debugging {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        };
+    }
+}
