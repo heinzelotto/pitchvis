@@ -36,8 +36,19 @@ pub use crate::analysis_modules::{
     VibratoDetectionParameters, VibratoState,
 };
 
+/// Which chord detection implementation to use
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChordDetectorType {
+    /// Built-in chord detector (chord.rs)
+    Builtin,
+    /// External chord_detector library (chord_detector_wrapper.rs)
+    External,
+}
+
 #[derive(Debug, Clone)]
 pub struct AnalysisParameters {
+    /// Which chord detection implementation to use
+    pub chord_detector_type: ChordDetectorType,
     /// The length of the spectrogram in frames.
     pub spectrogram_length: usize,
     /// Peak detection parameters for the general peaks.
@@ -83,6 +94,7 @@ impl AnalysisParameters {
 impl Default for AnalysisParameters {
     fn default() -> Self {
         Self {
+            chord_detector_type: ChordDetectorType::Builtin,
             spectrogram_length: 400,
             peak_config: PeakDetectionParameters {
                 min_prominence: 10.0,
@@ -528,12 +540,39 @@ impl AnalysisState {
             }
         }
 
-        // Detect chord using enhanced algorithm with rust-music-theory (minimum 3 notes)
-        let new_detection = crate::chord_enhanced::detect_chord_enhanced(
-            &active_bins,
-            self.range.buckets_per_octave as usize,
-            3,
-        );
+        // Detect chord using the selected detector
+        let new_detection = match self.params.chord_detector_type {
+            ChordDetectorType::Builtin => {
+                // Use our built-in chord detector from chord.rs
+                crate::chord::detect_chord(
+                    &active_bins,
+                    self.range.buckets_per_octave,
+                    self.range.min_freq,
+                    2, // minimum 2 notes for a chord
+                )
+            }
+            ChordDetectorType::External => {
+                // Use external chord_detector library
+                crate::chord_detector_wrapper::detect_chord_with_external_lib(
+                    &active_bins,
+                    self.range.buckets_per_octave,
+                    self.range.min_freq,
+                )
+                .map(|result| {
+                    // Convert ChordDetectorResult to DetectedChord
+                    // Parse root from debug format (e.g., "C" = 0, "C#" = 1, etc.)
+                    let root_mapping = ["C", "Cs", "D", "Ds", "E", "F", "Fs", "G", "Gs", "A", "As", "B"];
+                    let root = result.pitch_classes.first().copied().unwrap_or(0);
+
+                    crate::chord::DetectedChord {
+                        root,
+                        quality: crate::chord::ChordQuality::Major, // Simplified for now
+                        notes: result.pitch_classes,
+                        confidence: result.confidence,
+                    }
+                })
+            }
+        };
 
         // Apply temporal smoothing and hysteresis to prevent oscillation
         const MIN_CONFIDENCE_THRESHOLD: f32 = 0.5;
