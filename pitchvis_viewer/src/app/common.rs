@@ -511,8 +511,30 @@ pub fn update_analysis_text_system(
     };
 
     if let Some(ref chord) = analysis.0.detected_chord {
-        *writer.text(entity, 4) = format!("{} ({})", chord.name(), detector_name);
-        *writer.color(entity, 4) = TextColor(Color::srgb(0.5, 1.0, 0.5)); // Green when chord detected
+        *writer.text(entity, 4) = format!(
+            "{} ({}) [conf:{:.2} plaus:{:.2}]",
+            chord.name(),
+            detector_name,
+            chord.confidence,
+            chord.plausibility
+        );
+
+        // Color based on confidence: green (high) → yellow (medium) → red (low)
+        // Map confidence [0.0, 1.0] to color gradient
+        let color = if chord.confidence > 0.8 {
+            // High confidence: bright green
+            Color::srgb(0.3, 1.0, 0.3)
+        } else if chord.confidence > 0.6 {
+            // Medium-high confidence: yellow-green
+            Color::srgb(0.7, 1.0, 0.3)
+        } else if chord.confidence > 0.4 {
+            // Medium confidence: yellow
+            Color::srgb(1.0, 1.0, 0.3)
+        } else {
+            // Low confidence: orange-red
+            Color::srgb(1.0, 0.6, 0.3)
+        };
+        *writer.color(entity, 4) = TextColor(color);
     } else {
         *writer.text(entity, 4) = format!("None ({})", detector_name);
         *writer.color(entity, 4) = TextColor(Color::srgb(0.6, 0.6, 0.6)); // Gray when no chord
