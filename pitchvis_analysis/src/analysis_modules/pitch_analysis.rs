@@ -2,7 +2,6 @@
 ///
 /// This module calculates pitch accuracy (how close to perfect pitch) and pitch deviation
 /// (how many semitones sharp or flat) for detected peaks.
-
 use super::peak_detection::ContinuousPeak;
 
 /// Update pitch accuracy and deviation for all bins based on continuous peaks.
@@ -70,5 +69,6 @@ pub fn update_tuning_inaccuracy(
 
     let average_tuning_inaccuracy_in_cents = 100.0 * average_tuning_inaccuracy;
 
-    smoothed_tuning_grid_inaccuracy.update_with_timestep(average_tuning_inaccuracy_in_cents, frame_time);
+    smoothed_tuning_grid_inaccuracy
+        .update_with_timestep(average_tuning_inaccuracy_in_cents, frame_time);
 }

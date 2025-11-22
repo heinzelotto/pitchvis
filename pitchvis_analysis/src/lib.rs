@@ -36,7 +36,9 @@ mod tests {
 
     /// Helper to compare both detectors on the same input
     fn compare_detectors(test_name: &str, sound: &[f32], params: &VqtParameters) {
-        const NOTE_NAMES: [&str; 12] = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+        const NOTE_NAMES: [&str; 12] = [
+            "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
+        ];
 
         println!("\n{} - Comparing detectors:", test_name);
 
@@ -44,15 +46,19 @@ mod tests {
         let external = test_with_detector(ChordDetectorType::External, sound, params);
 
         if let Some(chord) = &builtin {
-            println!("  [Builtin]  root={} ({}), quality={:?}, conf={:.2}, notes={:?}",
-                     chord.root, NOTE_NAMES[chord.root], chord.quality, chord.confidence, chord.notes);
+            println!(
+                "  [Builtin]  root={} ({}), quality={:?}, conf={:.2}, notes={:?}",
+                chord.root, NOTE_NAMES[chord.root], chord.quality, chord.confidence, chord.notes
+            );
         } else {
             println!("  [Builtin]  No chord detected");
         }
 
         if let Some(chord) = &external {
-            println!("  [External] root={} ({}), quality={:?}, conf={:.2}, notes={:?}",
-                     chord.root, NOTE_NAMES[chord.root], chord.quality, chord.confidence, chord.notes);
+            println!(
+                "  [External] root={} ({}), quality={:?}, conf={:.2}, notes={:?}",
+                chord.root, NOTE_NAMES[chord.root], chord.quality, chord.confidence, chord.notes
+            );
         } else {
             println!("  [External] No chord detected");
         }
@@ -175,10 +181,13 @@ mod tests {
             "[Builtin] Should detect a chord from C major triad"
         );
         let chord = chord.unwrap();
-        println!("[Builtin] C major: root={} ({}), quality={:?}, conf={:.2}",
-                 chord.root,
-                 ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"][chord.root],
-                 chord.quality, chord.confidence);
+        println!(
+            "[Builtin] C major: root={} ({}), quality={:?}, conf={:.2}",
+            chord.root,
+            ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"][chord.root],
+            chord.quality,
+            chord.confidence
+        );
         assert_eq!(
             chord.root, 0,
             "[Builtin] Should detect C as root (expected 0, got {})",
@@ -206,10 +215,13 @@ mod tests {
         let chord = test_with_detector(ChordDetectorType::External, &sound, &params);
 
         if let Some(chord) = chord {
-            println!("[External] C major: root={} ({}), quality={:?}, conf={:.2}",
-                     chord.root,
-                     ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"][chord.root],
-                     chord.quality, chord.confidence);
+            println!(
+                "[External] C major: root={} ({}), quality={:?}, conf={:.2}",
+                chord.root,
+                ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"][chord.root],
+                chord.quality,
+                chord.confidence
+            );
             // External detector may have different detection logic
             // Just verify a chord is detected
         } else {
@@ -504,13 +516,13 @@ mod tests {
         // A4 with strong fundamental and harmonics (louder than F)
         // C5 with harmonics
         let frequencies = vec![
-            (f4, 0.6),      // F4 fundamental
-            (f4 * 2.0, 0.2), // F4 2nd harmonic
-            (f4 * 3.0, 0.1), // F4 3rd harmonic
-            (a4, 1.0),      // A4 fundamental (LOUDER than F)
-            (a4 * 2.0, 0.3), // A4 2nd harmonic
+            (f4, 0.6),        // F4 fundamental
+            (f4 * 2.0, 0.2),  // F4 2nd harmonic
+            (f4 * 3.0, 0.1),  // F4 3rd harmonic
+            (a4, 1.0),        // A4 fundamental (LOUDER than F)
+            (a4 * 2.0, 0.3),  // A4 2nd harmonic
             (a4 * 3.0, 0.15), // A4 3rd harmonic
-            (c5, 0.5),      // C5 fundamental
+            (c5, 0.5),        // C5 fundamental
             (c5 * 2.0, 0.15), // C5 2nd harmonic
             (c5 * 3.0, 0.08), // C5 3rd harmonic
         ];
@@ -636,7 +648,10 @@ mod tests {
                 "Should detect diminished 7th quality"
             );
             println!("  Note: All four notes (C, Eb, Gb, A) are valid roots for dim7");
-            println!("  Detected root: {}", ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"][chord.root]);
+            println!(
+                "  Detected root: {}",
+                ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"][chord.root]
+            );
         } else {
             panic!("Should detect C diminished 7th chord");
         }
@@ -666,7 +681,8 @@ mod tests {
                 let harmonic_amp = amplitude / (harmonic as f32).powf(1.5); // Decay
                 for i in 0..duration_samples {
                     let t = i as f32 / sample_rate;
-                    sound[i] += harmonic_amp * (2.0 * std::f32::consts::PI * harmonic_freq * t).sin();
+                    sound[i] +=
+                        harmonic_amp * (2.0 * std::f32::consts::PI * harmonic_freq * t).sin();
                 }
             }
         };
@@ -775,7 +791,8 @@ mod tests {
                 let harmonic_amp = amplitude / (harmonic as f32).powf(1.5);
                 for i in 0..duration_samples {
                     let t = i as f32 / sample_rate;
-                    sound[i] += harmonic_amp * (2.0 * std::f32::consts::PI * harmonic_freq * t).sin();
+                    sound[i] +=
+                        harmonic_amp * (2.0 * std::f32::consts::PI * harmonic_freq * t).sin();
                 }
             }
         };

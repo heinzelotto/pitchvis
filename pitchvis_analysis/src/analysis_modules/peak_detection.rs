@@ -2,7 +2,6 @@
 ///
 /// This module provides functionality for detecting and enhancing spectral peaks
 /// in Variable Q Transform (VQT) data.
-
 use crate::vqt::VqtRange;
 use find_peaks::PeakFinder;
 use std::collections::HashSet;

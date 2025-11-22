@@ -2,7 +2,6 @@
 ///
 /// This module contains individual analysis components that were previously
 /// all contained in a single monolithic analysis.rs file.
-
 pub mod afterglow;
 pub mod attack_detection;
 pub mod calmness;

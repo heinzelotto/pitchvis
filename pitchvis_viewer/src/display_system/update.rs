@@ -650,73 +650,50 @@ fn update_glissandi(
     }
 }
 
-/// Helper function to add a circle to an existing mesh
-fn add_circle_to_mesh(mesh: &mut Mesh, center: Vec3, radius: f32, color: [f32; 4], segments: u32) {
-    use bevy::mesh::{Indices, PrimitiveTopology};
+/// Helper struct for building circle geometry
+struct CircleGeometry {
+    vertices: Vec<(Vec3, [f32; 3], [f32; 2])>,
+    indices: Vec<u32>,
+    colors: Vec<[f32; 4]>,
+}
 
-    // Get existing attributes
-    let mut positions = mesh
-        .attribute(Mesh::ATTRIBUTE_POSITION)
-        .unwrap()
-        .as_float3()
-        .unwrap()
-        .to_vec();
-    let mut normals = mesh
-        .attribute(Mesh::ATTRIBUTE_NORMAL)
-        .unwrap()
-        .as_float3()
-        .unwrap()
-        .to_vec();
-    let mut uvs = mesh
-        .attribute(Mesh::ATTRIBUTE_UV_0)
-        .unwrap()
-        .as_float2()
-        .unwrap()
-        .to_vec();
-    let mut colors = mesh
-        .attribute(Mesh::ATTRIBUTE_COLOR)
-        .unwrap()
-        .as_float4()
-        .unwrap()
-        .to_vec();
-    let mut indices = match mesh.indices().unwrap() {
-        Indices::U32(idx) => idx.to_vec(),
-        _ => panic!("Expected U32 indices"),
-    };
+impl CircleGeometry {
+    fn new(center: Vec3, radius: f32, color: [f32; 4], segments: u32) -> Self {
+        let mut vertices = Vec::new();
+        let mut indices = Vec::new();
+        let mut colors = Vec::new();
 
-    let base_index = positions.len() as u32;
-
-    // Add center vertex
-    positions.push([center.x, center.y, center.z]);
-    normals.push([0.0, 0.0, 1.0]);
-    uvs.push([0.5, 0.5]);
-    colors.push(color);
-
-    // Add circle perimeter vertices and create triangles
-    for i in 0..segments {
-        let angle = (i as f32 / segments as f32) * std::f32::consts::TAU;
-        let x = center.x + radius * angle.cos();
-        let y = center.y + radius * angle.sin();
-
-        positions.push([x, y, center.z]);
-        normals.push([0.0, 0.0, 1.0]);
-        uvs.push([0.5 + 0.5 * angle.cos(), 0.5 + 0.5 * angle.sin()]);
+        // Add center vertex
+        vertices.push((center, [0.0, 0.0, 1.0], [0.5, 0.5]));
         colors.push(color);
 
-        // Create triangle (center, current, next)
-        let current = base_index + 1 + i;
-        let next = base_index + 1 + ((i + 1) % segments);
-        indices.push(base_index);
-        indices.push(current);
-        indices.push(next);
-    }
+        // Add circle perimeter vertices and create triangles
+        for i in 0..segments {
+            let angle = (i as f32 / segments as f32) * std::f32::consts::TAU;
+            let x = center.x + radius * angle.cos();
+            let y = center.y + radius * angle.sin();
 
-    // Update mesh attributes
-    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
-    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
-    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
-    mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colors);
-    mesh.insert_indices(Indices::U32(indices));
+            vertices.push((
+                Vec3::new(x, y, center.z),
+                [0.0, 0.0, 1.0],
+                [0.5 + 0.5 * angle.cos(), 0.5 + 0.5 * angle.sin()],
+            ));
+            colors.push(color);
+
+            // Create triangle (center, current, next)
+            let current = 1 + i;
+            let next = 1 + ((i + 1) % segments);
+            indices.push(0);
+            indices.push(current);
+            indices.push(next);
+        }
+
+        CircleGeometry {
+            vertices,
+            indices,
+            colors,
+        }
+    }
 }
 
 fn update_spectrum(
@@ -761,7 +738,8 @@ fn update_spectrum(
         let k_max = arg_max(&x_vqt_smoothed);
         let max_size = x_vqt_smoothed[k_max];
 
-        let mut spectrum_mesh: Mesh = LineList {
+        // Build spectrum line geometry
+        let line_list = LineList {
             lines: x_vqt_smoothed
                 .iter()
                 .enumerate()
@@ -769,9 +747,41 @@ fn update_spectrum(
                 .tuple_windows()
                 .collect::<Vec<(Vec3, Vec3)>>(),
             thickness: 0.02,
+        };
+
+        // Collect all vertices from line list
+        let mut all_vertices = Vec::new();
+        let mut all_indices = Vec::new();
+
+        // Build line list geometry manually (similar to LineList::into())
+        for (p, q) in line_list.lines.iter() {
+            let dx = p.x - q.x;
+            let dy = p.y - q.y;
+            let l = dx.hypot(dy);
+            let u = dx * line_list.thickness * 0.5 / l;
+            let v = dy * line_list.thickness * 0.5 / l;
+
+            let v0 = Vec3::new(p.x + v, p.y - u, 0.0);
+            let v1 = Vec3::new(p.x - v, p.y + u, 0.0);
+            let v2 = Vec3::new(q.x - v, q.y + u, 0.0);
+            let v3 = Vec3::new(q.x + v, q.y - u, 0.0);
+
+            let prior_len = all_vertices.len();
+            all_indices.push(2 + prior_len as u32);
+            all_indices.push(1 + prior_len as u32);
+            all_indices.push(prior_len as u32);
+            all_indices.push(2 + prior_len as u32);
+            all_indices.push(prior_len as u32);
+            all_indices.push(3 + prior_len as u32);
+
+            all_vertices.push((v0, [0.0, 0.0, 1.0], [0.0, 1.0]));
+            all_vertices.push((v1, [0.0, 0.0, 1.0], [0.0, 0.0]));
+            all_vertices.push((v2, [0.0, 0.0, 1.0], [1.0, 0.0]));
+            all_vertices.push((v3, [0.0, 0.0, 1.0], [1.0, 1.0]));
         }
-        .into();
-        let colors = (0..(x_vqt_smoothed.len() - 1))
+
+        // Generate colors for spectrum lines
+        let mut all_colors = (0..(x_vqt_smoothed.len() - 1))
             .map(|i| {
                 let (r, g, b) = calculate_color(
                     range.buckets_per_octave,
@@ -793,7 +803,6 @@ fn update_spectrum(
             })
             .flatten()
             .collect::<Vec<[f32; 4]>>();
-        spectrum_mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colors);
 
         // Add circles for detected peaks
         for peak in &analysis_state.peaks_continuous {
@@ -816,15 +825,36 @@ fn update_spectrum(
             // Make peaks slightly brighter/more opaque
             let peak_color = [r, g, b, 0.9];
 
-            // Add circle at peak position
-            add_circle_to_mesh(
-                &mut spectrum_mesh,
+            // Create circle geometry
+            let circle = CircleGeometry::new(
                 Vec3::new(peak_x, peak_y, 0.0),
                 0.08, // Circle radius
                 peak_color,
                 12, // Number of segments (12 for a smooth circle)
             );
+
+            // Add circle vertices and indices
+            let base_index = all_vertices.len() as u32;
+            all_vertices.extend(circle.vertices);
+            all_indices.extend(circle.indices.iter().map(|&i| i + base_index));
+            all_colors.extend(circle.colors);
         }
+
+        // Build final mesh
+        use bevy::mesh::{Indices, PrimitiveTopology};
+        let positions: Vec<_> = all_vertices.iter().map(|(p, _, _)| *p).collect();
+        let normals: Vec<_> = all_vertices.iter().map(|(_, n, _)| *n).collect();
+        let uvs: Vec<_> = all_vertices.iter().map(|(_, _, uv)| *uv).collect();
+
+        let mut spectrum_mesh = Mesh::new(
+            PrimitiveTopology::TriangleList,
+            bevy::asset::RenderAssetUsages::default(),
+        );
+        spectrum_mesh.insert_indices(Indices::U32(all_indices));
+        spectrum_mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+        spectrum_mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+        spectrum_mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
+        spectrum_mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, all_colors);
 
         if let Some(mesh) = meshes.get_mut(&mesh_handle.0) {
             *mesh = spectrum_mesh;

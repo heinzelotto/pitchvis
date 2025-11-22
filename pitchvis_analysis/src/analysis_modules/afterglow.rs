@@ -12,15 +12,12 @@ pub fn update_afterglow(
     x_vqt_smoothed_values: &[f32],
     n_buckets: usize,
 ) {
-    x_vqt_afterglow
-        .iter_mut()
-        .enumerate()
-        .for_each(|(i, x)| {
-            *x *= 0.85 - 0.15 * (i as f32 / n_buckets as f32);
-            if *x < x_vqt_smoothed_values[i] {
-                *x = x_vqt_smoothed_values[i];
-            }
-        });
+    x_vqt_afterglow.iter_mut().enumerate().for_each(|(i, x)| {
+        *x *= 0.85 - 0.15 * (i as f32 / n_buckets as f32);
+        if *x < x_vqt_smoothed_values[i] {
+            *x = x_vqt_smoothed_values[i];
+        }
+    });
 }
 
 /// Apply peak filtering to VQT
@@ -34,12 +31,6 @@ pub fn apply_peak_filter(
     x_vqt_smoothed_values
         .iter()
         .enumerate()
-        .map(|(i, x)| {
-            if peaks.contains(&i) {
-                *x
-            } else {
-                0.0
-            }
-        })
+        .map(|(i, x)| if peaks.contains(&i) { *x } else { 0.0 })
         .collect::<Vec<f32>>()
 }

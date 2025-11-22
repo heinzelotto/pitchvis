@@ -2,7 +2,6 @@
 ///
 /// This module detects note onsets (attacks) and classifies them as percussive or melodic
 /// based on their attack and decay characteristics.
-
 use std::collections::{HashSet, VecDeque};
 use std::time::Duration;
 

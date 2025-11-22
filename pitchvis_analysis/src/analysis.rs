@@ -431,7 +431,8 @@ impl AnalysisState {
         .cloned()
         .collect();
 
-        let mut peaks_continuous = enhance_peaks_continuous(&peaks, &x_vqt_smoothed_values, &self.range);
+        let mut peaks_continuous =
+            enhance_peaks_continuous(&peaks, &x_vqt_smoothed_values, &self.range);
 
         // Boost bass peaks based on harmonic content
         promote_bass_peaks_with_harmonics(
@@ -561,7 +562,9 @@ impl AnalysisState {
                 .map(|result| {
                     // Convert ChordDetectorResult to DetectedChord
                     // Parse root from debug format (e.g., "C" = 0, "C#" = 1, etc.)
-                    let _root_mapping = ["C", "Cs", "D", "Ds", "E", "F", "Fs", "G", "Gs", "A", "As", "B"];
+                    let _root_mapping = [
+                        "C", "Cs", "D", "Ds", "E", "F", "Fs", "G", "Gs", "A", "As", "B",
+                    ];
                     let root = result.pitch_classes.first().copied().unwrap_or(0);
 
                     // NOTE: chord_detector library returns confidence=0.0, which doesn't match our threshold
@@ -582,11 +585,8 @@ impl AnalysisState {
 
                     // Calculate plausibility using the chromagram data
                     let quality = crate::chord::ChordQuality::Major; // Simplified for now
-                    let plausibility = crate::chord::calculate_plausibility(
-                        &pitch_class_map,
-                        root,
-                        &quality,
-                    );
+                    let plausibility =
+                        crate::chord::calculate_plausibility(&pitch_class_map, root, &quality);
 
                     crate::chord::DetectedChord {
                         root,

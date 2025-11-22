@@ -2,7 +2,6 @@
 ///
 /// This module provides functionality for detecting and analyzing vibrato in musical signals.
 /// NOTE: This feature is currently disabled as it's in a broken/unreleasable state.
-
 use std::collections::VecDeque;
 
 /// Vibrato health category for feedback
