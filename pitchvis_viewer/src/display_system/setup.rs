@@ -1,8 +1,8 @@
 use super::util::calculate_spiral_points;
 use super::{material::NoisyColorMaterial, LineList, PitchBall, PitchNameText, Spectrum};
 use super::{
-    CylinderEntityListResource, GlissandoCurve, GlissandoCurveEntityListResource, RootNoteSlice,
-    SpiderNetSegment, CLEAR_COLOR_NEUTRAL,
+    ChromaBox, CylinderEntityListResource, GlissandoCurve, GlissandoCurveEntityListResource,
+    RootNoteSlice, SpectrogramDisplay, SpectrogramResource, SpiderNetSegment, CLEAR_COLOR_NEUTRAL,
 };
 use bevy::camera::ScalingMode;
 use bevy::core_pipeline::tonemapping::Tonemapping;
@@ -25,6 +25,7 @@ pub fn setup_display(
     mut meshes: ResMut<Assets<Mesh>>,
     mut color_materials: ResMut<Assets<ColorMaterial>>,
     mut noisy_color_materials: ResMut<Assets<NoisyColorMaterial>>,
+    mut images: ResMut<Assets<Image>>,
     mut cylinder_entities: ResMut<CylinderEntityListResource>,
     mut glissando_curve_entities: ResMut<GlissandoCurveEntityListResource>,
     range: &VqtRange,
@@ -78,6 +79,10 @@ pub fn setup_display(
     spawn_pitch_names_text(&mut commands, range, asset_server);
 
     spawn_root_note_slice(&mut commands, &mut meshes, &mut color_materials);
+
+    spawn_spectrogram(&mut commands, &mut images, range);
+
+    spawn_chroma_display(&mut commands);
 }
 
 fn spawn_pitch_balls(
@@ -459,4 +464,104 @@ fn spawn_root_note_slice(
         Transform::from_xyz(0.0, 0.0, -12.9), // Behind everything except background
         Visibility::Hidden,                   // Hidden by default
     ));
+}
+
+fn spawn_spectrogram(
+    commands: &mut Commands,
+    images: &mut ResMut<Assets<Image>>,
+    range: &VqtRange,
+) {
+    use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
+
+    // Spectrogram dimensions: width = VQT bins, height = time frames
+    const SPECTROGRAM_HEIGHT: usize = 200;
+    let width = range.n_buckets();
+    let height = SPECTROGRAM_HEIGHT;
+
+    // Create RGBA8 image (4 bytes per pixel)
+    let mut image_data = vec![0u8; width * height * 4];
+
+    // Initialize with transparent black
+    for pixel in image_data.chunks_exact_mut(4) {
+        pixel[0] = 0; // R
+        pixel[1] = 0; // G
+        pixel[2] = 0; // B
+        pixel[3] = 0; // A (transparent)
+    }
+
+    let image = Image {
+        data: image_data,
+        texture_descriptor: bevy::render::render_resource::TextureDescriptor {
+            label: Some("spectrogram"),
+            size: Extent3d {
+                width: width as u32,
+                height: height as u32,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Rgba8UnormSrgb,
+            usage: bevy::render::render_resource::TextureUsages::TEXTURE_BINDING
+                | bevy::render::render_resource::TextureUsages::COPY_DST,
+            view_formats: &[],
+        },
+        sampler: bevy::render::render_resource::SamplerDescriptor {
+            mag_filter: bevy::render::render_resource::FilterMode::Nearest,
+            min_filter: bevy::render::render_resource::FilterMode::Nearest,
+            ..default()
+        },
+        ..default()
+    };
+
+    let image_handle = images.add(image);
+
+    // Insert the resource
+    commands.insert_resource(SpectrogramResource {
+        image_handle: image_handle.clone(),
+        write_index: 0,
+        height,
+    });
+
+    // Spawn the sprite
+    // Position at top-middle: x=0, y=10 (adjust as needed)
+    // Scale to make it visible
+    let display_width = 12.0;
+    let display_height = display_width * (height as f32 / width as f32);
+
+    commands.spawn((
+        SpectrogramDisplay,
+        Sprite {
+            image: image_handle,
+            custom_size: Some(Vec2::new(display_width, display_height)),
+            ..default()
+        },
+        Transform::from_xyz(0.0, 10.0, 10.0),
+        Visibility::Hidden, // Hidden by default, shown in debug mode
+    ));
+}
+
+fn spawn_chroma_display(commands: &mut Commands) {
+    // Create 12 boxes for the 12 pitch classes
+    // Position them horizontally at the bottom
+    for pitch_class in 0..12 {
+        let (r, g, b, _) = COLORS[pitch_class];
+
+        commands.spawn((
+            ChromaBox { pitch_class },
+            Node {
+                position_type: PositionType::Absolute,
+                width: Val::Px(40.0),
+                height: Val::Px(40.0),
+                left: Val::Px(400.0 + pitch_class as f32 * 45.0), // Adjust position as needed
+                bottom: Val::Px(10.0),
+                ..default()
+            },
+            BackgroundColor(Color::srgba(r, g, b, 0.0)), // Start transparent
+            BorderColor::all(Color::srgba(r, g, b, 0.5)),
+            BorderRadius::all(Val::Px(4.0)),
+            ZIndex(i32::MAX),
+            Visibility::Hidden, // Hidden by default, shown in debug mode
+        ));
+    }
 }

@@ -1,6 +1,6 @@
 pub mod material;
 mod setup;
-mod update;
+pub mod update;
 mod util;
 
 use bevy::{
@@ -54,6 +54,15 @@ pub struct GlissandoCurve {
 #[derive(Component)]
 pub struct RootNoteSlice;
 
+#[derive(Component)]
+pub struct SpectrogramDisplay;
+
+#[derive(Component)]
+pub struct ChromaBox {
+    /// Pitch class index (0-11)
+    pub pitch_class: usize,
+}
+
 #[derive(PartialEq, Serialize, Deserialize)]
 pub enum DisplayMode {
     Normal,
@@ -97,6 +106,17 @@ pub struct CylinderEntityListResource(pub Vec<Entity>);
 #[derive(Resource)]
 pub struct GlissandoCurveEntityListResource(pub Vec<Entity>);
 
+/// Resource to hold spectrogram state
+#[derive(Resource)]
+pub struct SpectrogramResource {
+    /// Image handle for the spectrogram texture
+    pub image_handle: Handle<Image>,
+    /// Circular buffer write index (newest data)
+    pub write_index: usize,
+    /// Height of the spectrogram (number of historical frames)
+    pub height: usize,
+}
+
 pub fn setup_display_to_system(
     range: &VqtRange,
 ) -> impl FnMut(
@@ -104,6 +124,7 @@ pub fn setup_display_to_system(
     ResMut<Assets<Mesh>>,
     ResMut<Assets<ColorMaterial>>,
     ResMut<Assets<NoisyColorMaterial>>,
+    ResMut<Assets<Image>>,
     ResMut<CylinderEntityListResource>,
     ResMut<GlissandoCurveEntityListResource>,
     Res<AssetServer>,
@@ -113,6 +134,7 @@ pub fn setup_display_to_system(
           meshes: ResMut<Assets<Mesh>>,
           color_materials: ResMut<Assets<ColorMaterial>>,
           noisy_color_materials: ResMut<Assets<NoisyColorMaterial>>,
+          images: ResMut<Assets<Image>>,
           cylinder_entities: ResMut<CylinderEntityListResource>,
           glissando_curve_entities: ResMut<GlissandoCurveEntityListResource>,
           asset_server: Res<AssetServer>| {
@@ -121,6 +143,7 @@ pub fn setup_display_to_system(
             meshes,
             color_materials,
             noisy_color_materials,
+            images,
             cylinder_entities,
             glissando_curve_entities,
             &range,
