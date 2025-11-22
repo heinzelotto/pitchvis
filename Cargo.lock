@@ -1972,6 +1972,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "chord_detector"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "138c59371738f5492b06e1ce400cea1ca21b1f07094d6a5cc382883765843c37"
+dependencies = [
+ "rustfft",
+ "thiserror 2.0.17",
+]
+
+[[package]]
 name = "chrono"
 version = "0.4.42"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5570,6 +5580,7 @@ name = "pitchvis_analysis"
 version = "0.1.0"
 dependencies = [
  "apodize",
+ "chord_detector",
  "env_logger 0.11.8",
  "find_peaks",
  "lab",

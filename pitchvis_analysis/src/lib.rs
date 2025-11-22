@@ -1,6 +1,7 @@
 pub mod analysis;
 pub mod analysis_modules;
 pub mod chord;
+pub mod chord_detector_wrapper;
 pub mod chord_enhanced;
 pub mod util;
 pub mod vqt;

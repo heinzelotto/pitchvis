@@ -586,7 +586,7 @@ pub fn setup_debug_text(mut commands: Commands) {
         .with_children(|builder| {
             // Keyboard shortcuts hint
             builder.spawn((
-                TextSpan::new("Press digit (1-9) + +/- to tune\n"),
+                TextSpan::new("Press 0 to toggle, digit (1-9) + +/- to tune\n"),
                 TextColor(Color::srgb(0.5, 1.0, 0.5)),
                 text_font.clone(),
             ));
@@ -595,6 +595,18 @@ pub fn setup_debug_text(mut commands: Commands) {
             builder.spawn((
                 TextSpan::new("=== AnalysisParameters ===\n"),
                 TextColor(Color::srgb(0.8, 0.8, 1.0)),
+                text_font.clone(),
+            ));
+
+            // chord_detector_type
+            builder.spawn((
+                TextSpan::new("[0] chord_detector: "),
+                TextColor(Color::WHITE),
+                text_font.clone(),
+            ));
+            builder.spawn((
+                TextSpan::new("N/A\n"),
+                TextColor(Color::srgb(0.9, 0.9, 0.9)),
                 text_font.clone(),
             ));
 
@@ -845,51 +857,57 @@ pub fn update_debug_text_system(
     let entity = query.single()?;
     let params = &analysis.0.params;
 
+    // chord_detector_type (index 4)
+    *writer.text(entity, 4) = match params.chord_detector_type {
+        pitchvis_analysis::analysis::ChordDetectorType::Builtin => "Builtin\n".to_string(),
+        pitchvis_analysis::analysis::ChordDetectorType::External => "External\n".to_string(),
+    };
+
     // Single-digit parameters
-    // bassline_peak_config (index 4)
-    *writer.text(entity, 4) = format!(
+    // bassline_peak_config (index 6, was 4)
+    *writer.text(entity, 6) = format!(
         "  prom: {:.1}, height: {:.1}\n",
         params.bassline_peak_config.min_prominence, params.bassline_peak_config.min_height
     );
 
-    // highest_bassnote (index 6)
-    *writer.text(entity, 6) = format!("{}\n", params.highest_bassnote);
+    // highest_bassnote (index 8, was 6)
+    *writer.text(entity, 8) = format!("{}\n", params.highest_bassnote);
 
-    // vqt_smoothing_duration_base (index 8)
+    // vqt_smoothing_duration_base (index 10, was 8)
     let vqt_smooth_ms = params.vqt_smoothing_duration_base.as_millis();
-    *writer.text(entity, 8) = if vqt_smooth_ms > 0 {
+    *writer.text(entity, 10) = if vqt_smooth_ms > 0 {
         format!("{}ms\n", vqt_smooth_ms)
     } else {
         "None\n".to_string()
     };
 
-    // vqt_smoothing_calmness min/max (index 10)
-    *writer.text(entity, 10) = format!(
+    // vqt_smoothing_calmness min/max (index 12, was 10)
+    *writer.text(entity, 12) = format!(
         "{:.2} - {:.2}\n",
         params.vqt_smoothing_calmness_min, params.vqt_smoothing_calmness_max
     );
 
-    // note_calmness_smoothing_duration (index 12)
-    *writer.text(entity, 12) = format!("{}ms\n", params.note_calmness_smoothing_duration.as_millis());
+    // note_calmness_smoothing_duration (index 14, was 12)
+    *writer.text(entity, 14) = format!("{}ms\n", params.note_calmness_smoothing_duration.as_millis());
 
-    // scene_calmness_smoothing_duration (index 14)
-    *writer.text(entity, 14) = format!("{}ms\n", params.scene_calmness_smoothing_duration.as_millis());
+    // scene_calmness_smoothing_duration (index 16, was 14)
+    *writer.text(entity, 16) = format!("{}ms\n", params.scene_calmness_smoothing_duration.as_millis());
 
-    // tuning_inaccuracy_smoothing_duration (index 16)
-    *writer.text(entity, 16) = format!("{}ms\n", params.tuning_inaccuracy_smoothing_duration.as_millis());
+    // tuning_inaccuracy_smoothing_duration (index 18, was 16)
+    *writer.text(entity, 18) = format!("{}ms\n", params.tuning_inaccuracy_smoothing_duration.as_millis());
 
     // Two-digit parameters
-    // main_peak config (index 19)
-    *writer.text(entity, 19) = format!(
+    // main_peak config (index 21, was 19)
+    *writer.text(entity, 21) = format!(
         "p{:.1} h{:.1}\n",
         params.peak_config.min_prominence, params.peak_config.min_height
     );
 
-    // harmonic_threshold (index 21)
-    *writer.text(entity, 21) = format!("{:.2}\n", params.harmonic_threshold);
+    // harmonic_threshold (index 23, was 21)
+    *writer.text(entity, 23) = format!("{:.2}\n", params.harmonic_threshold);
 
-    // glissando (index 23) - compact summary
-    *writer.text(entity, 23) = format!(
+    // glissando (index 25, was 23) - compact summary
+    *writer.text(entity, 25) = format!(
         "d{:.0}/{:.0} t{:.2} h{} l{:.1}\n",
         params.glissando_config.peak_tracking_max_distance,
         params.glissando_config.glissando_min_distance,
@@ -898,29 +916,29 @@ pub fn update_debug_text_system(
         params.glissando_config.glissando_lifetime
     );
 
-    // spectrogram_length (index 25)
-    *writer.text(entity, 25) = format!("{}\n", params.spectrogram_length);
+    // spectrogram_length (index 27, was 25)
+    *writer.text(entity, 27) = format!("{}\n", params.spectrogram_length);
 
     // VQT parameters
-    // Q (index 30)
-    *writer.text(entity, 30) = format!("{:.2}", vqt_params.parameters.quality);
+    // Q (index 32, was 30)
+    *writer.text(entity, 32) = format!("{:.2}", vqt_params.parameters.quality);
 
-    // gamma (index 32)
-    *writer.text(entity, 32) = format!("{:.2}\n", vqt_params.parameters.gamma);
+    // gamma (index 34, was 32)
+    *writer.text(entity, 34) = format!("{:.2}\n", vqt_params.parameters.gamma);
 
-    // sparsity (index 34)
-    *writer.text(entity, 34) = format!("{:.4}", vqt_params.parameters.sparsity_quantile);
+    // sparsity (index 36, was 34)
+    *writer.text(entity, 36) = format!("{:.4}", vqt_params.parameters.sparsity_quantile);
 
-    // n_fft (index 36)
-    *writer.text(entity, 36) = format!("{}\n", vqt_params.parameters.n_fft);
+    // n_fft (index 38, was 36)
+    *writer.text(entity, 38) = format!("{}\n", vqt_params.parameters.n_fft);
 
     // AnalysisState
-    // smoothed_scene_calmness (index 40)
+    // smoothed_scene_calmness (index 42, was 40)
     let scene_calmness = analysis.0.smoothed_scene_calmness.get();
-    *writer.text(entity, 40) = format!("{:.3}\n", scene_calmness);
+    *writer.text(entity, 42) = format!("{:.3}\n", scene_calmness);
 
     // Color code the calmness value
-    *writer.color(entity, 40) = TextColor(if scene_calmness > 0.7 {
+    *writer.color(entity, 42) = TextColor(if scene_calmness > 0.7 {
         Color::srgb(0.5, 0.8, 1.0) // Cyan for calm
     } else if scene_calmness > 0.3 {
         Color::srgb(1.0, 1.0, 0.5) // Yellow for medium
@@ -928,12 +946,12 @@ pub fn update_debug_text_system(
         Color::srgb(1.0, 0.5, 0.5) // Red for energetic
     });
 
-    // number of detected peaks (index 42)
+    // number of detected peaks (index 44, was 42)
     let num_peaks = analysis.0.peaks.len();
-    *writer.text(entity, 42) = format!("{}", num_peaks);
+    *writer.text(entity, 44) = format!("{}", num_peaks);
 
     // Color code based on number of peaks
-    *writer.color(entity, 42) = TextColor(if num_peaks == 0 {
+    *writer.color(entity, 44) = TextColor(if num_peaks == 0 {
         Color::srgb(0.5, 0.5, 0.5) // Gray for no peaks
     } else if num_peaks <= 3 {
         Color::srgb(0.5, 1.0, 0.5) // Green for few peaks
@@ -977,6 +995,18 @@ pub fn update_analysis_parameters_system(
 
     let dt = time.delta_secs();
     let params = &mut analysis.0.params;
+
+    // Check for toggle key (0) to switch chord detector type
+    if keycode.just_pressed(KeyCode::Digit0) {
+        params.chord_detector_type = match params.chord_detector_type {
+            pitchvis_analysis::analysis::ChordDetectorType::Builtin => {
+                pitchvis_analysis::analysis::ChordDetectorType::External
+            }
+            pitchvis_analysis::analysis::ChordDetectorType::External => {
+                pitchvis_analysis::analysis::ChordDetectorType::Builtin
+            }
+        };
+    }
 
     // Check which digit key is pressed (1-9) and which direction (+/-)
     let plus_pressed = keycode.pressed(KeyCode::Equal) || keycode.pressed(KeyCode::NumpadAdd);
