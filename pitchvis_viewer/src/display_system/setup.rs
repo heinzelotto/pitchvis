@@ -570,7 +570,7 @@ fn spawn_spectrogram(
         SpectrogramDisplay,
         Mesh2d(mesh_handle),
         MeshMaterial2d(material_handle),
-        Transform::from_xyz(0.0, 4.0, 5.0)
+        Transform::from_xyz(-7.0, 6.0, 5.0)
             .with_rotation(bevy::math::Quat::from_rotation_z(-PI / 2.0))
             .with_scale(Vec3::new(-1.0, 1.0, 1.0)),
         Visibility::Hidden, // Hidden by default, shown in debug mode

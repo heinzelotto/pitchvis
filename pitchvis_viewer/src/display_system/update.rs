@@ -1256,8 +1256,8 @@ pub fn update_spectrogram_system(
     let height = spectrogram_res.height;
     let write_idx = spectrogram_res.write_index;
 
-    use crate::app::SettingsState;
     use super::SpectrogramMode;
+    use crate::app::SettingsState;
 
     match settings.spectrogram_mode {
         SpectrogramMode::VQT => {
@@ -1285,7 +1285,8 @@ pub fn update_spectrogram_system(
                     (analysis_state.range.buckets_per_octave - 3 * buckets_per_semitone) as f32;
                 let (r, g, b) = pitchvis_colors::calculate_color(
                     analysis_state.range.buckets_per_octave,
-                    (bin_idx as f32 + semitone_offset) % analysis_state.range.buckets_per_octave as f32,
+                    (bin_idx as f32 + semitone_offset)
+                        % analysis_state.range.buckets_per_octave as f32,
                     COLORS,
                     GRAY_LEVEL,
                     EASING_POW,
@@ -1319,7 +1320,8 @@ pub fn update_spectrogram_system(
                     let size = peak.size;
 
                     // Normalize brightness
-                    let brightness = ((1.0 - (1.0 - size / max_size).powf(2.0)) * 1.5).clamp(0.0, 1.0);
+                    let brightness =
+                        ((1.0 - (1.0 - size / max_size).powf(2.0)) * 1.5).clamp(0.0, 1.0);
 
                     // Get pitch color
                     let buckets_per_semitone = analysis_state.range.buckets_per_octave / 12;
@@ -1341,15 +1343,15 @@ pub fn update_spectrogram_system(
                         let distance = (bin_idx as f32 - center).abs();
                         if distance <= PEAK_RADIUS {
                             // Gaussian falloff
-                            let falloff = (-distance * distance / (PEAK_RADIUS * PEAK_RADIUS * 0.5)).exp();
+                            let falloff =
+                                (-distance * distance / (PEAK_RADIUS * PEAK_RADIUS * 0.5)).exp();
                             let pixel_brightness = brightness * falloff;
 
                             // Calculate pixel position
                             let pixel_idx = ((height - 1 - write_idx) * width + bin_idx) * 4;
 
                             if pixel_idx + 3 < image_data.len() {
-                                image_data[pixel_idx] =
-                                    (r * 255.0 * 1.2).clamp(0.0, 255.0) as u8;
+                                image_data[pixel_idx] = (r * 255.0 * 1.2).clamp(0.0, 255.0) as u8;
                                 image_data[pixel_idx + 1] =
                                     (g * 255.0 * 1.2).clamp(0.0, 255.0) as u8;
                                 image_data[pixel_idx + 2] =
