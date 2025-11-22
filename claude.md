@@ -227,11 +227,12 @@ When in debugging mode (press Space or click to toggle), additional analysis vis
 
 **Spectrogram Display** (Center):
 - Real-time scrolling spectrogram showing VQT data over time
-- 200 frames of history, scrolls top-to-bottom (newest at top)
-- Width: VQT bins (frequency), Height: time frames
+- 200 frames of history displayed horizontally (newest on right, scrolls left)
+- Horizontal axis: Time (200 frames), Vertical axis: Frequency (low notes at bottom)
+- Rotated 90° counter-clockwise via transform, so the circular buffer "scan line" rotates through texture indices
 - Colors: pitch-based coloring from `pitchvis_colors::COLORS`
 - Brightness: VQT magnitude with enhancement for visibility
-- Position: `Transform::from_xyz(0.0, 4.0, 5.0)` (adjustable in `display_system/setup.rs:539`)
+- Position: `Transform::from_xyz(0.0, 4.0, 5.0)` with -90° rotation (adjustable in `display_system/setup.rs:542`)
 
 **Chroma Display** (Bottom, UI overlay):
 - 12 colored boxes representing pitch class presence (C, C#, D, etc.)

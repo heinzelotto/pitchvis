@@ -528,19 +528,23 @@ fn spawn_spectrogram(
     });
 
     // Spawn the sprite
-    // Position at top-middle: x=0, y=10 (adjust as needed)
-    // Scale to make it visible
-    let display_width = 12.0;
-    let display_height = display_width * (height as f32 / width as f32);
+    // Rotate 90° counter-clockwise so:
+    // - Horizontal axis = time (newest on right)
+    // - Vertical axis = frequency (low notes at bottom)
+    // Dimensions swap due to rotation: width becomes visual height, height becomes visual width
+    let visual_height = 12.0; // Frequency axis (vertical after rotation)
+    let visual_width = visual_height * (height as f32 / width as f32); // Time axis (horizontal after rotation)
 
+    use std::f32::consts::PI;
     commands.spawn((
         SpectrogramDisplay,
         Sprite {
             image: image_handle,
-            custom_size: Some(Vec2::new(display_width, display_height)),
+            custom_size: Some(Vec2::new(visual_width, visual_height)),
             ..default()
         },
-        Transform::from_xyz(0.0, 4.0, 5.0),
+        Transform::from_xyz(0.0, 4.0, 5.0)
+            .with_rotation(bevy::math::Quat::from_rotation_z(-PI / 2.0)),
         Visibility::Hidden, // Hidden by default, shown in debug mode
     ));
 }
