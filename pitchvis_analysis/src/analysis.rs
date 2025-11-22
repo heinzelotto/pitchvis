@@ -561,7 +561,7 @@ impl AnalysisState {
                 .map(|result| {
                     // Convert ChordDetectorResult to DetectedChord
                     // Parse root from debug format (e.g., "C" = 0, "C#" = 1, etc.)
-                    let root_mapping = ["C", "Cs", "D", "Ds", "E", "F", "Fs", "G", "Gs", "A", "As", "B"];
+                    let _root_mapping = ["C", "Cs", "D", "Ds", "E", "F", "Fs", "G", "Gs", "A", "As", "B"];
                     let root = result.pitch_classes.first().copied().unwrap_or(0);
 
                     crate::chord::DetectedChord {
