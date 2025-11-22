@@ -616,6 +616,18 @@ pub fn setup_debug_text(mut commands: Commands) {
                 text_font.clone(),
             ));
 
+            // spectrogram_mode
+            builder.spawn((
+                TextSpan::new("[S] spectrogram_mode: "),
+                TextColor(Color::WHITE),
+                text_font.clone(),
+            ));
+            builder.spawn((
+                TextSpan::new("N/A\n"),
+                TextColor(Color::srgb(0.9, 0.9, 0.9)),
+                text_font.clone(),
+            ));
+
             // bassline_peak_config
             builder.spawn((
                 TextSpan::new("[1/2] bassline_peak_config:\n"),
@@ -858,6 +870,7 @@ pub fn update_debug_text_system(
     query: Query<Entity, With<DebugRoot>>,
     analysis: Res<AnalysisStateResource>,
     vqt_params: Res<PendingVqtParameterChanges>,
+    settings: Res<Persistent<SettingsState>>,
     mut writer: TextUiWriter,
 ) -> Result<()> {
     let entity = query.single()?;
@@ -869,60 +882,66 @@ pub fn update_debug_text_system(
         pitchvis_analysis::analysis::ChordDetectorType::External => "External\n".to_string(),
     };
 
+    // spectrogram_mode (index 6)
+    *writer.text(entity, 6) = match settings.spectrogram_mode {
+        display_system::SpectrogramMode::VQT => "VQT\n".to_string(),
+        display_system::SpectrogramMode::Peaks => "Peaks\n".to_string(),
+    };
+
     // Single-digit parameters
-    // bassline_peak_config (index 6, was 4)
-    *writer.text(entity, 6) = format!(
+    // bassline_peak_config (index 8)
+    *writer.text(entity, 8) = format!(
         "  prom: {:.1}, height: {:.1}\n",
         params.bassline_peak_config.min_prominence, params.bassline_peak_config.min_height
     );
 
-    // highest_bassnote (index 8, was 6)
-    *writer.text(entity, 8) = format!("{}\n", params.highest_bassnote);
+    // highest_bassnote (index 10)
+    *writer.text(entity, 10) = format!("{}\n", params.highest_bassnote);
 
-    // vqt_smoothing_duration_base (index 10, was 8)
+    // vqt_smoothing_duration_base (index 12)
     let vqt_smooth_ms = params.vqt_smoothing_duration_base.as_millis();
-    *writer.text(entity, 10) = if vqt_smooth_ms > 0 {
+    *writer.text(entity, 12) = if vqt_smooth_ms > 0 {
         format!("{}ms\n", vqt_smooth_ms)
     } else {
         "None\n".to_string()
     };
 
-    // vqt_smoothing_calmness min/max (index 12, was 10)
-    *writer.text(entity, 12) = format!(
+    // vqt_smoothing_calmness min/max (index 14)
+    *writer.text(entity, 14) = format!(
         "{:.2} - {:.2}\n",
         params.vqt_smoothing_calmness_min, params.vqt_smoothing_calmness_max
     );
 
-    // note_calmness_smoothing_duration (index 14, was 12)
-    *writer.text(entity, 14) = format!(
+    // note_calmness_smoothing_duration (index 16)
+    *writer.text(entity, 16) = format!(
         "{}ms\n",
         params.note_calmness_smoothing_duration.as_millis()
     );
 
-    // scene_calmness_smoothing_duration (index 16, was 14)
-    *writer.text(entity, 16) = format!(
+    // scene_calmness_smoothing_duration (index 18)
+    *writer.text(entity, 18) = format!(
         "{}ms\n",
         params.scene_calmness_smoothing_duration.as_millis()
     );
 
-    // tuning_inaccuracy_smoothing_duration (index 18, was 16)
-    *writer.text(entity, 18) = format!(
+    // tuning_inaccuracy_smoothing_duration (index 20)
+    *writer.text(entity, 20) = format!(
         "{}ms\n",
         params.tuning_inaccuracy_smoothing_duration.as_millis()
     );
 
     // Two-digit parameters
-    // main_peak config (index 21, was 19)
-    *writer.text(entity, 21) = format!(
+    // main_peak config (index 23)
+    *writer.text(entity, 23) = format!(
         "p{:.1} h{:.1}\n",
         params.peak_config.min_prominence, params.peak_config.min_height
     );
 
-    // harmonic_threshold (index 23, was 21)
-    *writer.text(entity, 23) = format!("{:.2}\n", params.harmonic_threshold);
+    // harmonic_threshold (index 25)
+    *writer.text(entity, 25) = format!("{:.2}\n", params.harmonic_threshold);
 
-    // glissando (index 25, was 23) - compact summary
-    *writer.text(entity, 25) = format!(
+    // glissando (index 27) - compact summary
+    *writer.text(entity, 27) = format!(
         "d{:.0}/{:.0} t{:.2} h{} l{:.1}\n",
         params.glissando_config.peak_tracking_max_distance,
         params.glissando_config.glissando_min_distance,
@@ -931,29 +950,29 @@ pub fn update_debug_text_system(
         params.glissando_config.glissando_lifetime
     );
 
-    // spectrogram_length (index 27, was 25)
-    *writer.text(entity, 27) = format!("{}\n", params.spectrogram_length);
+    // spectrogram_length (index 29)
+    *writer.text(entity, 29) = format!("{}\n", params.spectrogram_length);
 
     // VQT parameters
-    // Q (index 32, was 30)
-    *writer.text(entity, 32) = format!("{:.2}", vqt_params.parameters.quality);
+    // Q (index 34)
+    *writer.text(entity, 34) = format!("{:.2}", vqt_params.parameters.quality);
 
-    // gamma (index 34, was 32)
-    *writer.text(entity, 34) = format!("{:.2}\n", vqt_params.parameters.gamma);
+    // gamma (index 36)
+    *writer.text(entity, 36) = format!("{:.2}\n", vqt_params.parameters.gamma);
 
-    // sparsity (index 36, was 34)
-    *writer.text(entity, 36) = format!("{:.4}", vqt_params.parameters.sparsity_quantile);
+    // sparsity (index 38)
+    *writer.text(entity, 38) = format!("{:.4}", vqt_params.parameters.sparsity_quantile);
 
-    // n_fft (index 38, was 36)
-    *writer.text(entity, 38) = format!("{}\n", vqt_params.parameters.n_fft);
+    // n_fft (index 40)
+    *writer.text(entity, 40) = format!("{}\n", vqt_params.parameters.n_fft);
 
     // AnalysisState
-    // smoothed_scene_calmness (index 42, was 40)
+    // smoothed_scene_calmness (index 44)
     let scene_calmness = analysis.0.smoothed_scene_calmness.get();
-    *writer.text(entity, 42) = format!("{:.3}\n", scene_calmness);
+    *writer.text(entity, 44) = format!("{:.3}\n", scene_calmness);
 
     // Color code the calmness value
-    *writer.color(entity, 42) = TextColor(if scene_calmness > 0.7 {
+    *writer.color(entity, 44) = TextColor(if scene_calmness > 0.7 {
         Color::srgb(0.5, 0.8, 1.0) // Cyan for calm
     } else if scene_calmness > 0.3 {
         Color::srgb(1.0, 1.0, 0.5) // Yellow for medium
@@ -961,12 +980,12 @@ pub fn update_debug_text_system(
         Color::srgb(1.0, 0.5, 0.5) // Red for energetic
     });
 
-    // number of detected peaks (index 44, was 42)
+    // number of detected peaks (index 46)
     let num_peaks = analysis.0.peaks.len();
-    *writer.text(entity, 44) = format!("{}", num_peaks);
+    *writer.text(entity, 46) = format!("{}", num_peaks);
 
     // Color code based on number of peaks
-    *writer.color(entity, 44) = TextColor(if num_peaks == 0 {
+    *writer.color(entity, 46) = TextColor(if num_peaks == 0 {
         Color::srgb(0.5, 0.5, 0.5) // Gray for no peaks
     } else if num_peaks <= 3 {
         Color::srgb(0.5, 1.0, 0.5) // Green for few peaks
@@ -1021,6 +1040,18 @@ pub fn update_analysis_parameters_system(
                 pitchvis_analysis::analysis::ChordDetectorType::Builtin
             }
         };
+    }
+
+    // Check for toggle key (S) to switch spectrogram mode
+    if keycode.just_pressed(KeyCode::KeyS) {
+        settings
+            .update(|settings| {
+                settings.spectrogram_mode = match settings.spectrogram_mode {
+                    display_system::SpectrogramMode::VQT => display_system::SpectrogramMode::Peaks,
+                    display_system::SpectrogramMode::Peaks => display_system::SpectrogramMode::VQT,
+                };
+            })
+            .expect("failed to update settings");
     }
 
     // Check which digit key is pressed (1-9) and which direction (+/-)
@@ -1463,7 +1494,6 @@ pub enum ButtonAction {
     VisualsMode,
     FpsLimit,
     VQTSmoothing,
-    SpectrogramMode,
     ToggleVibrato,
     ToggleAttackDetection,
     ToggleGlissando,
@@ -1742,31 +1772,6 @@ pub fn setup_feature_toggle_buttons(
                     text_font.clone(),
                 ));
 
-            // Spectrogram Mode toggle
-            parent
-                .spawn((
-                    Button,
-                    Node {
-                        ..button_node.clone()
-                    },
-                    button_inactive_bg,
-                    button_inactive_border,
-                    BorderRadius::MAX,
-                    ButtonAction::SpectrogramMode,
-                ))
-                .insert(ConsumesPressEvents)
-                .with_child((
-                    Text::new(format!(
-                        "Spectrogram: {}",
-                        match settings.spectrogram_mode {
-                            display_system::SpectrogramMode::VQT => "VQT",
-                            display_system::SpectrogramMode::Peaks => "Peaks",
-                        }
-                    )),
-                    TextColor(Color::WHITE),
-                    text_font.clone(),
-                ));
-
             // Harmonic Lines toggle
             // let (bg_color, border_color) = button_colors(settings.enable_harmonic_lines);
             // parent
@@ -1880,20 +1885,6 @@ pub fn update_button_system(
                             display_system::VQTSmoothingMode::Short => "Short",
                             display_system::VQTSmoothingMode::Default => "Default",
                             display_system::VQTSmoothingMode::Long => "Long",
-                        }
-                    );
-                }
-                ButtonAction::SpectrogramMode => {
-                    settings
-                        .update(|settings| {
-                            cycle_spectrogram_mode(&mut settings.spectrogram_mode);
-                        })
-                        .expect("failed to update settings");
-                    **text = format!(
-                        "Spectrogram: {}",
-                        match settings.spectrogram_mode {
-                            display_system::SpectrogramMode::VQT => "VQT",
-                            display_system::SpectrogramMode::Peaks => "Peaks",
                         }
                     );
                 }
@@ -2106,13 +2097,6 @@ fn cycle_vqt_smoothing_mode(mode: &mut display_system::VQTSmoothingMode) {
         display_system::VQTSmoothingMode::Short => display_system::VQTSmoothingMode::Default,
         display_system::VQTSmoothingMode::Default => display_system::VQTSmoothingMode::Long,
         display_system::VQTSmoothingMode::Long => display_system::VQTSmoothingMode::None,
-    }
-}
-
-fn cycle_spectrogram_mode(mode: &mut display_system::SpectrogramMode) {
-    *mode = match mode {
-        display_system::SpectrogramMode::VQT => display_system::SpectrogramMode::Peaks,
-        display_system::SpectrogramMode::Peaks => display_system::SpectrogramMode::VQT,
     }
 }
 
