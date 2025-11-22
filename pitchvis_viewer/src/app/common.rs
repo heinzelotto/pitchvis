@@ -89,6 +89,40 @@ pub struct ScreenLockIndicatorPressed(pub bool);
 #[derive(Resource)]
 pub struct ActiveTouches(pub Arc<Mutex<HashMap<u64, Instant>>>);
 
+/// Resource to track pending VQT parameter changes with delayed update
+#[derive(Resource)]
+pub struct PendingVqtParameterChanges {
+    pub parameters: pitchvis_analysis::vqt::VqtParameters,
+    pub last_change_time: Option<Instant>,
+    pub needs_rebuild: bool,
+}
+
+impl PendingVqtParameterChanges {
+    pub fn new(params: pitchvis_analysis::vqt::VqtParameters) -> Self {
+        Self {
+            parameters: params,
+            last_change_time: None,
+            needs_rebuild: false,
+        }
+    }
+
+    pub fn mark_changed(&mut self, now: Instant) {
+        self.last_change_time = Some(now);
+        self.needs_rebuild = true;
+    }
+
+    pub fn should_rebuild(&self, now: Instant, delay_secs: f32) -> bool {
+        if !self.needs_rebuild {
+            return false;
+        }
+        if let Some(last_change) = self.last_change_time {
+            now.duration_since(last_change).as_secs_f32() >= delay_secs
+        } else {
+            false
+        }
+    }
+}
+
 pub fn set_frame_limiter_system(
     mut current_limit: ResMut<CurrentFpsLimit>,
     mut winit_settings: ResMut<WinitSettings>,
@@ -621,6 +655,120 @@ pub fn setup_debug_text(mut commands: Commands) {
                 text_font.clone(),
             ));
 
+            // Two-digit combinations header
+            builder.spawn((
+                TextSpan::new("\n[Two-digit combos]\n"),
+                TextColor(Color::srgb(0.7, 0.9, 1.0)),
+                text_font.clone(),
+            ));
+
+            // Main peak config
+            builder.spawn((
+                TextSpan::new("[12/13] main_peak: "),
+                TextColor(Color::WHITE),
+                text_font.clone(),
+            ));
+            builder.spawn((
+                TextSpan::new("N/A\n"),
+                TextColor(Color::srgb(0.9, 0.9, 0.9)),
+                text_font.clone(),
+            ));
+
+            // Other two-digit parameters
+            builder.spawn((
+                TextSpan::new("[23] harmonic_thresh: "),
+                TextColor(Color::WHITE),
+                text_font.clone(),
+            ));
+            builder.spawn((
+                TextSpan::new("N/A\n"),
+                TextColor(Color::srgb(0.9, 0.9, 0.9)),
+                text_font.clone(),
+            ));
+
+            builder.spawn((
+                TextSpan::new("[34/45/56/67/78] glissando: "),
+                TextColor(Color::WHITE),
+                text_font.clone(),
+            ));
+            builder.spawn((
+                TextSpan::new("N/A\n"),
+                TextColor(Color::srgb(0.9, 0.9, 0.9)),
+                text_font.clone(),
+            ));
+
+            builder.spawn((
+                TextSpan::new("[89] spectrogram_len: "),
+                TextColor(Color::WHITE),
+                text_font.clone(),
+            ));
+            builder.spawn((
+                TextSpan::new("N/A\n"),
+                TextColor(Color::srgb(0.9, 0.9, 0.9)),
+                text_font.clone(),
+            ));
+
+            // VQT Parameters section
+            builder.spawn((
+                TextSpan::new("------------------------\n"),
+                TextColor(Color::srgb(0.5, 0.5, 0.5)),
+                text_font.clone(),
+            ));
+
+            builder.spawn((
+                TextSpan::new("=== VQT Parameters ===\n"),
+                TextColor(Color::srgb(1.0, 1.0, 0.6)),
+                text_font.clone(),
+            ));
+
+            builder.spawn((
+                TextSpan::new("(Changes rebuild after 2s)\n"),
+                TextColor(Color::srgb(1.0, 0.7, 0.5)),
+                text_font.clone(),
+            ));
+
+            builder.spawn((
+                TextSpan::new("[14] Q: "),
+                TextColor(Color::WHITE),
+                text_font.clone(),
+            ));
+            builder.spawn((
+                TextSpan::new("N/A"),
+                TextColor(Color::srgb(0.9, 0.9, 0.9)),
+                text_font.clone(),
+            ));
+            builder.spawn((
+                TextSpan::new("  [24] gamma: "),
+                TextColor(Color::WHITE),
+                text_font.clone(),
+            ));
+            builder.spawn((
+                TextSpan::new("N/A\n"),
+                TextColor(Color::srgb(0.9, 0.9, 0.9)),
+                text_font.clone(),
+            ));
+
+            builder.spawn((
+                TextSpan::new("[35] sparsity: "),
+                TextColor(Color::WHITE),
+                text_font.clone(),
+            ));
+            builder.spawn((
+                TextSpan::new("N/A"),
+                TextColor(Color::srgb(0.9, 0.9, 0.9)),
+                text_font.clone(),
+            ));
+            builder.spawn((
+                TextSpan::new("  [46] n_fft: "),
+                TextColor(Color::WHITE),
+                text_font.clone(),
+            ));
+            builder.spawn((
+                TextSpan::new("N/A\n"),
+                TextColor(Color::srgb(0.9, 0.9, 0.9)),
+                text_font.clone(),
+            ));
+
             // Separator
             builder.spawn((
                 TextSpan::new("------------------------\n"),
@@ -664,22 +812,24 @@ pub fn setup_debug_text(mut commands: Commands) {
 pub fn update_debug_text_system(
     query: Query<Entity, With<DebugRoot>>,
     analysis: Res<AnalysisStateResource>,
+    vqt_params: Res<PendingVqtParameterChanges>,
     mut writer: TextUiWriter,
 ) -> Result<()> {
     let entity = query.single()?;
+    let params = &analysis.0.params;
 
-    // bassline_peak_config (index 4 - parent is 0, keyboard hint is 1, section header is 2, label is 3, value is 4)
-    let bassline_config = &analysis.0.params.bassline_peak_config;
+    // Single-digit parameters
+    // bassline_peak_config (index 4)
     *writer.text(entity, 4) = format!(
         "  prom: {:.1}, height: {:.1}\n",
-        bassline_config.min_prominence, bassline_config.min_height
+        params.bassline_peak_config.min_prominence, params.bassline_peak_config.min_height
     );
 
     // highest_bassnote (index 6)
-    *writer.text(entity, 6) = format!("{}\n", analysis.0.params.highest_bassnote);
+    *writer.text(entity, 6) = format!("{}\n", params.highest_bassnote);
 
     // vqt_smoothing_duration_base (index 8)
-    let vqt_smooth_ms = analysis.0.params.vqt_smoothing_duration_base.as_millis();
+    let vqt_smooth_ms = params.vqt_smoothing_duration_base.as_millis();
     *writer.text(entity, 8) = if vqt_smooth_ms > 0 {
         format!("{}ms\n", vqt_smooth_ms)
     } else {
@@ -689,45 +839,61 @@ pub fn update_debug_text_system(
     // vqt_smoothing_calmness min/max (index 10)
     *writer.text(entity, 10) = format!(
         "{:.2} - {:.2}\n",
-        analysis.0.params.vqt_smoothing_calmness_min, analysis.0.params.vqt_smoothing_calmness_max
+        params.vqt_smoothing_calmness_min, params.vqt_smoothing_calmness_max
     );
 
     // note_calmness_smoothing_duration (index 12)
-    *writer.text(entity, 12) = format!(
-        "{}ms\n",
-        analysis
-            .0
-            .params
-            .note_calmness_smoothing_duration
-            .as_millis()
-    );
+    *writer.text(entity, 12) = format!("{}ms\n", params.note_calmness_smoothing_duration.as_millis());
 
     // scene_calmness_smoothing_duration (index 14)
-    *writer.text(entity, 14) = format!(
-        "{}ms\n",
-        analysis
-            .0
-            .params
-            .scene_calmness_smoothing_duration
-            .as_millis()
-    );
+    *writer.text(entity, 14) = format!("{}ms\n", params.scene_calmness_smoothing_duration.as_millis());
 
     // tuning_inaccuracy_smoothing_duration (index 16)
-    *writer.text(entity, 16) = format!(
-        "{}ms\n",
-        analysis
-            .0
-            .params
-            .tuning_inaccuracy_smoothing_duration
-            .as_millis()
+    *writer.text(entity, 16) = format!("{}ms\n", params.tuning_inaccuracy_smoothing_duration.as_millis());
+
+    // Two-digit parameters
+    // main_peak config (index 19)
+    *writer.text(entity, 19) = format!(
+        "p{:.1} h{:.1}\n",
+        params.peak_config.min_prominence, params.peak_config.min_height
     );
 
-    // smoothed_scene_calmness (index 20)
+    // harmonic_threshold (index 21)
+    *writer.text(entity, 21) = format!("{:.2}\n", params.harmonic_threshold);
+
+    // glissando (index 23) - compact summary
+    *writer.text(entity, 23) = format!(
+        "d{:.0}/{:.0} t{:.2} h{} l{:.1}\n",
+        params.glissando_config.peak_tracking_max_distance,
+        params.glissando_config.glissando_min_distance,
+        params.glissando_config.peak_tracking_timeout,
+        params.glissando_config.peak_tracking_history_length,
+        params.glissando_config.glissando_lifetime
+    );
+
+    // spectrogram_length (index 25)
+    *writer.text(entity, 25) = format!("{}\n", params.spectrogram_length);
+
+    // VQT parameters
+    // Q (index 30)
+    *writer.text(entity, 30) = format!("{:.2}", vqt_params.parameters.quality);
+
+    // gamma (index 32)
+    *writer.text(entity, 32) = format!("{:.2}\n", vqt_params.parameters.gamma);
+
+    // sparsity (index 34)
+    *writer.text(entity, 34) = format!("{:.4}", vqt_params.parameters.sparsity_quantile);
+
+    // n_fft (index 36)
+    *writer.text(entity, 36) = format!("{}\n", vqt_params.parameters.n_fft);
+
+    // AnalysisState
+    // smoothed_scene_calmness (index 40)
     let scene_calmness = analysis.0.smoothed_scene_calmness.get();
-    *writer.text(entity, 20) = format!("{:.3}\n", scene_calmness);
+    *writer.text(entity, 40) = format!("{:.3}\n", scene_calmness);
 
     // Color code the calmness value
-    *writer.color(entity, 20) = TextColor(if scene_calmness > 0.7 {
+    *writer.color(entity, 40) = TextColor(if scene_calmness > 0.7 {
         Color::srgb(0.5, 0.8, 1.0) // Cyan for calm
     } else if scene_calmness > 0.3 {
         Color::srgb(1.0, 1.0, 0.5) // Yellow for medium
@@ -735,12 +901,12 @@ pub fn update_debug_text_system(
         Color::srgb(1.0, 0.5, 0.5) // Red for energetic
     });
 
-    // number of detected peaks (index 22)
+    // number of detected peaks (index 42)
     let num_peaks = analysis.0.peaks.len();
-    *writer.text(entity, 22) = format!("{}", num_peaks);
+    *writer.text(entity, 42) = format!("{}", num_peaks);
 
     // Color code based on number of peaks
-    *writer.color(entity, 22) = TextColor(if num_peaks == 0 {
+    *writer.color(entity, 42) = TextColor(if num_peaks == 0 {
         Color::srgb(0.5, 0.5, 0.5) // Gray for no peaks
     } else if num_peaks <= 3 {
         Color::srgb(0.5, 1.0, 0.5) // Green for few peaks
@@ -769,8 +935,10 @@ pub fn debug_text_showhide(
 }
 
 /// Update analysis parameters based on keyboard input (digit + plus/minus keys)
+/// Supports single digits (1-9) and two-digit combinations (e.g., 1+2, 2+3, etc.)
 pub fn update_analysis_parameters_system(
     mut analysis: ResMut<AnalysisStateResource>,
+    mut vqt_params: ResMut<PendingVqtParameterChanges>,
     keycode: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
     settings: Res<Persistent<SettingsState>>,
@@ -793,65 +961,198 @@ pub fn update_analysis_parameters_system(
 
     let direction = if plus_pressed { 1.0 } else { -1.0 };
 
-    // Parameter 1: Bassline peak prominence
-    if keycode.pressed(KeyCode::Digit1) {
-        params.bassline_peak_config.min_prominence += direction * 5.0 * dt;
-        params.bassline_peak_config.min_prominence = params.bassline_peak_config.min_prominence.clamp(1.0, 20.0);
-    }
+    // Check which digit keys are currently pressed
+    let d1 = keycode.pressed(KeyCode::Digit1);
+    let d2 = keycode.pressed(KeyCode::Digit2);
+    let d3 = keycode.pressed(KeyCode::Digit3);
+    let d4 = keycode.pressed(KeyCode::Digit4);
+    let d5 = keycode.pressed(KeyCode::Digit5);
+    let d6 = keycode.pressed(KeyCode::Digit6);
+    let d7 = keycode.pressed(KeyCode::Digit7);
+    let d8 = keycode.pressed(KeyCode::Digit8);
+    let d9 = keycode.pressed(KeyCode::Digit9);
 
-    // Parameter 2: Bassline peak height
-    if keycode.pressed(KeyCode::Digit2) {
-        params.bassline_peak_config.min_height += direction * 2.5 * dt;
-        params.bassline_peak_config.min_height = params.bassline_peak_config.min_height.clamp(1.0, 10.0);
-    }
+    // Count how many digits are pressed
+    let digit_count = [d1, d2, d3, d4, d5, d6, d7, d8, d9]
+        .iter()
+        .filter(|&&d| d)
+        .count();
 
-    // Parameter 3: Highest bass note
-    if keycode.pressed(KeyCode::Digit3) {
-        params.highest_bassnote = (params.highest_bassnote as f32 + direction * 12.0 * dt).round() as usize;
-        params.highest_bassnote = params.highest_bassnote.clamp(12, 60);
+    // === TWO-DIGIT COMBINATIONS ===
+    if digit_count == 2 {
+        // Analysis parameters
+        if d1 && d2 {
+            // Main peak prominence
+            params.peak_config.min_prominence += direction * 5.0 * dt;
+            params.peak_config.min_prominence = params.peak_config.min_prominence.clamp(1.0, 30.0);
+        } else if d1 && d3 {
+            // Main peak height
+            params.peak_config.min_height += direction * 2.5 * dt;
+            params.peak_config.min_height = params.peak_config.min_height.clamp(1.0, 15.0);
+        } else if d2 && d3 {
+            // Harmonic threshold
+            params.harmonic_threshold += direction * 0.1 * dt;
+            params.harmonic_threshold = params.harmonic_threshold.clamp(0.05, 0.8);
+        } else if d3 && d4 {
+            // Glissando peak tracking max distance
+            params.glissando_config.peak_tracking_max_distance += direction * 5.0 * dt;
+            params.glissando_config.peak_tracking_max_distance =
+                params.glissando_config.peak_tracking_max_distance.clamp(1.0, 30.0);
+        } else if d4 && d5 {
+            // Glissando min distance
+            params.glissando_config.glissando_min_distance += direction * 5.0 * dt;
+            params.glissando_config.glissando_min_distance =
+                params.glissando_config.glissando_min_distance.clamp(3.0, 40.0);
+        } else if d5 && d6 {
+            // Glissando tracking timeout
+            params.glissando_config.peak_tracking_timeout += direction * 0.1 * dt;
+            params.glissando_config.peak_tracking_timeout =
+                params.glissando_config.peak_tracking_timeout.clamp(0.05, 1.0);
+        } else if d6 && d7 {
+            // Glissando tracking history length (integer)
+            let new_val = (params.glissando_config.peak_tracking_history_length as f32
+                + direction * 30.0 * dt)
+                .round() as usize;
+            params.glissando_config.peak_tracking_history_length = new_val.clamp(30, 300);
+        } else if d7 && d8 {
+            // Glissando lifetime
+            params.glissando_config.glissando_lifetime += direction * 0.5 * dt;
+            params.glissando_config.glissando_lifetime =
+                params.glissando_config.glissando_lifetime.clamp(0.2, 5.0);
+        } else if d8 && d9 {
+            // Spectrogram length (integer)
+            let new_val =
+                (params.spectrogram_length as f32 + direction * 100.0 * dt).round() as usize;
+            params.spectrogram_length = new_val.clamp(100, 1000);
+        }
+        // VQT parameters (trigger delayed rebuild)
+        else if d1 && d4 {
+            // VQT quality (Q)
+            vqt_params.parameters.quality += direction * 1.0 * dt;
+            vqt_params.parameters.quality = vqt_params.parameters.quality.clamp(0.5, 5.0);
+            vqt_params.mark_changed(time.last_update().unwrap());
+        } else if d2 && d4 {
+            // VQT gamma
+            vqt_params.parameters.gamma += direction * 5.0 * dt;
+            vqt_params.parameters.gamma = vqt_params.parameters.gamma.clamp(0.0, 30.0);
+            vqt_params.mark_changed(time.last_update().unwrap());
+        } else if d3 && d5 {
+            // VQT sparsity quantile
+            vqt_params.parameters.sparsity_quantile += direction * 0.01 * dt;
+            vqt_params.parameters.sparsity_quantile =
+                vqt_params.parameters.sparsity_quantile.clamp(0.9, 0.9999);
+            vqt_params.mark_changed(time.last_update().unwrap());
+        } else if d4 && d6 {
+            // VQT n_fft (power of 2, integer)
+            let current_log2 = (vqt_params.parameters.n_fft as f32).log2();
+            let new_log2 = (current_log2 + direction * 0.5 * dt).round();
+            let new_n_fft = 2_usize.pow(new_log2 as u32);
+            vqt_params.parameters.n_fft = new_n_fft.clamp(4096, 131072);
+            vqt_params.mark_changed(time.last_update().unwrap());
+        }
     }
-
-    // Parameter 4: VQT smoothing base duration
-    if keycode.pressed(KeyCode::Digit4) {
-        let current_ms = params.vqt_smoothing_duration_base.as_millis() as f32;
-        let new_ms = (current_ms + direction * 100.0 * dt).max(0.0).min(500.0);
-        params.vqt_smoothing_duration_base = std::time::Duration::from_millis(new_ms as u64);
-    }
-
-    // Parameter 5: VQT smoothing calmness min
-    if keycode.pressed(KeyCode::Digit5) {
-        params.vqt_smoothing_calmness_min += direction * 0.5 * dt;
-        params.vqt_smoothing_calmness_min = params.vqt_smoothing_calmness_min.clamp(0.1, 2.0);
-    }
-
-    // Parameter 6: VQT smoothing calmness max
-    if keycode.pressed(KeyCode::Digit6) {
-        params.vqt_smoothing_calmness_max += direction * 1.0 * dt;
-        params.vqt_smoothing_calmness_max = params.vqt_smoothing_calmness_max.clamp(0.5, 5.0);
-    }
-
-    // Parameter 7: Note calmness smoothing duration
-    if keycode.pressed(KeyCode::Digit7) {
-        let current_ms = params.note_calmness_smoothing_duration.as_millis() as f32;
-        let new_ms = (current_ms + direction * 2000.0 * dt).max(100.0).min(10000.0);
-        params.note_calmness_smoothing_duration = std::time::Duration::from_millis(new_ms as u64);
-    }
-
-    // Parameter 8: Scene calmness smoothing duration
-    if keycode.pressed(KeyCode::Digit8) {
-        let current_ms = params.scene_calmness_smoothing_duration.as_millis() as f32;
-        let new_ms = (current_ms + direction * 1000.0 * dt).max(100.0).min(5000.0);
-        params.scene_calmness_smoothing_duration = std::time::Duration::from_millis(new_ms as u64);
-    }
-
-    // Parameter 9: Tuning inaccuracy smoothing duration
-    if keycode.pressed(KeyCode::Digit9) {
-        let current_ms = params.tuning_inaccuracy_smoothing_duration.as_millis() as f32;
-        let new_ms = (current_ms + direction * 2000.0 * dt).max(100.0).min(10000.0);
-        params.tuning_inaccuracy_smoothing_duration = std::time::Duration::from_millis(new_ms as u64);
+    // === SINGLE DIGIT PARAMETERS ===
+    else if digit_count == 1 {
+        if d1 {
+            // Bassline peak prominence
+            params.bassline_peak_config.min_prominence += direction * 5.0 * dt;
+            params.bassline_peak_config.min_prominence =
+                params.bassline_peak_config.min_prominence.clamp(1.0, 20.0);
+        } else if d2 {
+            // Bassline peak height
+            params.bassline_peak_config.min_height += direction * 2.5 * dt;
+            params.bassline_peak_config.min_height =
+                params.bassline_peak_config.min_height.clamp(1.0, 10.0);
+        } else if d3 {
+            // Highest bass note
+            params.highest_bassnote =
+                (params.highest_bassnote as f32 + direction * 12.0 * dt).round() as usize;
+            params.highest_bassnote = params.highest_bassnote.clamp(12, 60);
+        } else if d4 {
+            // VQT smoothing base duration
+            let current_ms = params.vqt_smoothing_duration_base.as_millis() as f32;
+            let new_ms = (current_ms + direction * 100.0 * dt).max(0.0).min(500.0);
+            params.vqt_smoothing_duration_base = std::time::Duration::from_millis(new_ms as u64);
+        } else if d5 {
+            // VQT smoothing calmness min
+            params.vqt_smoothing_calmness_min += direction * 0.5 * dt;
+            params.vqt_smoothing_calmness_min =
+                params.vqt_smoothing_calmness_min.clamp(0.1, 2.0);
+        } else if d6 {
+            // VQT smoothing calmness max
+            params.vqt_smoothing_calmness_max += direction * 1.0 * dt;
+            params.vqt_smoothing_calmness_max =
+                params.vqt_smoothing_calmness_max.clamp(0.5, 5.0);
+        } else if d7 {
+            // Note calmness smoothing duration
+            let current_ms = params.note_calmness_smoothing_duration.as_millis() as f32;
+            let new_ms = (current_ms + direction * 2000.0 * dt).max(100.0).min(10000.0);
+            params.note_calmness_smoothing_duration =
+                std::time::Duration::from_millis(new_ms as u64);
+        } else if d8 {
+            // Scene calmness smoothing duration
+            let current_ms = params.scene_calmness_smoothing_duration.as_millis() as f32;
+            let new_ms = (current_ms + direction * 1000.0 * dt).max(100.0).min(5000.0);
+            params.scene_calmness_smoothing_duration =
+                std::time::Duration::from_millis(new_ms as u64);
+        } else if d9 {
+            // Tuning inaccuracy smoothing duration
+            let current_ms = params.tuning_inaccuracy_smoothing_duration.as_millis() as f32;
+            let new_ms = (current_ms + direction * 2000.0 * dt).max(100.0).min(10000.0);
+            params.tuning_inaccuracy_smoothing_duration =
+                std::time::Duration::from_millis(new_ms as u64);
+        }
     }
 
     Ok(())
+}
+
+/// Rebuild VQT filter banks when parameters have stabilized
+pub fn rebuild_vqt_system(
+    mut vqt_resource: ResMut<VqtResource>,
+    mut vqt_params: ResMut<PendingVqtParameterChanges>,
+    time: Res<Time>,
+    settings: Res<Persistent<SettingsState>>,
+) {
+    // Only rebuild in debug mode
+    if settings.display_mode != display_system::DisplayMode::Debugging {
+        return;
+    }
+
+    // Check if we should rebuild (2 second delay after last change)
+    if let Some(now) = time.last_update() {
+        if vqt_params.should_rebuild(now, 2.0) {
+            info!("Rebuilding VQT filter banks with new parameters...");
+            info!(
+                "  Q: {:.2}, gamma: {:.2}, sparsity: {:.4}, n_fft: {}",
+                vqt_params.parameters.quality,
+                vqt_params.parameters.gamma,
+                vqt_params.parameters.sparsity_quantile,
+                vqt_params.parameters.n_fft
+            );
+
+            // Create new VQT with updated parameters
+            let new_vqt = pitchvis_analysis::vqt::Vqt::new(&vqt_params.parameters);
+
+            // Verify n_fft can accommodate the range
+            let min_n_fft_required = (vqt_params.parameters.sr
+                / vqt_params.parameters.range.min_freq
+                * vqt_params.parameters.quality
+                * 4.0) as usize;
+            if vqt_params.parameters.n_fft < min_n_fft_required {
+                warn!(
+                    "n_fft ({}) may be too small for this range. Recommended minimum: {}",
+                    vqt_params.parameters.n_fft, min_n_fft_required
+                );
+            }
+
+            // Replace the VQT resource
+            *vqt_resource = VqtResource(new_vqt);
+            vqt_params.needs_rebuild = false;
+
+            info!("VQT filter banks rebuilt successfully!");
+        }
+    }
 }
 
 /// Setup screen lock indicator
@@ -1877,6 +2178,8 @@ pub fn insert_common_resources(
     settings: Persistent<SettingsState>,
     default_fps: u32,
 ) {
+    let vqt_params = vqt.params().clone();
+
     app.insert_resource(VqtResource(vqt))
         .insert_resource(VqtResultResource::new(vqt_range))
         .insert_resource(AudioBufferResource(audio_buffer))
@@ -1902,7 +2205,8 @@ pub fn insert_common_resources(
         .insert_resource(ScreenLockState(false))
         .insert_resource(ScreenLockTapTime(None))
         .insert_resource(ScreenLockIndicatorPressed(false))
-        .insert_resource(ActiveTouches(Arc::new(Mutex::new(HashMap::new()))));
+        .insert_resource(ActiveTouches(Arc::new(Mutex::new(HashMap::new()))))
+        .insert_resource(PendingVqtParameterChanges::new(vqt_params));
 }
 
 /// Registers all common startup systems
@@ -1944,6 +2248,7 @@ pub fn register_common_update_systems<M1, M2, M3>(
             update_analysis_text_system,
             analysis_text_showhide,
             update_analysis_parameters_system.before(update_debug_text_system),
+            rebuild_vqt_system.after(update_analysis_parameters_system),
             update_debug_text_system,
             debug_text_showhide,
             update_screen_lock_indicator,

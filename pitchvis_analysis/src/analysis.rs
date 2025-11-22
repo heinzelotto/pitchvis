@@ -39,9 +39,9 @@ pub use crate::analysis_modules::{
 #[derive(Debug, Clone)]
 pub struct AnalysisParameters {
     /// The length of the spectrogram in frames.
-    spectrogram_length: usize,
+    pub spectrogram_length: usize,
     /// Peak detection parameters for the general peaks.
-    peak_config: PeakDetectionParameters,
+    pub peak_config: PeakDetectionParameters,
     /// Peak detection parameters for the bassline peaks.
     pub bassline_peak_config: PeakDetectionParameters,
     /// The highest bass note to be considered.
@@ -64,7 +64,7 @@ pub struct AnalysisParameters {
     /// Threshold for harmonic presence (as fraction of fundamental **power**, not dB).
     /// A harmonic is considered present if its power >= threshold * fundamental_power.
     /// Note: VQT is in dB, so we convert: power = 10^(dB/10)
-    harmonic_threshold: f32,
+    pub harmonic_threshold: f32,
     /// Attack detection parameters (currently disabled)
     #[allow(dead_code)]
     attack_detection_config: AttackDetectionParameters,
@@ -72,7 +72,7 @@ pub struct AnalysisParameters {
     #[allow(dead_code)]
     vibrato_detection_config: VibratoDetectionParameters,
     /// Glissando detection parameters
-    glissando_config: GlissandoParameters,
+    pub glissando_config: GlissandoParameters,
 }
 
 impl AnalysisParameters {
