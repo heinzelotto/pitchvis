@@ -122,7 +122,8 @@ pub fn train() -> Result<()> {
         quality: Q,
         gamma: GAMMA,
     };
-    let mut vqt = pitchvis_analysis::vqt::Vqt::new(&params);
+    let mut vqt = pitchvis_analysis::vqt::Vqt::new(&params)
+        .expect("Failed to create VQT with default parameters");
 
     let vqt_delay_in_samples = (vqt.delay.as_millis() as usize * SR) / 1000;
     let vqt_delay_in_samples = (vqt_delay_in_samples / 64) * 64; // round to multiple of 64

@@ -951,15 +951,20 @@ pub fn update_analysis_parameters_system(
     let dt = time.delta_secs();
     let params = &mut analysis.0.params;
 
-    // Check which digit key is pressed (1-9) and which direction (+/-)
+    // Check which digit key is pressed (1-9) and which direction (+/-/.)
     let plus_pressed = keycode.pressed(KeyCode::Equal) || keycode.pressed(KeyCode::NumpadAdd);
     let minus_pressed = keycode.pressed(KeyCode::Minus) || keycode.pressed(KeyCode::NumpadSubtract);
+    let reset_pressed = keycode.pressed(KeyCode::Period) || keycode.pressed(KeyCode::NumpadDecimal);
 
-    if !plus_pressed && !minus_pressed {
+    if !plus_pressed && !minus_pressed && !reset_pressed {
         return Ok(());
     }
 
     let direction = if plus_pressed { 1.0 } else { -1.0 };
+
+    // Get default values for reset
+    let defaults = pitchvis_analysis::analysis::AnalysisParameters::default();
+    let vqt_defaults = pitchvis_analysis::vqt::VqtParameters::default();
 
     // Check which digit keys are currently pressed
     let d1 = keycode.pressed(KeyCode::Digit1);
@@ -983,124 +988,224 @@ pub fn update_analysis_parameters_system(
         // Analysis parameters
         if d1 && d2 {
             // Main peak prominence
-            params.peak_config.min_prominence += direction * 5.0 * dt;
-            params.peak_config.min_prominence = params.peak_config.min_prominence.clamp(1.0, 30.0);
+            if reset_pressed {
+                params.peak_config.min_prominence = defaults.peak_config.min_prominence;
+            } else {
+                params.peak_config.min_prominence += direction * 5.0 * dt;
+                params.peak_config.min_prominence = params.peak_config.min_prominence.clamp(1.0, 30.0);
+            }
         } else if d1 && d3 {
             // Main peak height
-            params.peak_config.min_height += direction * 2.5 * dt;
-            params.peak_config.min_height = params.peak_config.min_height.clamp(1.0, 15.0);
+            if reset_pressed {
+                params.peak_config.min_height = defaults.peak_config.min_height;
+            } else {
+                params.peak_config.min_height += direction * 2.5 * dt;
+                params.peak_config.min_height = params.peak_config.min_height.clamp(1.0, 15.0);
+            }
         } else if d2 && d3 {
             // Harmonic threshold
-            params.harmonic_threshold += direction * 0.1 * dt;
-            params.harmonic_threshold = params.harmonic_threshold.clamp(0.05, 0.8);
+            if reset_pressed {
+                params.harmonic_threshold = defaults.harmonic_threshold;
+            } else {
+                params.harmonic_threshold += direction * 0.1 * dt;
+                params.harmonic_threshold = params.harmonic_threshold.clamp(0.05, 0.8);
+            }
         } else if d3 && d4 {
             // Glissando peak tracking max distance
-            params.glissando_config.peak_tracking_max_distance += direction * 5.0 * dt;
-            params.glissando_config.peak_tracking_max_distance =
-                params.glissando_config.peak_tracking_max_distance.clamp(1.0, 30.0);
+            if reset_pressed {
+                params.glissando_config.peak_tracking_max_distance = defaults.glissando_config.peak_tracking_max_distance;
+            } else {
+                params.glissando_config.peak_tracking_max_distance += direction * 5.0 * dt;
+                params.glissando_config.peak_tracking_max_distance =
+                    params.glissando_config.peak_tracking_max_distance.clamp(1.0, 30.0);
+            }
         } else if d4 && d5 {
             // Glissando min distance
-            params.glissando_config.glissando_min_distance += direction * 5.0 * dt;
-            params.glissando_config.glissando_min_distance =
-                params.glissando_config.glissando_min_distance.clamp(3.0, 40.0);
+            if reset_pressed {
+                params.glissando_config.glissando_min_distance = defaults.glissando_config.glissando_min_distance;
+            } else {
+                params.glissando_config.glissando_min_distance += direction * 5.0 * dt;
+                params.glissando_config.glissando_min_distance =
+                    params.glissando_config.glissando_min_distance.clamp(3.0, 40.0);
+            }
         } else if d5 && d6 {
             // Glissando tracking timeout
-            params.glissando_config.peak_tracking_timeout += direction * 0.1 * dt;
-            params.glissando_config.peak_tracking_timeout =
-                params.glissando_config.peak_tracking_timeout.clamp(0.05, 1.0);
+            if reset_pressed {
+                params.glissando_config.peak_tracking_timeout = defaults.glissando_config.peak_tracking_timeout;
+            } else {
+                params.glissando_config.peak_tracking_timeout += direction * 0.1 * dt;
+                params.glissando_config.peak_tracking_timeout =
+                    params.glissando_config.peak_tracking_timeout.clamp(0.05, 1.0);
+            }
         } else if d6 && d7 {
             // Glissando tracking history length (integer)
-            let new_val = (params.glissando_config.peak_tracking_history_length as f32
-                + direction * 30.0 * dt)
-                .round() as usize;
-            params.glissando_config.peak_tracking_history_length = new_val.clamp(30, 300);
+            if reset_pressed {
+                params.glissando_config.peak_tracking_history_length = defaults.glissando_config.peak_tracking_history_length;
+            } else {
+                let new_val = (params.glissando_config.peak_tracking_history_length as f32
+                    + direction * 30.0 * dt)
+                    .round() as usize;
+                params.glissando_config.peak_tracking_history_length = new_val.clamp(30, 300);
+            }
         } else if d7 && d8 {
             // Glissando lifetime
-            params.glissando_config.glissando_lifetime += direction * 0.5 * dt;
-            params.glissando_config.glissando_lifetime =
-                params.glissando_config.glissando_lifetime.clamp(0.2, 5.0);
+            if reset_pressed {
+                params.glissando_config.glissando_lifetime = defaults.glissando_config.glissando_lifetime;
+            } else {
+                params.glissando_config.glissando_lifetime += direction * 0.5 * dt;
+                params.glissando_config.glissando_lifetime =
+                    params.glissando_config.glissando_lifetime.clamp(0.2, 5.0);
+            }
         } else if d8 && d9 {
             // Spectrogram length (integer)
-            let new_val =
-                (params.spectrogram_length as f32 + direction * 100.0 * dt).round() as usize;
-            params.spectrogram_length = new_val.clamp(100, 1000);
+            if reset_pressed {
+                params.spectrogram_length = defaults.spectrogram_length;
+            } else {
+                let new_val =
+                    (params.spectrogram_length as f32 + direction * 100.0 * dt).round() as usize;
+                params.spectrogram_length = new_val.clamp(100, 1000);
+            }
         }
         // VQT parameters (trigger delayed rebuild)
         else if d1 && d4 {
             // VQT quality (Q)
-            vqt_params.parameters.quality += direction * 1.0 * dt;
-            vqt_params.parameters.quality = vqt_params.parameters.quality.clamp(0.5, 5.0);
-            vqt_params.mark_changed(time.last_update().unwrap());
+            if reset_pressed {
+                vqt_params.parameters.quality = vqt_defaults.quality;
+                vqt_params.mark_changed(time.last_update().unwrap());
+            } else {
+                vqt_params.parameters.quality += direction * 1.0 * dt;
+                vqt_params.parameters.quality = vqt_params.parameters.quality.clamp(0.5, 5.0);
+                vqt_params.mark_changed(time.last_update().unwrap());
+            }
         } else if d2 && d4 {
             // VQT gamma
-            vqt_params.parameters.gamma += direction * 5.0 * dt;
-            vqt_params.parameters.gamma = vqt_params.parameters.gamma.clamp(0.0, 30.0);
-            vqt_params.mark_changed(time.last_update().unwrap());
+            if reset_pressed {
+                vqt_params.parameters.gamma = vqt_defaults.gamma;
+                vqt_params.mark_changed(time.last_update().unwrap());
+            } else {
+                vqt_params.parameters.gamma += direction * 5.0 * dt;
+                vqt_params.parameters.gamma = vqt_params.parameters.gamma.clamp(0.0, 30.0);
+                vqt_params.mark_changed(time.last_update().unwrap());
+            }
         } else if d3 && d5 {
             // VQT sparsity quantile
-            vqt_params.parameters.sparsity_quantile += direction * 0.01 * dt;
-            vqt_params.parameters.sparsity_quantile =
-                vqt_params.parameters.sparsity_quantile.clamp(0.9, 0.9999);
-            vqt_params.mark_changed(time.last_update().unwrap());
+            if reset_pressed {
+                vqt_params.parameters.sparsity_quantile = vqt_defaults.sparsity_quantile;
+                vqt_params.mark_changed(time.last_update().unwrap());
+            } else {
+                vqt_params.parameters.sparsity_quantile += direction * 0.01 * dt;
+                vqt_params.parameters.sparsity_quantile =
+                    vqt_params.parameters.sparsity_quantile.clamp(0.9, 0.9999);
+                vqt_params.mark_changed(time.last_update().unwrap());
+            }
         } else if d4 && d6 {
-            // VQT n_fft (power of 2, integer)
-            let current_log2 = (vqt_params.parameters.n_fft as f32).log2();
-            let new_log2 = (current_log2 + direction * 0.5 * dt).round();
-            let new_n_fft = 2_usize.pow(new_log2 as u32);
-            vqt_params.parameters.n_fft = new_n_fft.clamp(4096, 131072);
-            vqt_params.mark_changed(time.last_update().unwrap());
+            // VQT n_fft (power of 2, integer) - use just-pressed to step by powers of 2
+            if reset_pressed {
+                vqt_params.parameters.n_fft = vqt_defaults.n_fft;
+                vqt_params.mark_changed(time.last_update().unwrap());
+            } else if keycode.just_pressed(KeyCode::Equal) || keycode.just_pressed(KeyCode::NumpadAdd) {
+                // Double the n_fft (shift left by 1)
+                let new_n_fft = (vqt_params.parameters.n_fft * 2).min(131072);
+                if new_n_fft != vqt_params.parameters.n_fft {
+                    vqt_params.parameters.n_fft = new_n_fft;
+                    vqt_params.mark_changed(time.last_update().unwrap());
+                }
+            } else if keycode.just_pressed(KeyCode::Minus) || keycode.just_pressed(KeyCode::NumpadSubtract) {
+                // Halve the n_fft (shift right by 1)
+                let new_n_fft = (vqt_params.parameters.n_fft / 2).max(4096);
+                if new_n_fft != vqt_params.parameters.n_fft {
+                    vqt_params.parameters.n_fft = new_n_fft;
+                    vqt_params.mark_changed(time.last_update().unwrap());
+                }
+            }
         }
     }
     // === SINGLE DIGIT PARAMETERS ===
     else if digit_count == 1 {
         if d1 {
             // Bassline peak prominence
-            params.bassline_peak_config.min_prominence += direction * 5.0 * dt;
-            params.bassline_peak_config.min_prominence =
-                params.bassline_peak_config.min_prominence.clamp(1.0, 20.0);
+            if reset_pressed {
+                params.bassline_peak_config.min_prominence = defaults.bassline_peak_config.min_prominence;
+            } else {
+                params.bassline_peak_config.min_prominence += direction * 5.0 * dt;
+                params.bassline_peak_config.min_prominence =
+                    params.bassline_peak_config.min_prominence.clamp(1.0, 20.0);
+            }
         } else if d2 {
             // Bassline peak height
-            params.bassline_peak_config.min_height += direction * 2.5 * dt;
-            params.bassline_peak_config.min_height =
-                params.bassline_peak_config.min_height.clamp(1.0, 10.0);
+            if reset_pressed {
+                params.bassline_peak_config.min_height = defaults.bassline_peak_config.min_height;
+            } else {
+                params.bassline_peak_config.min_height += direction * 2.5 * dt;
+                params.bassline_peak_config.min_height =
+                    params.bassline_peak_config.min_height.clamp(1.0, 10.0);
+            }
         } else if d3 {
             // Highest bass note
-            params.highest_bassnote =
-                (params.highest_bassnote as f32 + direction * 12.0 * dt).round() as usize;
-            params.highest_bassnote = params.highest_bassnote.clamp(12, 60);
+            if reset_pressed {
+                params.highest_bassnote = defaults.highest_bassnote;
+            } else {
+                params.highest_bassnote =
+                    (params.highest_bassnote as f32 + direction * 12.0 * dt).round() as usize;
+                params.highest_bassnote = params.highest_bassnote.clamp(12, 60);
+            }
         } else if d4 {
             // VQT smoothing base duration
-            let current_ms = params.vqt_smoothing_duration_base.as_millis() as f32;
-            let new_ms = (current_ms + direction * 100.0 * dt).max(0.0).min(500.0);
-            params.vqt_smoothing_duration_base = std::time::Duration::from_millis(new_ms as u64);
+            if reset_pressed {
+                params.vqt_smoothing_duration_base = defaults.vqt_smoothing_duration_base;
+            } else {
+                let current_ms = params.vqt_smoothing_duration_base.as_millis() as f32;
+                let new_ms = (current_ms + direction * 100.0 * dt).max(0.0).min(500.0);
+                params.vqt_smoothing_duration_base = std::time::Duration::from_millis(new_ms as u64);
+            }
         } else if d5 {
             // VQT smoothing calmness min
-            params.vqt_smoothing_calmness_min += direction * 0.5 * dt;
-            params.vqt_smoothing_calmness_min =
-                params.vqt_smoothing_calmness_min.clamp(0.1, 2.0);
+            if reset_pressed {
+                params.vqt_smoothing_calmness_min = defaults.vqt_smoothing_calmness_min;
+            } else {
+                params.vqt_smoothing_calmness_min += direction * 0.5 * dt;
+                params.vqt_smoothing_calmness_min =
+                    params.vqt_smoothing_calmness_min.clamp(0.1, 2.0);
+            }
         } else if d6 {
             // VQT smoothing calmness max
-            params.vqt_smoothing_calmness_max += direction * 1.0 * dt;
-            params.vqt_smoothing_calmness_max =
-                params.vqt_smoothing_calmness_max.clamp(0.5, 5.0);
+            if reset_pressed {
+                params.vqt_smoothing_calmness_max = defaults.vqt_smoothing_calmness_max;
+            } else {
+                params.vqt_smoothing_calmness_max += direction * 1.0 * dt;
+                params.vqt_smoothing_calmness_max =
+                    params.vqt_smoothing_calmness_max.clamp(0.5, 5.0);
+            }
         } else if d7 {
             // Note calmness smoothing duration
-            let current_ms = params.note_calmness_smoothing_duration.as_millis() as f32;
-            let new_ms = (current_ms + direction * 2000.0 * dt).max(100.0).min(10000.0);
-            params.note_calmness_smoothing_duration =
-                std::time::Duration::from_millis(new_ms as u64);
+            if reset_pressed {
+                params.note_calmness_smoothing_duration = defaults.note_calmness_smoothing_duration;
+            } else {
+                let current_ms = params.note_calmness_smoothing_duration.as_millis() as f32;
+                let new_ms = (current_ms + direction * 2000.0 * dt).max(100.0).min(10000.0);
+                params.note_calmness_smoothing_duration =
+                    std::time::Duration::from_millis(new_ms as u64);
+            }
         } else if d8 {
             // Scene calmness smoothing duration
-            let current_ms = params.scene_calmness_smoothing_duration.as_millis() as f32;
-            let new_ms = (current_ms + direction * 1000.0 * dt).max(100.0).min(5000.0);
-            params.scene_calmness_smoothing_duration =
-                std::time::Duration::from_millis(new_ms as u64);
+            if reset_pressed {
+                params.scene_calmness_smoothing_duration = defaults.scene_calmness_smoothing_duration;
+            } else {
+                let current_ms = params.scene_calmness_smoothing_duration.as_millis() as f32;
+                let new_ms = (current_ms + direction * 1000.0 * dt).max(100.0).min(5000.0);
+                params.scene_calmness_smoothing_duration =
+                    std::time::Duration::from_millis(new_ms as u64);
+            }
         } else if d9 {
             // Tuning inaccuracy smoothing duration
-            let current_ms = params.tuning_inaccuracy_smoothing_duration.as_millis() as f32;
-            let new_ms = (current_ms + direction * 2000.0 * dt).max(100.0).min(10000.0);
-            params.tuning_inaccuracy_smoothing_duration =
-                std::time::Duration::from_millis(new_ms as u64);
+            if reset_pressed {
+                params.tuning_inaccuracy_smoothing_duration = defaults.tuning_inaccuracy_smoothing_duration;
+            } else {
+                let current_ms = params.tuning_inaccuracy_smoothing_duration.as_millis() as f32;
+                let new_ms = (current_ms + direction * 2000.0 * dt).max(100.0).min(10000.0);
+                params.tuning_inaccuracy_smoothing_duration =
+                    std::time::Duration::from_millis(new_ms as u64);
+            }
         }
     }
 
@@ -1132,25 +1237,38 @@ pub fn rebuild_vqt_system(
             );
 
             // Create new VQT with updated parameters
-            let new_vqt = pitchvis_analysis::vqt::Vqt::new(&vqt_params.parameters);
+            match pitchvis_analysis::vqt::Vqt::new(&vqt_params.parameters) {
+                Ok(new_vqt) => {
+                    // Replace the VQT resource
+                    *vqt_resource = VqtResource(new_vqt);
+                    vqt_params.needs_rebuild = false;
+                    info!("VQT filter banks rebuilt successfully!");
+                }
+                Err(e) => {
+                    error!("Failed to rebuild VQT filter banks: {}", e);
+                    error!("  Current parameters: Q={:.2}, gamma={:.2}, n_fft={}",
+                        vqt_params.parameters.quality,
+                        vqt_params.parameters.gamma,
+                        vqt_params.parameters.n_fft
+                    );
 
-            // Verify n_fft can accommodate the range
-            let min_n_fft_required = (vqt_params.parameters.sr
-                / vqt_params.parameters.range.min_freq
-                * vqt_params.parameters.quality
-                * 4.0) as usize;
-            if vqt_params.parameters.n_fft < min_n_fft_required {
-                warn!(
-                    "n_fft ({}) may be too small for this range. Recommended minimum: {}",
-                    vqt_params.parameters.n_fft, min_n_fft_required
-                );
+                    // Calculate minimum required n_fft
+                    let min_n_fft_required = (vqt_params.parameters.sr
+                        / vqt_params.parameters.range.min_freq
+                        * vqt_params.parameters.quality
+                        * 4.0) as usize;
+                    error!("  Recommended minimum n_fft: {}", min_n_fft_required);
+
+                    // Reset to default values
+                    info!("Resetting VQT parameters to defaults");
+                    let defaults = pitchvis_analysis::vqt::VqtParameters::default();
+                    vqt_params.parameters.quality = defaults.quality;
+                    vqt_params.parameters.gamma = defaults.gamma;
+                    vqt_params.parameters.n_fft = defaults.n_fft;
+                    vqt_params.parameters.sparsity_quantile = defaults.sparsity_quantile;
+                    vqt_params.needs_rebuild = false;
+                }
             }
-
-            // Replace the VQT resource
-            *vqt_resource = VqtResource(new_vqt);
-            vqt_params.needs_rebuild = false;
-
-            info!("VQT filter banks rebuilt successfully!");
         }
     }
 }

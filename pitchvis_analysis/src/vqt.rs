@@ -405,8 +405,12 @@ pub struct Vqt {
 ///
 /// * A new `Vqt` instance.
 impl Vqt {
-    pub fn new(params: &VqtParameters) -> Self {
-        let (vqt_kernel, delay) = Self::vqt_kernel(params);
+    /// Creates a new VQT analyzer with the given parameters.
+    ///
+    /// Returns an error if the parameters are invalid (e.g., Q too low causing window length
+    /// to exceed n_fft, or highest frequency exceeds Nyquist frequency).
+    pub fn new(params: &VqtParameters) -> Result<Self, String> {
+        let (vqt_kernel, delay) = Self::vqt_kernel(params)?;
 
         info!("VQT Analysis delay: {} ms.", delay.as_millis());
 
@@ -445,13 +449,13 @@ impl Vqt {
                 });
         }
 
-        Self {
+        Ok(Self {
             params: params.clone(),
             vqt_kernel,
             delay,
             resample_ffts,
             t_diff: 0.0,
-        }
+        })
     }
 
     pub fn params(&self) -> &VqtParameters {
@@ -719,7 +723,8 @@ impl Vqt {
     /// Note: it is checked that at high frequencies the filters cover the entire band of a
     /// semitone. If this is not satisfied, errors are logged.
     ///
-    fn vqt_kernel(params: &VqtParameters) -> (VqtKernel, Duration) {
+    /// Returns an error if the VQT parameters are invalid (e.g., Q too low for the given n_fft).
+    fn vqt_kernel(params: &VqtParameters) -> Result<(VqtKernel, Duration), String> {
         let freqs = (0..(params.range.n_buckets()))
             .map(|k| {
                 params.range.min_freq
@@ -730,10 +735,10 @@ impl Vqt {
         let highest_frequency = *freqs.last().unwrap();
         let nyquist_frequency = params.sr / 2.0;
         if highest_frequency > nyquist_frequency {
-            panic!(
+            return Err(format!(
                 "The highest frequency of the VQT kernel is {} Hz, but the Nyquist frequency is {} Hz.",
                 highest_frequency, nyquist_frequency
-            );
+            ));
         }
 
         // calculate filter window sizes
@@ -746,10 +751,10 @@ impl Vqt {
             .collect::<Vec<f32>>();
 
         if window_lengths[0] > params.n_fft as f32 {
-            panic!(
+            return Err(format!(
                 "The window length of the longest filter is {} samples, but the longest FFT is {} samples.",
                 window_lengths[0], params.n_fft
-            );
+            ));
         }
 
         let vqt_windows =
@@ -850,14 +855,14 @@ impl Vqt {
         let delay =
             Duration::from_secs_f32((params.n_fft as f32 - vqt_windows.window_center) / params.sr);
 
-        (
+        Ok((
             VqtKernel {
                 filter_bank: kernel,
                 windows: vqt_windows,
                 calculated_q: 1.0,
             },
             delay,
-        )
+        ))
     }
     //#
 
