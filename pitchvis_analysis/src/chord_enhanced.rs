@@ -224,11 +224,16 @@ pub fn detect_chord_enhanced(
 
     let confidence = (match_ratio * 0.4 + extra_penalty * 0.3 + root_ratio * 0.3).min(1.0);
 
+    // Calculate plausibility score
+    let quality = rmt_quality_to_old_quality(&best.quality, &best.number);
+    let plausibility = crate::chord::calculate_plausibility(&pitch_class_power, best.root, &quality);
+
     Some(DetectedChord {
         root: best.root,
-        quality: rmt_quality_to_old_quality(&best.quality, &best.number),
+        quality,
         notes: detected_pitch_classes,
         confidence,
+        plausibility,
     })
 }
 

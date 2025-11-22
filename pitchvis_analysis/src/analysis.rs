@@ -572,11 +572,28 @@ impl AnalysisState {
                         0.7 // Default confidence when external detector finds a match
                     };
 
+                    // Convert chromagram array to HashMap for plausibility calculation
+                    let mut pitch_class_map = std::collections::HashMap::new();
+                    for (pc, &power) in result.chromagram.iter().enumerate() {
+                        if power > 0.0 {
+                            pitch_class_map.insert(pc, power);
+                        }
+                    }
+
+                    // Calculate plausibility using the chromagram data
+                    let quality = crate::chord::ChordQuality::Major; // Simplified for now
+                    let plausibility = crate::chord::calculate_plausibility(
+                        &pitch_class_map,
+                        root,
+                        &quality,
+                    );
+
                     crate::chord::DetectedChord {
                         root,
-                        quality: crate::chord::ChordQuality::Major, // Simplified for now
+                        quality,
                         notes: result.pitch_classes,
                         confidence,
+                        plausibility,
                     }
                 })
             }

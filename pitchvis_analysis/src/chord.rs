@@ -24,8 +24,10 @@ pub struct DetectedChord {
     pub quality: ChordQuality,
     /// Notes that are part of the chord (0-11)
     pub notes: Vec<usize>,
-    /// Confidence level (0.0-1.0)
+    /// Confidence level (0.0-1.0) - from detection algorithm
     pub confidence: f32,
+    /// Plausibility score (0.0-1.0) - how well the detected notes fit the chord template
+    pub plausibility: f32,
 }
 
 impl DetectedChord {
@@ -51,6 +53,73 @@ impl DetectedChord {
 
         format!("{}{}", root_name, quality_name)
     }
+}
+
+/// Calculate plausibility score - how well the detected notes fit the chord template
+///
+/// This is different from confidence:
+/// - Confidence: How certain we are this is the detected chord (based on strength, prominence)
+/// - Plausibility: How cleanly the notes fit the ideal chord template (penalizes extra notes more)
+pub fn calculate_plausibility(
+    pitch_classes: &HashMap<usize, f32>,
+    root: usize,
+    quality: &ChordQuality,
+) -> f32 {
+    let expected_intervals = get_expected_intervals(quality);
+    let total_power: f32 = pitch_classes.values().sum();
+
+    // Build set of expected pitch classes
+    let mut expected_pcs: Vec<usize> = vec![root];
+    for &interval in &expected_intervals {
+        expected_pcs.push((root + interval) % 12);
+    }
+
+    // Factor 1: Chord tone purity - what fraction of total power is in chord tones?
+    let mut chord_tone_power = 0.0;
+    for &expected_pc in &expected_pcs {
+        if let Some(&power) = pitch_classes.get(&expected_pc) {
+            chord_tone_power += power;
+        }
+    }
+    let purity = chord_tone_power / total_power;
+
+    // Factor 2: Template completeness - are all expected notes present?
+    let mut present_count = 0;
+    for &expected_pc in &expected_pcs {
+        if pitch_classes.contains_key(&expected_pc) {
+            present_count += 1;
+        }
+    }
+    let completeness = present_count as f32 / expected_pcs.len() as f32;
+
+    // Factor 3: Strict penalty for extra notes (more aggressive than confidence)
+    let extra_notes = pitch_classes.len().saturating_sub(expected_pcs.len());
+    let extra_penalty = if extra_notes == 0 {
+        1.0
+    } else {
+        // Harsh penalty: each extra note reduces score significantly
+        1.0 / (1.0 + extra_notes as f32 * 0.8)
+    };
+
+    // Factor 4: Non-chord tone weakness - extra notes should be weak
+    let mut non_chord_power = 0.0;
+    for (&pc, &power) in pitch_classes.iter() {
+        if !expected_pcs.contains(&pc) {
+            non_chord_power += power;
+        }
+    }
+    let non_chord_weakness = if total_power > 0.0 {
+        1.0 - (non_chord_power / total_power)
+    } else {
+        1.0
+    };
+
+    // Combine factors
+    // - Purity is most important (40%): only chord tones present
+    // - Completeness matters (25%): all expected notes present
+    // - Extra note penalty (20%): strongly penalize unexpected notes
+    // - Non-chord tone weakness (15%): extra notes should be weak
+    (purity * 0.4 + completeness * 0.25 + extra_penalty * 0.20 + non_chord_weakness * 0.15).min(1.0)
 }
 
 /// Detect chords from a set of active pitch bins
@@ -177,11 +246,15 @@ pub fn detect_chord(
                 + extra_notes_penalty * 0.1)
                 .min(1.0);
 
+            // Calculate plausibility - how well notes fit the ideal template
+            let plausibility = calculate_plausibility(&pitch_classes, *potential_root, &quality);
+
             return Some(DetectedChord {
                 root: *potential_root,
                 quality,
                 notes,
                 confidence,
+                plausibility,
             });
         }
     }
