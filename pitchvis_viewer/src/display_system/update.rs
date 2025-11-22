@@ -1122,47 +1122,113 @@ pub fn update_spectrogram_system(
     let analysis_state = &analysis_state.0;
     let width = analysis_state.range.n_buckets();
     let height = spectrogram_res.height;
-
-    // Get smoothed VQT data
-    let vqt_data = &analysis_state.x_vqt_smoothed;
-
-    // Find max for normalization
-    let max_val = vqt_data.iter().map(|v| v.get()).fold(0.0f32, f32::max);
-
-    // Write current VQT frame as a column at write_index
     let write_idx = spectrogram_res.write_index;
 
-    for (bin_idx, vqt_value) in vqt_data.iter().enumerate() {
-        let value_db = vqt_value.get();
+    use crate::app::SettingsState;
+    use super::SpectrogramMode;
 
-        // Normalize and enhance for visualization
-        let brightness = if max_val > 0.0 {
-            let normalized = value_db / (max_val + 0.001);
-            ((1.0 - (1.0 - normalized).powf(2.0)) * 1.5).clamp(0.0, 1.0)
-        } else {
-            0.0
-        };
+    match settings.spectrogram_mode {
+        SpectrogramMode::VQT => {
+            // Get smoothed VQT data
+            let vqt_data = &analysis_state.x_vqt_smoothed;
 
-        // Get pitch color
-        let buckets_per_semitone = analysis_state.range.buckets_per_octave / 12;
-        let semitone_offset =
-            (analysis_state.range.buckets_per_octave - 3 * buckets_per_semitone) as f32;
-        let (r, g, b) = pitchvis_colors::calculate_color(
-            analysis_state.range.buckets_per_octave,
-            (bin_idx as f32 + semitone_offset) % analysis_state.range.buckets_per_octave as f32,
-            COLORS,
-            GRAY_LEVEL,
-            EASING_POW,
-        );
+            // Find max for normalization
+            let max_val = vqt_data.iter().map(|v| v.get()).fold(0.0f32, f32::max);
 
-        // Calculate pixel position (flipped vertically, newest at top)
-        let pixel_idx = ((height - 1 - write_idx) * width + bin_idx) * 4;
+            // Write current VQT frame as a column at write_index
+            for (bin_idx, vqt_value) in vqt_data.iter().enumerate() {
+                let value_db = vqt_value.get();
 
-        if pixel_idx + 3 < image_data.len() {
-            image_data[pixel_idx] = (r * 255.0 * 1.2).clamp(0.0, 255.0) as u8;
-            image_data[pixel_idx + 1] = (g * 255.0 * 1.2).clamp(0.0, 255.0) as u8;
-            image_data[pixel_idx + 2] = (b * 255.0 * 1.2).clamp(0.0, 255.0) as u8;
-            image_data[pixel_idx + 3] = (brightness * 255.0 * 1.2).clamp(0.0, 255.0) as u8;
+                // Normalize and enhance for visualization
+                let brightness = if max_val > 0.0 {
+                    let normalized = value_db / (max_val + 0.001);
+                    ((1.0 - (1.0 - normalized).powf(2.0)) * 1.5).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+
+                // Get pitch color
+                let buckets_per_semitone = analysis_state.range.buckets_per_octave / 12;
+                let semitone_offset =
+                    (analysis_state.range.buckets_per_octave - 3 * buckets_per_semitone) as f32;
+                let (r, g, b) = pitchvis_colors::calculate_color(
+                    analysis_state.range.buckets_per_octave,
+                    (bin_idx as f32 + semitone_offset) % analysis_state.range.buckets_per_octave as f32,
+                    COLORS,
+                    GRAY_LEVEL,
+                    EASING_POW,
+                );
+
+                // Calculate pixel position (flipped vertically, newest at top)
+                let pixel_idx = ((height - 1 - write_idx) * width + bin_idx) * 4;
+
+                if pixel_idx + 3 < image_data.len() {
+                    image_data[pixel_idx] = (r * 255.0 * 1.2).clamp(0.0, 255.0) as u8;
+                    image_data[pixel_idx + 1] = (g * 255.0 * 1.2).clamp(0.0, 255.0) as u8;
+                    image_data[pixel_idx + 2] = (b * 255.0 * 1.2).clamp(0.0, 255.0) as u8;
+                    image_data[pixel_idx + 3] = (brightness * 255.0 * 1.2).clamp(0.0, 255.0) as u8;
+                }
+            }
+        }
+        SpectrogramMode::Peaks => {
+            // Render only continuous peaks with a small radius
+            const PEAK_RADIUS: f32 = 2.0; // bins
+
+            // Find max peak size for normalization
+            let max_size = analysis_state
+                .peaks_continuous
+                .iter()
+                .map(|p| p.size)
+                .fold(0.0f32, f32::max);
+
+            if max_size > 0.0 {
+                for peak in &analysis_state.peaks_continuous {
+                    let center = peak.center;
+                    let size = peak.size;
+
+                    // Normalize brightness
+                    let brightness = ((1.0 - (1.0 - size / max_size).powf(2.0)) * 1.5).clamp(0.0, 1.0);
+
+                    // Get pitch color
+                    let buckets_per_semitone = analysis_state.range.buckets_per_octave / 12;
+                    let semitone_offset =
+                        (analysis_state.range.buckets_per_octave - 3 * buckets_per_semitone) as f32;
+                    let (r, g, b) = pitchvis_colors::calculate_color(
+                        analysis_state.range.buckets_per_octave,
+                        (center + semitone_offset) % analysis_state.range.buckets_per_octave as f32,
+                        COLORS,
+                        GRAY_LEVEL,
+                        EASING_POW,
+                    );
+
+                    // Draw the peak with a Gaussian-like falloff
+                    let min_bin = (center - PEAK_RADIUS).floor().max(0.0) as usize;
+                    let max_bin = (center + PEAK_RADIUS).ceil().min(width as f32) as usize;
+
+                    for bin_idx in min_bin..max_bin {
+                        let distance = (bin_idx as f32 - center).abs();
+                        if distance <= PEAK_RADIUS {
+                            // Gaussian falloff
+                            let falloff = (-distance * distance / (PEAK_RADIUS * PEAK_RADIUS * 0.5)).exp();
+                            let pixel_brightness = brightness * falloff;
+
+                            // Calculate pixel position
+                            let pixel_idx = ((height - 1 - write_idx) * width + bin_idx) * 4;
+
+                            if pixel_idx + 3 < image_data.len() {
+                                image_data[pixel_idx] =
+                                    (r * 255.0 * 1.2).clamp(0.0, 255.0) as u8;
+                                image_data[pixel_idx + 1] =
+                                    (g * 255.0 * 1.2).clamp(0.0, 255.0) as u8;
+                                image_data[pixel_idx + 2] =
+                                    (b * 255.0 * 1.2).clamp(0.0, 255.0) as u8;
+                                image_data[pixel_idx + 3] =
+                                    (pixel_brightness * 255.0 * 1.2).clamp(0.0, 255.0) as u8;
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
