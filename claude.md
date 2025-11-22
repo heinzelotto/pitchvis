@@ -38,6 +38,10 @@ cargo run --bin pitchvis_serial -- /path/to/serial/device 115200
 System dependencies (Linux):
 - `libasound2-dev` (ALSA audio)
 - `libudev-dev` (device detection)
+- `libwayland-dev` (Wayland display server - for desktop builds)
+- `libxkbcommon-dev` (keyboard handling)
+
+**Note**: The `check-desktop.sh` script can be used to verify that all packages compile correctly.
 
 ## Architecture Summary
 
@@ -133,8 +137,16 @@ fn android_only() { }
 
 1. Define component in `display_system/mod.rs`
 2. Spawn entities in `display_system/setup.rs`
-3. Update entities in `display_system/update.rs`
-4. Add visibility controls based on display mode
+   - Add `spawn_*()` function
+   - Call it from `setup_display()`
+3. Create update system in `display_system/update.rs`
+   - Implement update logic (e.g., `update_*_system()`)
+   - Implement show/hide system (e.g., `*_showhide()`)
+4. Register systems in `app/common.rs`
+   - Add to `register_common_update_systems()`
+5. Add visibility controls based on display mode
+
+**Example**: See `SpectrogramDisplay` and `ChromaBox` components for reference implementation of texture-based and UI-based displays.
 
 ### Modifying Analysis Parameters
 
@@ -171,7 +183,8 @@ fn android_only() { }
 - **`pitchvis_analysis/src/analysis.rs`**: Peak detection and pitch tracking
 - **`pitchvis_audio/src/audio_desktop.rs`**: Desktop audio capture (cpal)
 - **`pitchvis_audio/src/audio_wasm.rs`**: Web audio capture (WebAudio API)
-- **`pitchvis_viewer/src/display_system/update.rs`**: Main rendering loop
+- **`pitchvis_viewer/src/display_system/setup.rs`**: Display setup (all visual elements)
+- **`pitchvis_viewer/src/display_system/update.rs`**: Main rendering loop and debug displays
 
 ## Testing
 
@@ -190,6 +203,56 @@ cargo test --workspace
 3. Toggle modes:
    - Space/Click: Switch between Normal and Debugging modes
    - Buttons (Debug mode): Cycle visual modes and FPS limits
+
+### Debug Features
+
+When in debugging mode (press Space or click to toggle), additional analysis visualizations are shown:
+
+**FPS Counter & Metrics** (Top-left):
+- FPS with color coding (green >120, yellow 60-120, red <30)
+- Audio latency and chunk size
+- VQT latency
+- VQT smoothing duration (varies by frequency and calmness)
+
+**Analysis Parameters Display** (Bottom-left):
+- bassline_peak_config (prominence, height)
+- highest_bassnote
+- vqt_smoothing_duration_base
+- vqt_smoothing_calmness range (min-max)
+- note_calmness_smoothing_duration
+- scene_calmness_smoothing_duration
+- tuning_inaccuracy_smoothing_duration
+- Current scene_calmness value
+- Number of detected peaks
+
+**Spectrogram Display** (Top-middle):
+- Real-time scrolling spectrogram showing VQT data over time
+- 200 frames of history, scrolls top-to-bottom (newest at top)
+- Width: VQT bins (frequency), Height: time frames
+- Colors: pitch-based coloring from `pitchvis_colors::COLORS`
+- Brightness: VQT magnitude with enhancement for visibility
+- Position: `Transform::from_xyz(0.0, 10.0, 10.0)` (adjustable in `display_system/setup.rs:538`)
+
+**Chroma Display** (Bottom, UI overlay):
+- 12 colored boxes representing pitch class presence (C, C#, D, etc.)
+- Calculates energy per pitch class from smoothed VQT
+- Opacity varies with pitch class strength (transparent=absent, opaque=strong)
+- Normalized per-frame for relative strength
+- Uses power domain: `10^(dB/10)` for energy calculation
+- Position: adjustable in `display_system/setup.rs:563`
+
+**Tuning & Chord Info** (Bottom-right):
+- Tuning drift in cents (color-coded: green <10¢, yellow 10-20¢, orange 20-30¢, red >30¢)
+- Detected chord name (if any)
+
+**Control Buttons** (Left side):
+- Visuals Mode: Full / Zen / Performance / Galaxy
+- FPS Limit: 30 / 60 / None
+- VQT Smoothing: None / Short / Default / Long
+
+**Feature Toggles** (Right side):
+- Chord Recognition: On/Off
+- Root Note Tinting: On/Off
 
 ### Performance Testing
 
