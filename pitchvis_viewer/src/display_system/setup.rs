@@ -6,6 +6,7 @@ use super::{
 };
 use bevy::camera::ScalingMode;
 use bevy::core_pipeline::tonemapping::Tonemapping;
+use bevy::image::ImageSampler;
 use bevy::post_process::bloom::{Bloom, BloomCompositeMode, BloomPrefilter};
 use bevy::prelude::*;
 use bevy::render::view::Hdr;
@@ -490,7 +491,7 @@ fn spawn_spectrogram(
     }
 
     let image = Image {
-        data: image_data,
+        data: Some(image_data),
         texture_descriptor: bevy::render::render_resource::TextureDescriptor {
             label: Some("spectrogram"),
             size: Extent3d {
@@ -506,11 +507,11 @@ fn spawn_spectrogram(
                 | bevy::render::render_resource::TextureUsages::COPY_DST,
             view_formats: &[],
         },
-        sampler: bevy::render::render_resource::SamplerDescriptor {
+        sampler: ImageSampler::Descriptor(bevy::render::render_resource::SamplerDescriptor {
             mag_filter: bevy::render::render_resource::FilterMode::Nearest,
             min_filter: bevy::render::render_resource::FilterMode::Nearest,
             ..default()
-        },
+        }.into()),
         ..default()
     };
 
@@ -545,7 +546,7 @@ fn spawn_chroma_display(commands: &mut Commands) {
     // Create 12 boxes for the 12 pitch classes
     // Position them horizontally at the bottom
     for pitch_class in 0..12 {
-        let (r, g, b, _) = COLORS[pitch_class];
+        let [r, g, b] = COLORS[pitch_class];
 
         commands.spawn((
             ChromaBox { pitch_class },

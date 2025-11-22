@@ -1087,25 +1087,25 @@ pub fn update_analysis_parameters_system(
             // VQT quality (Q)
             vqt_params.parameters.quality += direction * 1.0 * dt;
             vqt_params.parameters.quality = vqt_params.parameters.quality.clamp(0.5, 5.0);
-            vqt_params.mark_changed(time.last_update().unwrap());
+            vqt_params.mark_changed(Instant::now());
         } else if d2 && d4 {
             // VQT gamma
             vqt_params.parameters.gamma += direction * 5.0 * dt;
             vqt_params.parameters.gamma = vqt_params.parameters.gamma.clamp(0.0, 30.0);
-            vqt_params.mark_changed(time.last_update().unwrap());
+            vqt_params.mark_changed(Instant::now());
         } else if d3 && d5 {
             // VQT sparsity quantile
             vqt_params.parameters.sparsity_quantile += direction * 0.01 * dt;
             vqt_params.parameters.sparsity_quantile =
                 vqt_params.parameters.sparsity_quantile.clamp(0.9, 0.9999);
-            vqt_params.mark_changed(time.last_update().unwrap());
+            vqt_params.mark_changed(Instant::now());
         } else if d4 && d6 {
             // VQT n_fft (power of 2, integer)
             let current_log2 = (vqt_params.parameters.n_fft as f32).log2();
             let new_log2 = (current_log2 + direction * 0.5 * dt).round();
             let new_n_fft = 2_usize.pow(new_log2 as u32);
             vqt_params.parameters.n_fft = new_n_fft.clamp(4096, 131072);
-            vqt_params.mark_changed(time.last_update().unwrap());
+            vqt_params.mark_changed(Instant::now());
         }
     }
     // === SINGLE DIGIT PARAMETERS ===
@@ -1168,7 +1168,7 @@ pub fn update_analysis_parameters_system(
 pub fn rebuild_vqt_system(
     mut vqt_resource: ResMut<VqtResource>,
     mut vqt_params: ResMut<PendingVqtParameterChanges>,
-    time: Res<Time>,
+    _time: Res<Time>,
     settings: Res<Persistent<SettingsState>>,
 ) {
     // Only rebuild in debug mode
@@ -1177,7 +1177,8 @@ pub fn rebuild_vqt_system(
     }
 
     // Check if we should rebuild (2 second delay after last change)
-    if let Some(now) = time.last_update() {
+    {
+        let now = Instant::now();
         if vqt_params.should_rebuild(now, 2.0) {
             info!("Rebuilding VQT filter banks with new parameters...");
             info!(
@@ -2315,6 +2316,12 @@ pub fn register_common_update_systems<M1, M2, M3>(
             update_analysis_text_system,
             analysis_text_showhide,
             update_analysis_parameters_system.before(update_debug_text_system),
+        ),
+    );
+
+    app.add_systems(
+        Update,
+        (
             rebuild_vqt_system.after(update_analysis_parameters_system),
             update_debug_text_system,
             debug_text_showhide,

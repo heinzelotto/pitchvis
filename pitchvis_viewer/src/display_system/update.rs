@@ -1115,6 +1115,10 @@ pub fn update_spectrogram_system(
         return;
     };
 
+    let Some(image_data) = image.data.as_mut() else {
+        return;
+    };
+
     let analysis_state = &analysis_state.0;
     let width = analysis_state.range.n_buckets();
     let height = spectrogram_res.height;
@@ -1145,16 +1149,19 @@ pub fn update_spectrogram_system(
         let (r, g, b) = pitchvis_colors::calculate_color(
             analysis_state.range.buckets_per_octave,
             (bin_idx as f32 + semitone_offset) % analysis_state.range.buckets_per_octave as f32,
+            pitchvis_colors::COLORS,
+            0.5,
+            2.0,
         );
 
         // Calculate pixel position (flipped vertically, newest at top)
         let pixel_idx = ((height - 1 - write_idx) * width + bin_idx) * 4;
 
-        if pixel_idx + 3 < image.data.len() {
-            image.data[pixel_idx] = (r * brightness * 255.0 * 1.2).clamp(0.0, 255.0) as u8;
-            image.data[pixel_idx + 1] = (g * brightness * 255.0 * 1.2).clamp(0.0, 255.0) as u8;
-            image.data[pixel_idx + 2] = (b * brightness * 255.0 * 1.2).clamp(0.0, 255.0) as u8;
-            image.data[pixel_idx + 3] = if brightness > 0.01 { 255 } else { 0 };
+        if pixel_idx + 3 < image_data.len() {
+            image_data[pixel_idx] = (r * brightness * 255.0 * 1.2).clamp(0.0, 255.0) as u8;
+            image_data[pixel_idx + 1] = (g * brightness * 255.0 * 1.2).clamp(0.0, 255.0) as u8;
+            image_data[pixel_idx + 2] = (b * brightness * 255.0 * 1.2).clamp(0.0, 255.0) as u8;
+            image_data[pixel_idx + 3] = if brightness > 0.01 { 255 } else { 0 };
         }
     }
 
@@ -1162,11 +1169,11 @@ pub fn update_spectrogram_system(
     let next_idx = (write_idx + 1) % height;
     for bin_idx in 0..width {
         let pixel_idx = ((height - 1 - next_idx) * width + bin_idx) * 4;
-        if pixel_idx + 3 < image.data.len() {
-            image.data[pixel_idx] = 0;
-            image.data[pixel_idx + 1] = 0;
-            image.data[pixel_idx + 2] = 0;
-            image.data[pixel_idx + 3] = 0;
+        if pixel_idx + 3 < image_data.len() {
+            image_data[pixel_idx] = 0;
+            image_data[pixel_idx + 1] = 0;
+            image_data[pixel_idx + 2] = 0;
+            image_data[pixel_idx + 3] = 0;
         }
     }
 
@@ -1188,7 +1195,7 @@ pub fn update_chroma_system(
     let analysis_state = &analysis_state.0;
 
     // Calculate chroma features (sum of energy per pitch class)
-    let bins_per_semitone = analysis_state.range.buckets_per_octave / 12;
+    let bins_per_semitone = (analysis_state.range.buckets_per_octave / 12) as usize;
     let mut chroma = vec![0.0; 12];
 
     for (bin_idx, measurement) in analysis_state.x_vqt_smoothed.iter().enumerate() {
@@ -1212,7 +1219,7 @@ pub fn update_chroma_system(
         let strength = chroma[pitch_class];
 
         // Get base color from COLORS
-        let (r, g, b, _) = pitchvis_colors::COLORS[pitch_class];
+        let [r, g, b] = pitchvis_colors::COLORS[pitch_class];
 
         // Set alpha based on chroma strength
         bg_color.0 = Color::srgba(r, g, b, strength);
