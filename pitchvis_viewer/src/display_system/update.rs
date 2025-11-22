@@ -1,8 +1,8 @@
 use super::{
     material::NoisyColorMaterial, util::bin_to_spiral, BassCylinder, ChordDisplay, ChromaBox,
     CylinderEntityListResource, DisplayMode, GlissandoCurve, GlissandoCurveEntityListResource,
-    HarmonicLine, LineList, PitchBall, PitchNameText, RootNoteSlice, Spectrum,
-    SpectrogramDisplay, SpectrogramResource, SpiderNetSegment, VisualsMode, CLEAR_COLOR_GALAXY,
+    HarmonicLine, LineList, PitchBall, PitchNameText, RootNoteSlice, SpectrogramDisplay,
+    SpectrogramResource, Spectrum, SpiderNetSegment, VisualsMode, CLEAR_COLOR_GALAXY,
     CLEAR_COLOR_NEUTRAL, GLISSANDO_LINE_THICKNESS,
 };
 use bevy::{post_process::bloom::Bloom, prelude::*};
@@ -1145,7 +1145,8 @@ pub fn update_spectrogram_system(
 
         // Get pitch color
         let buckets_per_semitone = analysis_state.range.buckets_per_octave / 12;
-        let semitone_offset = (analysis_state.range.buckets_per_octave - 3 * buckets_per_semitone) as f32;
+        let semitone_offset =
+            (analysis_state.range.buckets_per_octave - 3 * buckets_per_semitone) as f32;
         let (r, g, b) = pitchvis_colors::calculate_color(
             analysis_state.range.buckets_per_octave,
             (bin_idx as f32 + semitone_offset) % analysis_state.range.buckets_per_octave as f32,

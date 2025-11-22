@@ -507,11 +507,14 @@ fn spawn_spectrogram(
                 | bevy::render::render_resource::TextureUsages::COPY_DST,
             view_formats: &[],
         },
-        sampler: ImageSampler::Descriptor(bevy::render::render_resource::SamplerDescriptor {
-            mag_filter: bevy::render::render_resource::FilterMode::Nearest,
-            min_filter: bevy::render::render_resource::FilterMode::Nearest,
-            ..default()
-        }.into()),
+        sampler: ImageSampler::Descriptor(
+            bevy::render::render_resource::SamplerDescriptor {
+                mag_filter: bevy::render::render_resource::FilterMode::Nearest,
+                min_filter: bevy::render::render_resource::FilterMode::Nearest,
+                ..default()
+            }
+            .into(),
+        ),
         ..default()
     };
 

@@ -888,13 +888,22 @@ pub fn update_debug_text_system(
     );
 
     // note_calmness_smoothing_duration (index 14, was 12)
-    *writer.text(entity, 14) = format!("{}ms\n", params.note_calmness_smoothing_duration.as_millis());
+    *writer.text(entity, 14) = format!(
+        "{}ms\n",
+        params.note_calmness_smoothing_duration.as_millis()
+    );
 
     // scene_calmness_smoothing_duration (index 16, was 14)
-    *writer.text(entity, 16) = format!("{}ms\n", params.scene_calmness_smoothing_duration.as_millis());
+    *writer.text(entity, 16) = format!(
+        "{}ms\n",
+        params.scene_calmness_smoothing_duration.as_millis()
+    );
 
     // tuning_inaccuracy_smoothing_duration (index 18, was 16)
-    *writer.text(entity, 18) = format!("{}ms\n", params.tuning_inaccuracy_smoothing_duration.as_millis());
+    *writer.text(entity, 18) = format!(
+        "{}ms\n",
+        params.tuning_inaccuracy_smoothing_duration.as_millis()
+    );
 
     // Two-digit parameters
     // main_peak config (index 21, was 19)
@@ -1053,18 +1062,24 @@ pub fn update_analysis_parameters_system(
         } else if d3 && d4 {
             // Glissando peak tracking max distance
             params.glissando_config.peak_tracking_max_distance += direction * 5.0 * dt;
-            params.glissando_config.peak_tracking_max_distance =
-                params.glissando_config.peak_tracking_max_distance.clamp(1.0, 30.0);
+            params.glissando_config.peak_tracking_max_distance = params
+                .glissando_config
+                .peak_tracking_max_distance
+                .clamp(1.0, 30.0);
         } else if d4 && d5 {
             // Glissando min distance
             params.glissando_config.glissando_min_distance += direction * 5.0 * dt;
-            params.glissando_config.glissando_min_distance =
-                params.glissando_config.glissando_min_distance.clamp(3.0, 40.0);
+            params.glissando_config.glissando_min_distance = params
+                .glissando_config
+                .glissando_min_distance
+                .clamp(3.0, 40.0);
         } else if d5 && d6 {
             // Glissando tracking timeout
             params.glissando_config.peak_tracking_timeout += direction * 0.1 * dt;
-            params.glissando_config.peak_tracking_timeout =
-                params.glissando_config.peak_tracking_timeout.clamp(0.05, 1.0);
+            params.glissando_config.peak_tracking_timeout = params
+                .glissando_config
+                .peak_tracking_timeout
+                .clamp(0.05, 1.0);
         } else if d6 && d7 {
             // Glissando tracking history length (integer)
             let new_val = (params.glissando_config.peak_tracking_history_length as f32
@@ -1133,29 +1148,33 @@ pub fn update_analysis_parameters_system(
         } else if d5 {
             // VQT smoothing calmness min
             params.vqt_smoothing_calmness_min += direction * 0.5 * dt;
-            params.vqt_smoothing_calmness_min =
-                params.vqt_smoothing_calmness_min.clamp(0.1, 2.0);
+            params.vqt_smoothing_calmness_min = params.vqt_smoothing_calmness_min.clamp(0.1, 2.0);
         } else if d6 {
             // VQT smoothing calmness max
             params.vqt_smoothing_calmness_max += direction * 1.0 * dt;
-            params.vqt_smoothing_calmness_max =
-                params.vqt_smoothing_calmness_max.clamp(0.5, 5.0);
+            params.vqt_smoothing_calmness_max = params.vqt_smoothing_calmness_max.clamp(0.5, 5.0);
         } else if d7 {
             // Note calmness smoothing duration
             let current_ms = params.note_calmness_smoothing_duration.as_millis() as f32;
-            let new_ms = (current_ms + direction * 2000.0 * dt).max(100.0).min(10000.0);
+            let new_ms = (current_ms + direction * 2000.0 * dt)
+                .max(100.0)
+                .min(10000.0);
             params.note_calmness_smoothing_duration =
                 std::time::Duration::from_millis(new_ms as u64);
         } else if d8 {
             // Scene calmness smoothing duration
             let current_ms = params.scene_calmness_smoothing_duration.as_millis() as f32;
-            let new_ms = (current_ms + direction * 1000.0 * dt).max(100.0).min(5000.0);
+            let new_ms = (current_ms + direction * 1000.0 * dt)
+                .max(100.0)
+                .min(5000.0);
             params.scene_calmness_smoothing_duration =
                 std::time::Duration::from_millis(new_ms as u64);
         } else if d9 {
             // Tuning inaccuracy smoothing duration
             let current_ms = params.tuning_inaccuracy_smoothing_duration.as_millis() as f32;
-            let new_ms = (current_ms + direction * 2000.0 * dt).max(100.0).min(10000.0);
+            let new_ms = (current_ms + direction * 2000.0 * dt)
+                .max(100.0)
+                .min(10000.0);
             params.tuning_inaccuracy_smoothing_duration =
                 std::time::Duration::from_millis(new_ms as u64);
         }
@@ -2131,11 +2150,15 @@ pub fn user_input_system(
                 KeyCode::KeyC => {
                     // Toggle chord detector type
                     use pitchvis_analysis::analysis::ChordDetectorType;
-                    analysis.0.params.chord_detector_type = match analysis.0.params.chord_detector_type {
-                        ChordDetectorType::Builtin => ChordDetectorType::External,
-                        ChordDetectorType::External => ChordDetectorType::Builtin,
-                    };
-                    log::info!("Toggled chord detector to: {:?}", analysis.0.params.chord_detector_type);
+                    analysis.0.params.chord_detector_type =
+                        match analysis.0.params.chord_detector_type {
+                            ChordDetectorType::Builtin => ChordDetectorType::External,
+                            ChordDetectorType::External => ChordDetectorType::Builtin,
+                        };
+                    log::info!(
+                        "Toggled chord detector to: {:?}",
+                        analysis.0.params.chord_detector_type
+                    );
                 }
                 _ => {}
             }
