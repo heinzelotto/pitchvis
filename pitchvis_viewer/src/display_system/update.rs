@@ -1196,7 +1196,6 @@ pub fn update_chroma_system(
     let analysis_state = &analysis_state.0;
 
     // Calculate chroma features (sum of energy per pitch class)
-    let bins_per_semitone = (analysis_state.range.buckets_per_octave / 12) as usize;
     let mut chroma = vec![0.0; 12];
 
     // Calculate the pitch class of bin 0 (min_freq)

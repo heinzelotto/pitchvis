@@ -34,7 +34,8 @@ pub fn main_fun() -> Result<()> {
 
     // Desktop-specific: CPAL audio stream
     let audio_stream = pitchvis_audio::new_audio_stream(vqt_parameters.sr as u32, BUFSIZE).unwrap();
-    let vqt = pitchvis_analysis::vqt::Vqt::new(&vqt_parameters);
+    let vqt = pitchvis_analysis::vqt::Vqt::new(&vqt_parameters)
+        .expect("Failed to create VQT with default parameters");
     audio_stream.play().unwrap();
 
     // Create system closures with BUFSIZE

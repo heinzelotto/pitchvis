@@ -544,7 +544,8 @@ fn spawn_spectrogram(
             ..default()
         },
         Transform::from_xyz(0.0, 4.0, 5.0)
-            .with_rotation(bevy::math::Quat::from_rotation_z(-PI / 2.0)),
+            .with_rotation(bevy::math::Quat::from_rotation_z(-PI / 2.0))
+            .with_scale(Vec3::new(-1.0, 1.0, 1.0)),
         Visibility::Hidden, // Hidden by default, shown in debug mode
     ));
 }
