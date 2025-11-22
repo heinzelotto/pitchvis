@@ -832,9 +832,11 @@ fn update_chord_display(
                 if should_show_visuals && chord.confidence > 0.5 {
                     **text = chord.name();
 
-                    // Set color based on root note
+                    // Set color based on root note, alpha based on confidence
                     let root_color = pitchvis_colors::COLORS[chord.root];
-                    **text_color = Color::srgba(root_color[0], root_color[1], root_color[2], 0.9);
+                    // Map confidence [0.5, 1.0] to alpha [0.4, 1.0] for visibility
+                    let alpha = ((chord.confidence - 0.5) / 0.5 * 0.6 + 0.4).clamp(0.4, 1.0);
+                    **text_color = Color::srgba(root_color[0], root_color[1], root_color[2], alpha);
 
                     *visibility = Visibility::Visible;
                 } else {

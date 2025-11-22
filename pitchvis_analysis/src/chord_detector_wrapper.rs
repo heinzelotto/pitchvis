@@ -16,6 +16,8 @@ pub struct ChordDetectorResult {
     pub confidence: f32,
     /// Detected pitch classes (0-11)
     pub pitch_classes: Vec<usize>,
+    /// Chromagram (power for each of the 12 pitch classes)
+    pub chromagram: [f32; 12],
 }
 
 /// Detect chords using the chord_detector library
@@ -74,6 +76,7 @@ pub fn detect_chord_with_external_lib(
         chord_kind: format!("{:?}", detected.quality),
         confidence: detected.confidence,
         pitch_classes,
+        chromagram: chroma,
     })
 }
 
