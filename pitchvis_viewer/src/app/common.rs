@@ -34,6 +34,8 @@ pub struct SettingsState {
     pub visuals_mode: display_system::VisualsMode,
     pub fps_limit: Option<u32>,
     pub vqt_smoothing_mode: display_system::VQTSmoothingMode,
+    #[serde(default = "default_spectrogram_mode")]
+    pub spectrogram_mode: display_system::SpectrogramMode,
     #[serde(default = "default_true")]
     pub enable_vibrato: bool,
     #[serde(default = "default_true")]
@@ -54,6 +56,10 @@ fn default_false() -> bool {
 
 fn default_true() -> bool {
     true
+}
+
+fn default_spectrogram_mode() -> display_system::SpectrogramMode {
+    display_system::SpectrogramMode::VQT
 }
 #[derive(Resource)]
 pub struct CurrentFpsLimit(pub Option<u32>);
@@ -1592,6 +1598,7 @@ pub enum ButtonAction {
     VisualsMode,
     FpsLimit,
     VQTSmoothing,
+    SpectrogramMode,
     ToggleVibrato,
     ToggleAttackDetection,
     ToggleGlissando,
@@ -1870,6 +1877,31 @@ pub fn setup_feature_toggle_buttons(
                     text_font.clone(),
                 ));
 
+            // Spectrogram Mode toggle
+            parent
+                .spawn((
+                    Button,
+                    Node {
+                        ..button_node.clone()
+                    },
+                    button_inactive_bg,
+                    button_inactive_border,
+                    BorderRadius::MAX,
+                    ButtonAction::SpectrogramMode,
+                ))
+                .insert(ConsumesPressEvents)
+                .with_child((
+                    Text::new(format!(
+                        "Spectrogram: {}",
+                        match settings.spectrogram_mode {
+                            display_system::SpectrogramMode::VQT => "VQT",
+                            display_system::SpectrogramMode::Peaks => "Peaks",
+                        }
+                    )),
+                    TextColor(Color::WHITE),
+                    text_font.clone(),
+                ));
+
             // Harmonic Lines toggle
             // let (bg_color, border_color) = button_colors(settings.enable_harmonic_lines);
             // parent
@@ -1983,6 +2015,20 @@ pub fn update_button_system(
                             display_system::VQTSmoothingMode::Short => "Short",
                             display_system::VQTSmoothingMode::Default => "Default",
                             display_system::VQTSmoothingMode::Long => "Long",
+                        }
+                    );
+                }
+                ButtonAction::SpectrogramMode => {
+                    settings
+                        .update(|settings| {
+                            cycle_spectrogram_mode(&mut settings.spectrogram_mode);
+                        })
+                        .expect("failed to update settings");
+                    **text = format!(
+                        "Spectrogram: {}",
+                        match settings.spectrogram_mode {
+                            display_system::SpectrogramMode::VQT => "VQT",
+                            display_system::SpectrogramMode::Peaks => "Peaks",
                         }
                     );
                 }
@@ -2198,6 +2244,13 @@ fn cycle_vqt_smoothing_mode(mode: &mut display_system::VQTSmoothingMode) {
     }
 }
 
+fn cycle_spectrogram_mode(mode: &mut display_system::SpectrogramMode) {
+    *mode = match mode {
+        display_system::SpectrogramMode::VQT => display_system::SpectrogramMode::Peaks,
+        display_system::SpectrogramMode::Peaks => display_system::SpectrogramMode::VQT,
+    }
+}
+
 pub fn user_input_system(
     mut touch_events: MessageReader<TouchInput>,
     mut keyboard_input_events: MessageReader<KeyboardInput>,
@@ -2378,6 +2431,7 @@ pub fn create_persistent_settings(
             visuals_mode: display_system::VisualsMode::Full,
             fps_limit: Some(default_fps),
             vqt_smoothing_mode: display_system::VQTSmoothingMode::Default,
+            spectrogram_mode: display_system::SpectrogramMode::VQT,
             enable_vibrato: false,
             enable_attack_detection: false,
             enable_glissando: false,

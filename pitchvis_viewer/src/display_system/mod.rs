@@ -98,6 +98,14 @@ impl VQTSmoothingMode {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum SpectrogramMode {
+    /// Show full VQT data
+    VQT,
+    /// Show only continuous peaks (detected notes)
+    Peaks,
+}
+
 /// keep an index -> entity mapping for the cylinders
 #[derive(Resource)]
 pub struct CylinderEntityListResource(pub Vec<Entity>);
