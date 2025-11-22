@@ -2531,6 +2531,7 @@ pub fn build_common_app(
             }),
         FrameTimeDiagnosticsPlugin::default(),
         Material2dPlugin::<display_system::material::NoisyColorMaterial>::default(),
+        Material2dPlugin::<display_system::material::SpectrogramMaterial>::default(),
     ));
 
     // Add platform-specific plugins

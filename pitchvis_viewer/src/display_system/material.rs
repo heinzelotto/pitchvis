@@ -42,3 +42,34 @@ impl Material2d for NoisyColorMaterial {
         AlphaMode2d::Blend
     }
 }
+
+/// Material for the scrolling spectrogram display
+#[derive(Asset, TypePath, AsBindGroup, Debug, Clone)]
+pub struct SpectrogramMaterial {
+    #[texture(0)]
+    #[sampler(1)]
+    pub texture: Handle<Image>,
+    #[uniform(2)]
+    pub scroll_params: SpectrogramScrollParams,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, ShaderType)]
+#[repr(C)]
+pub struct SpectrogramScrollParams {
+    /// Normalized scroll offset [0.0, 1.0] - where in the circular buffer we are
+    pub scroll_offset: f32,
+    /// Padding for 16-byte alignment
+    pub _padding1: f32,
+    pub _padding2: f32,
+    pub _padding3: f32,
+}
+
+impl Material2d for SpectrogramMaterial {
+    fn fragment_shader() -> ShaderRef {
+        "shaders/spectrogram_scroll.wgsl".into()
+    }
+
+    fn alpha_mode(&self) -> AlphaMode2d {
+        AlphaMode2d::Blend
+    }
+}

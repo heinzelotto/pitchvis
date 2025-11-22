@@ -1,9 +1,10 @@
 use super::{
-    material::NoisyColorMaterial, util::bin_to_spiral, BassCylinder, ChordDisplay, ChromaBox,
-    CylinderEntityListResource, DisplayMode, GlissandoCurve, GlissandoCurveEntityListResource,
-    HarmonicLine, LineList, PitchBall, PitchNameText, RootNoteSlice, SpectrogramDisplay,
-    SpectrogramResource, Spectrum, SpiderNetSegment, VisualsMode, CLEAR_COLOR_GALAXY,
-    CLEAR_COLOR_NEUTRAL, GLISSANDO_LINE_THICKNESS,
+    material::{NoisyColorMaterial, SpectrogramMaterial},
+    util::bin_to_spiral,
+    BassCylinder, ChordDisplay, ChromaBox, CylinderEntityListResource, DisplayMode, GlissandoCurve,
+    GlissandoCurveEntityListResource, HarmonicLine, LineList, PitchBall, PitchNameText,
+    RootNoteSlice, SpectrogramDisplay, SpectrogramResource, Spectrum, SpiderNetSegment,
+    VisualsMode, CLEAR_COLOR_GALAXY, CLEAR_COLOR_NEUTRAL, GLISSANDO_LINE_THICKNESS,
 };
 use bevy::{post_process::bloom::Bloom, prelude::*};
 use bevy_persistent::Persistent;
@@ -1100,6 +1101,7 @@ pub fn update_spectrogram_system(
     spectrogram_res: Option<ResMut<SpectrogramResource>>,
     analysis_state: Res<AnalysisStateResource>,
     mut images: ResMut<Assets<Image>>,
+    mut spectrogram_materials: ResMut<Assets<SpectrogramMaterial>>,
     settings: Res<Persistent<SettingsState>>,
 ) {
     // Only update if in debug mode
@@ -1180,6 +1182,11 @@ pub fn update_spectrogram_system(
 
     // Update write index
     spectrogram_res.write_index = next_idx;
+
+    // Update material scroll offset for visual scrolling effect
+    if let Some(material) = spectrogram_materials.get_mut(&spectrogram_res.material_handle) {
+        material.scroll_params.scroll_offset = next_idx as f32 / height as f32;
+    }
 }
 
 /// Update chroma display boxes with current pitch class energies

@@ -10,7 +10,7 @@ use bevy::{
     prelude::*,
 };
 use bevy_persistent::Persistent;
-use material::NoisyColorMaterial;
+use material::{NoisyColorMaterial, SpectrogramMaterial};
 use serde::{Deserialize, Serialize};
 
 use crate::{analysis_system::AnalysisStateResource, app::SettingsState};
@@ -111,6 +111,8 @@ pub struct GlissandoCurveEntityListResource(pub Vec<Entity>);
 pub struct SpectrogramResource {
     /// Image handle for the spectrogram texture
     pub image_handle: Handle<Image>,
+    /// Material handle for updating scroll offset
+    pub material_handle: Handle<SpectrogramMaterial>,
     /// Circular buffer write index (newest data)
     pub write_index: usize,
     /// Height of the spectrogram (number of historical frames)
@@ -124,6 +126,7 @@ pub fn setup_display_to_system(
     ResMut<Assets<Mesh>>,
     ResMut<Assets<ColorMaterial>>,
     ResMut<Assets<NoisyColorMaterial>>,
+    ResMut<Assets<SpectrogramMaterial>>,
     ResMut<Assets<Image>>,
     ResMut<CylinderEntityListResource>,
     ResMut<GlissandoCurveEntityListResource>,
@@ -134,6 +137,7 @@ pub fn setup_display_to_system(
           meshes: ResMut<Assets<Mesh>>,
           color_materials: ResMut<Assets<ColorMaterial>>,
           noisy_color_materials: ResMut<Assets<NoisyColorMaterial>>,
+          spectrogram_materials: ResMut<Assets<SpectrogramMaterial>>,
           images: ResMut<Assets<Image>>,
           cylinder_entities: ResMut<CylinderEntityListResource>,
           glissando_curve_entities: ResMut<GlissandoCurveEntityListResource>,
@@ -143,6 +147,7 @@ pub fn setup_display_to_system(
             meshes,
             color_materials,
             noisy_color_materials,
+            spectrogram_materials,
             images,
             cylinder_entities,
             glissando_curve_entities,

@@ -1,5 +1,8 @@
 use super::util::calculate_spiral_points;
-use super::{material::NoisyColorMaterial, LineList, PitchBall, PitchNameText, Spectrum};
+use super::{
+    material::{NoisyColorMaterial, SpectrogramMaterial, SpectrogramScrollParams},
+    LineList, PitchBall, PitchNameText, Spectrum,
+};
 use super::{
     ChromaBox, CylinderEntityListResource, GlissandoCurve, GlissandoCurveEntityListResource,
     RootNoteSlice, SpectrogramDisplay, SpectrogramResource, SpiderNetSegment, CLEAR_COLOR_NEUTRAL,
@@ -26,6 +29,7 @@ pub fn setup_display(
     mut meshes: ResMut<Assets<Mesh>>,
     mut color_materials: ResMut<Assets<ColorMaterial>>,
     mut noisy_color_materials: ResMut<Assets<NoisyColorMaterial>>,
+    mut spectrogram_materials: ResMut<Assets<SpectrogramMaterial>>,
     mut images: ResMut<Assets<Image>>,
     mut cylinder_entities: ResMut<CylinderEntityListResource>,
     mut glissando_curve_entities: ResMut<GlissandoCurveEntityListResource>,
@@ -81,7 +85,7 @@ pub fn setup_display(
 
     spawn_root_note_slice(&mut commands, &mut meshes, &mut color_materials);
 
-    spawn_spectrogram(&mut commands, &mut images, range);
+    spawn_spectrogram(&mut commands, &mut images, &mut spectrogram_materials, range);
 
     spawn_chroma_display(&mut commands);
 }
@@ -470,6 +474,7 @@ fn spawn_root_note_slice(
 fn spawn_spectrogram(
     commands: &mut Commands,
     images: &mut ResMut<Assets<Image>>,
+    spectrogram_materials: &mut ResMut<Assets<SpectrogramMaterial>>,
     range: &VqtRange,
 ) {
     use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
@@ -520,16 +525,29 @@ fn spawn_spectrogram(
 
     let image_handle = images.add(image);
 
+    // Create material with scrolling shader
+    let material = SpectrogramMaterial {
+        texture: image_handle.clone(),
+        scroll_params: SpectrogramScrollParams {
+            scroll_offset: 0.0,
+            _padding1: 0.0,
+            _padding2: 0.0,
+            _padding3: 0.0,
+        },
+    };
+    let material_handle = spectrogram_materials.add(material);
+
     // Insert the resource
     commands.insert_resource(SpectrogramResource {
         image_handle: image_handle.clone(),
+        material_handle: material_handle.clone(),
         write_index: 0,
         height,
     });
 
-    // Spawn the sprite
+    // Spawn as a 2D mesh with material
     // Rotate 90° counter-clockwise so:
-    // - Horizontal axis = time (newest on right)
+    // - Horizontal axis = time (newest on right, scrolls left)
     // - Vertical axis = frequency (low notes at bottom)
     // Dimensions swap due to rotation: width becomes visual height, height becomes visual width
     let visual_height = 12.0; // Frequency axis (vertical after rotation)
@@ -538,11 +556,8 @@ fn spawn_spectrogram(
     use std::f32::consts::PI;
     commands.spawn((
         SpectrogramDisplay,
-        Sprite {
-            image: image_handle,
-            custom_size: Some(Vec2::new(visual_width, visual_height)),
-            ..default()
-        },
+        Mesh2d(Rectangle::new(visual_width, visual_height).into()),
+        MeshMaterial2d(material_handle),
         Transform::from_xyz(0.0, 4.0, 5.0)
             .with_rotation(bevy::math::Quat::from_rotation_z(-PI / 2.0))
             .with_scale(Vec3::new(-1.0, 1.0, 1.0)),
