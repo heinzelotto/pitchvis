@@ -1199,8 +1199,21 @@ pub fn update_chroma_system(
     let bins_per_semitone = (analysis_state.range.buckets_per_octave / 12) as usize;
     let mut chroma = vec![0.0; 12];
 
+    // Calculate the pitch class of bin 0 (min_freq)
+    // Reference: C4 = 261.626 Hz is pitch class 0
+    // Formula: pitch_class = (12 * log2(freq / C4) + 0.5) % 12
+    const C4_FREQ: f32 = 261.626;
+    let semitones_from_c4 = 12.0 * (analysis_state.range.min_freq / C4_FREQ).log2();
+    let bin_0_pitch_class = ((semitones_from_c4.round() as i32 % 12) + 12) % 12;
+
     for (bin_idx, measurement) in analysis_state.x_vqt_smoothed.iter().enumerate() {
-        let pitch_class = (bin_idx / bins_per_semitone) % 12;
+        // Use proper rounding instead of truncation to get nearest semitone
+        // This prevents bins from being incorrectly quantized (e.g., +50 cents being treated as in-tune)
+        let semitone = ((bin_idx * 12) as f32 / analysis_state.range.buckets_per_octave as f32)
+            .round() as usize;
+        // Offset by the pitch class of bin 0
+        let pitch_class = ((semitone as i32 + bin_0_pitch_class) % 12) as usize;
+
         // Convert from dB to power: power = 10^(dB/10)
         let power = 10f32.powf(measurement.get() / 10.0);
         chroma[pitch_class] += power;

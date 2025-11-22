@@ -540,7 +540,7 @@ fn spawn_spectrogram(
             custom_size: Some(Vec2::new(display_width, display_height)),
             ..default()
         },
-        Transform::from_xyz(0.0, 10.0, 10.0),
+        Transform::from_xyz(0.0, 1.0, 0.0),
         Visibility::Hidden, // Hidden by default, shown in debug mode
     ));
 }
