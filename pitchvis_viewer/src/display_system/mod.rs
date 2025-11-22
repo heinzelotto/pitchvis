@@ -123,6 +123,10 @@ pub struct SpectrogramResource {
     pub write_index: usize,
     /// Height of the spectrogram (number of historical frames)
     pub height: usize,
+    /// Time accumulator for constant-speed scrolling
+    pub time_accumulator: f32,
+    /// Target scroll rate in rows per second
+    pub scroll_rate: f32,
 }
 
 pub fn setup_display_to_system(

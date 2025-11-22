@@ -521,10 +521,13 @@ fn spawn_spectrogram(
     let image_handle = images.add(image);
 
     // Insert the resource
+    // Scroll rate: ~30 rows per second gives smooth scrolling
     commands.insert_resource(SpectrogramResource {
         image_handle: image_handle.clone(),
         write_index: 0,
         height,
+        time_accumulator: 0.0,
+        scroll_rate: 30.0, // rows per second
     });
 
     // Spawn the sprite

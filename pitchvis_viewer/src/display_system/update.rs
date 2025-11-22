@@ -1101,6 +1101,7 @@ pub fn update_spectrogram_system(
     analysis_state: Res<AnalysisStateResource>,
     mut images: ResMut<Assets<Image>>,
     settings: Res<Persistent<SettingsState>>,
+    time: Res<Time>,
 ) {
     // Only update if in debug mode
     if settings.display_mode != DisplayMode::Debugging {
@@ -1232,20 +1233,35 @@ pub fn update_spectrogram_system(
         }
     }
 
-    // Clear the next line (the one we'll write to next time)
-    let next_idx = (write_idx + 1) % height;
-    for bin_idx in 0..width {
-        let pixel_idx = ((height - 1 - next_idx) * width + bin_idx) * 4;
-        if pixel_idx + 3 < image_data.len() {
-            image_data[pixel_idx] = 0;
-            image_data[pixel_idx + 1] = 0;
-            image_data[pixel_idx + 2] = 0;
-            image_data[pixel_idx + 3] = 0;
-        }
-    }
+    // Time-based scrolling: accumulate time and advance rows at constant rate
+    spectrogram_res.time_accumulator += time.delta_secs();
 
-    // Update write index
-    spectrogram_res.write_index = next_idx;
+    // Calculate how many rows to advance based on scroll rate
+    let time_per_row = 1.0 / spectrogram_res.scroll_rate;
+    let rows_to_advance = (spectrogram_res.time_accumulator / time_per_row).floor() as usize;
+
+    if rows_to_advance > 0 {
+        // Update time accumulator (keep remainder for next frame)
+        spectrogram_res.time_accumulator -= rows_to_advance as f32 * time_per_row;
+
+        // Clear the rows we're about to skip to
+        // This handles both single row advances and multiple rows if frame rate dropped
+        for i in 0..rows_to_advance.min(height) {
+            let next_idx = (write_idx + 1 + i) % height;
+            for bin_idx in 0..width {
+                let pixel_idx = ((height - 1 - next_idx) * width + bin_idx) * 4;
+                if pixel_idx + 3 < image_data.len() {
+                    image_data[pixel_idx] = 0;
+                    image_data[pixel_idx + 1] = 0;
+                    image_data[pixel_idx + 2] = 0;
+                    image_data[pixel_idx + 3] = 0;
+                }
+            }
+        }
+
+        // Update write index by the number of rows advanced
+        spectrogram_res.write_index = (write_idx + rows_to_advance) % height;
+    }
 }
 
 /// Update chroma display boxes with current pitch class energies
