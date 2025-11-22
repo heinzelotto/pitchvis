@@ -14,7 +14,10 @@ use crate::vqt_system;
 use pitchvis_analysis::vqt::VqtParameters;
 use pitchvis_audio::AudioStream;
 
-pub const BUFSIZE: usize = 2 * 16384;
+// TODO: Make BUFSIZE dynamically adjustable to match n_fft changes from parameter tuning.
+// Currently set to 8 * 16384 = 131072 to accommodate the maximum tunable n_fft value.
+// This must be >= the maximum n_fft value to prevent integer overflow in vqt_system.rs.
+pub const BUFSIZE: usize = 8 * 16384;
 const DEFAULT_FPS: u32 = 60;
 
 // wasm main function

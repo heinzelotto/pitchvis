@@ -37,9 +37,21 @@ pub fn update_vqt(
     mut vqt_result: ResMut<VqtResultResource>,
 ) {
     let (x, gain) = {
-        let mut x = vec![0.0_f32; vqt.0.params().n_fft];
+        let n_fft = vqt.0.params().n_fft;
+
+        // Safety check: n_fft must not exceed bufsize
+        if n_fft > bufsize {
+            error!(
+                "VQT n_fft ({}) exceeds buffer size ({}). Skipping VQT calculation.",
+                n_fft, bufsize
+            );
+            // Return early with empty result
+            return;
+        }
+
+        let mut x = vec![0.0_f32; n_fft];
         let rb = rb.0.lock().unwrap();
-        x.copy_from_slice(&rb.buf[(bufsize - vqt.0.params().n_fft)..]);
+        x.copy_from_slice(&rb.buf[(bufsize - n_fft)..]);
         (x, rb.gain)
     };
 
