@@ -1857,6 +1857,10 @@ pub fn register_common_update_systems<M1, M2, M3>(
             set_frame_limiter_system,
             set_vqt_smoothing_system,
             update_display_system,
+            display_system::update::update_spectrogram_system,
+            display_system::update::spectrogram_showhide,
+            display_system::update::update_chroma_system,
+            display_system::update::chroma_showhide,
         ),
     );
 }
