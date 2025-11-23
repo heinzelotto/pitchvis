@@ -4,8 +4,9 @@ use super::{
     LineList, PitchBall, PitchNameText, Spectrum,
 };
 use super::{
-    ChromaBox, CylinderEntityListResource, GlissandoCurve, GlissandoCurveEntityListResource,
-    RootNoteSlice, SpectrogramDisplay, SpectrogramResource, SpiderNetSegment, CLEAR_COLOR_NEUTRAL,
+    CalmnessHistogram, ChromaBox, CylinderEntityListResource, GlissandoCurve,
+    GlissandoCurveEntityListResource, RootNoteSlice, SceneCalmnessGraph, SpectrogramDisplay,
+    SpectrogramResource, SpiderNetSegment, CLEAR_COLOR_NEUTRAL,
 };
 use bevy::camera::ScalingMode;
 use bevy::core_pipeline::tonemapping::Tonemapping;
@@ -65,6 +66,10 @@ pub fn setup_display(
     );
 
     spawn_spectrum(&mut commands, &mut meshes, &mut color_materials, range);
+
+    spawn_scene_calmness_graph(&mut commands, &mut meshes, &mut color_materials);
+
+    spawn_calmness_histogram(&mut commands, &mut meshes, &mut color_materials, range);
 
     spawn_glissando_curves(
         &mut commands,
@@ -241,7 +246,7 @@ fn spawn_spectrum(
     // spectrum
     let spectrum_mesh = LineList {
         lines: (0..range.n_buckets())
-            .map(|i| Vec3::new(i as f32 * 0.017, 0.0, 0.0))
+            .map(|i| Vec3::new(i as f32 * 0.011, 0.0, 0.0))
             .tuple_windows()
             .collect::<Vec<(Vec3, Vec3)>>(),
         thickness: 0.01,
@@ -256,6 +261,75 @@ fn spawn_spectrum(
             ..default()
         })),
         Transform::from_xyz(-12.0, 3.0, -13.0),
+        Visibility::Hidden,
+    ));
+}
+
+fn spawn_scene_calmness_graph(
+    commands: &mut Commands,
+    meshes: &mut ResMut<Assets<Mesh>>,
+    color_materials: &mut ResMut<Assets<ColorMaterial>>,
+) {
+    // Scene calmness line graph - 300 frame history
+    const GRAPH_WIDTH: f32 = 3.0;
+    const GRAPH_HEIGHT: f32 = 1.0;
+    const HISTORY_SIZE: usize = 300;
+
+    // Initialize with flat line at zero
+    let initial_mesh = LineList {
+        lines: (0..HISTORY_SIZE)
+            .map(|i| {
+                let x = (i as f32 / HISTORY_SIZE as f32) - 0.5;
+                Vec3::new(x, 0.0, 0.0)
+            })
+            .tuple_windows()
+            .collect::<Vec<(Vec3, Vec3)>>(),
+        thickness: 0.01,
+    };
+
+    commands.spawn((
+        SceneCalmnessGraph,
+        Mesh2d(meshes.add(initial_mesh).into()),
+        MeshMaterial2d(color_materials.add(ColorMaterial {
+            color: Color::WHITE,
+            alpha_mode: bevy::sprite_render::AlphaMode2d::Blend,
+            texture: None,
+            ..default()
+        })),
+        Transform::from_xyz(-5.0, -6.5, -13.0).with_scale(Vec3::new(
+            GRAPH_WIDTH,
+            GRAPH_HEIGHT,
+            1.0,
+        )),
+        Visibility::Hidden,
+    ));
+}
+
+fn spawn_calmness_histogram(
+    commands: &mut Commands,
+    meshes: &mut ResMut<Assets<Mesh>>,
+    color_materials: &mut ResMut<Assets<ColorMaterial>>,
+    range: &VqtRange,
+) {
+    // Calmness histogram - mirrored below spectrum
+    let histogram_mesh = LineList {
+        lines: (0..range.n_buckets())
+            .map(|i| Vec3::new(i as f32 * 0.011, 0.0, 0.0))
+            .tuple_windows()
+            .collect::<Vec<(Vec3, Vec3)>>(),
+        thickness: 0.01,
+    };
+
+    commands.spawn((
+        CalmnessHistogram,
+        Mesh2d(meshes.add(histogram_mesh).into()),
+        MeshMaterial2d(color_materials.add(ColorMaterial {
+            color: Color::WHITE,
+            alpha_mode: bevy::sprite_render::AlphaMode2d::Blend,
+            texture: None,
+            ..default()
+        })),
+        Transform::from_xyz(-12.0, 2.0, -13.0),
         Visibility::Hidden,
     ));
 }

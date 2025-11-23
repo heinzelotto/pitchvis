@@ -2497,6 +2497,7 @@ pub fn insert_common_resources(
         )))
         .insert_resource(display_system::CylinderEntityListResource(Vec::new()))
         .insert_resource(display_system::GlissandoCurveEntityListResource(Vec::new()))
+        .insert_resource(display_system::SceneCalmnessHistory::new(300))
         .insert_resource(settings)
         .insert_resource(CurrentFpsLimit(Some(default_fps)))
         .insert_resource(CurrentVQTSmoothingMode(
@@ -2574,6 +2575,8 @@ pub fn register_common_update_systems<M1, M2, M3>(
             display_system::update::spectrogram_showhide,
             display_system::update::update_chroma_system,
             display_system::update::chroma_showhide,
+            display_system::update::update_scene_calmness_graph,
+            display_system::update::scene_calmness_graph_showhide,
         ),
     );
 }

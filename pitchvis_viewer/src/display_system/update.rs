@@ -1,10 +1,11 @@
 use super::{
     material::{NoisyColorMaterial, SpectrogramMaterial},
     util::bin_to_spiral,
-    BassCylinder, ChordDisplay, ChromaBox, CylinderEntityListResource, DisplayMode, GlissandoCurve,
-    GlissandoCurveEntityListResource, HarmonicLine, LineList, PitchBall, PitchNameText,
-    RootNoteSlice, SpectrogramDisplay, SpectrogramResource, Spectrum, SpiderNetSegment,
-    VisualsMode, CLEAR_COLOR_GALAXY, CLEAR_COLOR_NEUTRAL, GLISSANDO_LINE_THICKNESS,
+    BassCylinder, CalmnessHistogram, ChordDisplay, ChromaBox, CylinderEntityListResource,
+    DisplayMode, GlissandoCurve, GlissandoCurveEntityListResource, HarmonicLine, LineList,
+    PitchBall, PitchNameText, RootNoteSlice, SceneCalmnessGraph, SceneCalmnessHistory,
+    SpectrogramDisplay, SpectrogramResource, Spectrum, SpiderNetSegment, VisualsMode,
+    CLEAR_COLOR_GALAXY, CLEAR_COLOR_NEUTRAL, GLISSANDO_LINE_THICKNESS,
 };
 use bevy::{post_process::bloom::Bloom, prelude::*};
 use bevy_persistent::Persistent;
@@ -21,6 +22,18 @@ use pitchvis_colors::{calculate_color, COLORS, EASING_POW, GRAY_LEVEL};
 
 const SPIRAL_SEGMENTS_PER_SEMITONE: u16 = 6;
 const PITCH_BALL_SCALE_FACTOR: f32 = 1.0 / 305.0; // TODO: get rid of this, we're engineers, not magicians
+
+/// Helper function to convert calmness value to color
+/// Returns cyan for calm (>0.7), yellow for medium (>0.3), red for energetic (<=0.3)
+fn calmness_to_color(calmness: f32) -> Color {
+    if calmness > 0.7 {
+        Color::srgb(0.5, 0.8, 1.0) // Cyan for calm
+    } else if calmness > 0.3 {
+        Color::srgb(1.0, 1.0, 0.5) // Yellow for medium
+    } else {
+        Color::srgb(1.0, 0.5, 0.5) // Red for energetic
+    }
+}
 
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn update_display(
@@ -84,6 +97,21 @@ pub fn update_display(
             Without<ChordDisplay>,
         ),
     >,
+    histogram: Query<
+        (&mut Visibility, &Mesh2d, &mut Transform),
+        (
+            With<CalmnessHistogram>,
+            Without<PitchBall>,
+            Without<BassCylinder>,
+            Without<PitchNameText>,
+            Without<Spectrum>,
+            Without<SpiderNetSegment>,
+            Without<GlissandoCurve>,
+            Without<HarmonicLine>,
+            Without<ChordDisplay>,
+            Without<RootNoteSlice>,
+        ),
+    >,
 ) -> Result<()> {
     fade_pitch_balls(set.p0(), &mut noisy_color_materials, &run_time, range);
 
@@ -135,6 +163,15 @@ pub fn update_display(
         &mut meshes,
         &settings_state,
         analysis_state,
+        range,
+    )?;
+
+    update_calmness_histogram(
+        histogram,
+        &camera,
+        &mut meshes,
+        &analysis_state,
+        &settings_state,
         range,
     )?;
 
@@ -706,115 +743,86 @@ fn update_spectrum(
     range: &VqtRange,
 ) -> Result<()> {
     let (mut visibility, mesh_handle, mut transform) = spectrum.single_mut()?;
+    // set visibility
+    if settings_state.display_mode == DisplayMode::Debugging {
+        *visibility = Visibility::Visible;
+    } else {
+        *visibility = Visibility::Hidden;
+        return Ok(());
+    }
+
+    // move to right
+    let (_, _, projection) = camera.single()?;
     {
-        // set visibility
-        if settings_state.display_mode == DisplayMode::Debugging {
-            *visibility = Visibility::Visible;
+        if let Projection::Orthographic(proj) = &*projection {
+            let Rect { max, .. } = proj.area;
+            *transform = Transform::from_xyz(
+                max.x - range.n_buckets() as f32 * 0.011 - 0.2,
+                max.y - 4.2,
+                -13.0,
+            );
         } else {
-            *visibility = Visibility::Hidden;
-            return Ok(());
+            panic!("Not an ortographic projection.");
         }
+    }
 
-        // move to right
-        let (_, _, projection) = camera.single()?;
-        {
-            if let Projection::Orthographic(proj) = &*projection {
-                let Rect { max, .. } = proj.area;
-                *transform = Transform::from_xyz(
-                    max.x - range.n_buckets() as f32 * 0.022 - 0.2,
-                    max.y - 4.2,
-                    -13.0,
-                );
-            } else {
-                panic!("Not an ortographic projection.");
-            }
-        }
+    let x_vqt_smoothed = &analysis_state
+        .x_vqt_smoothed
+        .iter()
+        .map(|ema| ema.get())
+        .collect::<Vec<f32>>();
 
-        let x_vqt_smoothed = &analysis_state
-            .x_vqt_smoothed
+    let k_max = arg_max(&x_vqt_smoothed);
+    let max_size = x_vqt_smoothed[k_max];
+
+    // Build spectrum line geometry
+    let line_list = LineList {
+        lines: x_vqt_smoothed
             .iter()
-            .map(|ema| ema.get())
-            .collect::<Vec<f32>>();
+            .enumerate()
+            .map(|(i, amp)| Vec3::new(i as f32 * 0.011, amp / 10.0, 0.0))
+            .tuple_windows()
+            .collect::<Vec<(Vec3, Vec3)>>(),
+        thickness: 0.02,
+    };
 
-        let k_max = arg_max(&x_vqt_smoothed);
-        let max_size = x_vqt_smoothed[k_max];
+    // Collect all vertices from line list
+    let mut all_vertices = Vec::new();
+    let mut all_indices = Vec::new();
 
-        // Build spectrum line geometry
-        let line_list = LineList {
-            lines: x_vqt_smoothed
-                .iter()
-                .enumerate()
-                .map(|(i, amp)| Vec3::new(i as f32 * 0.022, amp / 10.0, 0.0))
-                .tuple_windows()
-                .collect::<Vec<(Vec3, Vec3)>>(),
-            thickness: 0.02,
-        };
+    // Build line list geometry manually (similar to LineList::into())
+    for (p, q) in line_list.lines.iter() {
+        let dx = p.x - q.x;
+        let dy = p.y - q.y;
+        let l = dx.hypot(dy);
+        let u = dx * line_list.thickness * 0.5 / l;
+        let v = dy * line_list.thickness * 0.5 / l;
 
-        // Collect all vertices from line list
-        let mut all_vertices = Vec::new();
-        let mut all_indices = Vec::new();
+        let v0 = Vec3::new(p.x + v, p.y - u, 0.0);
+        let v1 = Vec3::new(p.x - v, p.y + u, 0.0);
+        let v2 = Vec3::new(q.x - v, q.y + u, 0.0);
+        let v3 = Vec3::new(q.x + v, q.y - u, 0.0);
 
-        // Build line list geometry manually (similar to LineList::into())
-        for (p, q) in line_list.lines.iter() {
-            let dx = p.x - q.x;
-            let dy = p.y - q.y;
-            let l = dx.hypot(dy);
-            let u = dx * line_list.thickness * 0.5 / l;
-            let v = dy * line_list.thickness * 0.5 / l;
+        let prior_len = all_vertices.len();
+        all_indices.push(2 + prior_len as u32);
+        all_indices.push(1 + prior_len as u32);
+        all_indices.push(prior_len as u32);
+        all_indices.push(2 + prior_len as u32);
+        all_indices.push(prior_len as u32);
+        all_indices.push(3 + prior_len as u32);
 
-            let v0 = Vec3::new(p.x + v, p.y - u, 0.0);
-            let v1 = Vec3::new(p.x - v, p.y + u, 0.0);
-            let v2 = Vec3::new(q.x - v, q.y + u, 0.0);
-            let v3 = Vec3::new(q.x + v, q.y - u, 0.0);
+        all_vertices.push((v0, [0.0, 0.0, 1.0], [0.0, 1.0]));
+        all_vertices.push((v1, [0.0, 0.0, 1.0], [0.0, 0.0]));
+        all_vertices.push((v2, [0.0, 0.0, 1.0], [1.0, 0.0]));
+        all_vertices.push((v3, [0.0, 0.0, 1.0], [1.0, 1.0]));
+    }
 
-            let prior_len = all_vertices.len();
-            all_indices.push(2 + prior_len as u32);
-            all_indices.push(1 + prior_len as u32);
-            all_indices.push(prior_len as u32);
-            all_indices.push(2 + prior_len as u32);
-            all_indices.push(prior_len as u32);
-            all_indices.push(3 + prior_len as u32);
-
-            all_vertices.push((v0, [0.0, 0.0, 1.0], [0.0, 1.0]));
-            all_vertices.push((v1, [0.0, 0.0, 1.0], [0.0, 0.0]));
-            all_vertices.push((v2, [0.0, 0.0, 1.0], [1.0, 0.0]));
-            all_vertices.push((v3, [0.0, 0.0, 1.0], [1.0, 1.0]));
-        }
-
-        // Generate colors for spectrum lines
-        let mut all_colors = (0..(x_vqt_smoothed.len() - 1))
-            .map(|i| {
-                let (r, g, b) = calculate_color(
-                    range.buckets_per_octave,
-                    ((i as f32)
-                        + 0.5
-                        + (range.buckets_per_octave - 3 * (range.buckets_per_octave / 12)) as f32)
-                        % range.buckets_per_octave as f32,
-                    COLORS,
-                    GRAY_LEVEL,
-                    10.0,
-                );
-                let color_coefficient = 1.0 - (0.5 - x_vqt_smoothed[i] / max_size / 2.0).powf(0.5);
-                [
-                    [r, g, b, color_coefficient],
-                    [r, g, b, color_coefficient],
-                    [r, g, b, color_coefficient],
-                    [r, g, b, color_coefficient],
-                ]
-            })
-            .flatten()
-            .collect::<Vec<[f32; 4]>>();
-
-        // Add circles for detected peaks
-        for peak in &analysis_state.peaks_continuous {
-            let peak_x = peak.center * 0.022; // Same scaling as spectrum
-            let peak_y = peak.size / 10.0; // Same scaling as spectrum
-
-            // Calculate color for this peak based on its bin position
-            let bin = peak.center.round() as usize;
+    // Generate colors for spectrum lines
+    let mut all_colors = (0..(x_vqt_smoothed.len() - 1))
+        .map(|i| {
             let (r, g, b) = calculate_color(
                 range.buckets_per_octave,
-                ((bin as f32)
+                ((i as f32)
                     + 0.5
                     + (range.buckets_per_octave - 3 * (range.buckets_per_octave / 12)) as f32)
                     % range.buckets_per_octave as f32,
@@ -822,44 +830,306 @@ fn update_spectrum(
                 GRAY_LEVEL,
                 10.0,
             );
+            let color_coefficient = 1.0 - (0.5 - x_vqt_smoothed[i] / max_size / 2.0).powf(0.5);
+            [
+                [r, g, b, color_coefficient],
+                [r, g, b, color_coefficient],
+                [r, g, b, color_coefficient],
+                [r, g, b, color_coefficient],
+            ]
+        })
+        .flatten()
+        .collect::<Vec<[f32; 4]>>();
 
-            // Make peaks slightly brighter/more opaque
-            let peak_color = [r, g, b, 0.9];
+    // Add circles for detected peaks
+    for peak in &analysis_state.peaks_continuous {
+        let peak_x = peak.center * 0.011; // Same scaling as spectrum
+        let peak_y = peak.size / 10.0; // Same scaling as spectrum
 
-            // Create circle geometry
-            let circle = CircleGeometry::new(
-                Vec3::new(peak_x, peak_y, 0.0),
-                0.08, // Circle radius
-                peak_color,
-                12, // Number of segments (12 for a smooth circle)
-            );
-
-            // Add circle vertices and indices
-            let base_index = all_vertices.len() as u32;
-            all_vertices.extend(circle.vertices);
-            all_indices.extend(circle.indices.iter().map(|&i| i + base_index));
-            all_colors.extend(circle.colors);
-        }
-
-        // Build final mesh
-        use bevy::mesh::{Indices, PrimitiveTopology};
-        let positions: Vec<_> = all_vertices.iter().map(|(p, _, _)| *p).collect();
-        let normals: Vec<_> = all_vertices.iter().map(|(_, n, _)| *n).collect();
-        let uvs: Vec<_> = all_vertices.iter().map(|(_, _, uv)| *uv).collect();
-
-        let mut spectrum_mesh = Mesh::new(
-            PrimitiveTopology::TriangleList,
-            bevy::asset::RenderAssetUsages::default(),
+        // Calculate color for this peak based on its bin position
+        let bin = peak.center.round() as usize;
+        let (r, g, b) = calculate_color(
+            range.buckets_per_octave,
+            ((bin as f32)
+                + 0.5
+                + (range.buckets_per_octave - 3 * (range.buckets_per_octave / 12)) as f32)
+                % range.buckets_per_octave as f32,
+            COLORS,
+            GRAY_LEVEL,
+            10.0,
         );
-        spectrum_mesh.insert_indices(Indices::U32(all_indices));
-        spectrum_mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
-        spectrum_mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
-        spectrum_mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
-        spectrum_mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, all_colors);
 
+        // Make peaks slightly brighter/more opaque
+        let peak_color = [r, g, b, 0.9];
+
+        // Create circle geometry
+        let circle = CircleGeometry::new(
+            Vec3::new(peak_x, peak_y, 0.0),
+            0.08, // Circle radius
+            peak_color,
+            12, // Number of segments (12 for a smooth circle)
+        );
+
+        // Add circle vertices and indices
+        let base_index = all_vertices.len() as u32;
+        all_vertices.extend(circle.vertices);
+        all_indices.extend(circle.indices.iter().map(|&i| i + base_index));
+        all_colors.extend(circle.colors);
+    }
+
+    // Build final mesh
+    use bevy::mesh::{Indices, PrimitiveTopology};
+    let positions: Vec<_> = all_vertices.iter().map(|(p, _, _)| *p).collect();
+    let normals: Vec<_> = all_vertices.iter().map(|(_, n, _)| *n).collect();
+    let uvs: Vec<_> = all_vertices.iter().map(|(_, _, uv)| *uv).collect();
+
+    let mut spectrum_mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        bevy::asset::RenderAssetUsages::default(),
+    );
+    spectrum_mesh.insert_indices(Indices::U32(all_indices));
+    spectrum_mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+    spectrum_mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+    spectrum_mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
+    spectrum_mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, all_colors);
+
+    if let Some(mesh) = meshes.get_mut(&mesh_handle.0) {
+        *mesh = spectrum_mesh;
+    }
+
+    Ok(())
+}
+
+pub fn update_scene_calmness_graph(
+    mut history: ResMut<SceneCalmnessHistory>,
+    graph_query: Query<&Mesh2d, With<SceneCalmnessGraph>>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    analysis_state: Res<AnalysisStateResource>,
+    settings: Res<Persistent<SettingsState>>,
+) {
+    // Only update if in debugging mode
+    if settings.display_mode != DisplayMode::Debugging {
+        return;
+    }
+
+    // Get current calmness value
+    let current_calmness = analysis_state.0.smoothed_scene_calmness.get();
+
+    // Add to circular buffer - store write_index locally to avoid borrow checker issues
+    let write_idx = history.write_index;
+    history.values[write_idx] = current_calmness;
+    history.write_index = (write_idx + 1) % history.capacity;
+
+    // Build line list from circular buffer
+    let mut points = Vec::new();
+    for i in 0..history.capacity {
+        let buffer_idx = (history.write_index + i) % history.capacity;
+        let x = (i as f32 / history.capacity as f32) - 0.5;
+        let y = history.values[buffer_idx];
+        points.push(Vec3::new(x, y, 0.0));
+    }
+
+    // Create line segments with colors based on calmness value
+    let mut all_vertices = Vec::new();
+    let mut all_indices = Vec::new();
+    let mut all_colors = Vec::new();
+    const THICKNESS: f32 = 0.01;
+
+    for i in 0..(points.len() - 1) {
+        let p = points[i];
+        let q = points[i + 1];
+
+        // Calculate color for this segment
+        let buffer_idx = (history.write_index + i) % history.capacity;
+        let calmness = history.values[buffer_idx];
+        let color = calmness_to_color(calmness);
+        let color_array = [
+            color.to_srgba().red,
+            color.to_srgba().green,
+            color.to_srgba().blue,
+            color.to_srgba().alpha,
+        ];
+
+        // Build quad for line segment
+        let dx = p.x - q.x;
+        let dy = p.y - q.y;
+        let l = dx.hypot(dy);
+        let u = dx * THICKNESS * 0.5 / l;
+        let v = dy * THICKNESS * 0.5 / l;
+
+        let v0 = Vec3::new(p.x + v, p.y - u, 0.0);
+        let v1 = Vec3::new(p.x - v, p.y + u, 0.0);
+        let v2 = Vec3::new(q.x - v, q.y + u, 0.0);
+        let v3 = Vec3::new(q.x + v, q.y - u, 0.0);
+
+        let base_idx = all_vertices.len() as u32;
+        all_indices.extend_from_slice(&[
+            base_idx + 2,
+            base_idx + 1,
+            base_idx,
+            base_idx + 2,
+            base_idx,
+            base_idx + 3,
+        ]);
+
+        all_vertices.push((v0, [0.0, 0.0, 1.0], [0.0, 1.0]));
+        all_vertices.push((v1, [0.0, 0.0, 1.0], [0.0, 0.0]));
+        all_vertices.push((v2, [0.0, 0.0, 1.0], [1.0, 0.0]));
+        all_vertices.push((v3, [0.0, 0.0, 1.0], [1.0, 1.0]));
+
+        all_colors.extend_from_slice(&[color_array, color_array, color_array, color_array]);
+    }
+
+    // Build final mesh
+    use bevy::mesh::{Indices, PrimitiveTopology};
+    let positions: Vec<_> = all_vertices.iter().map(|(p, _, _)| *p).collect();
+    let normals: Vec<_> = all_vertices.iter().map(|(_, n, _)| *n).collect();
+    let uvs: Vec<_> = all_vertices.iter().map(|(_, _, uv)| *uv).collect();
+
+    let mut new_mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        bevy::asset::RenderAssetUsages::default(),
+    );
+    new_mesh.insert_indices(Indices::U32(all_indices));
+    new_mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+    new_mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+    new_mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
+    new_mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, all_colors);
+
+    // Update the mesh
+    if let Ok(mesh_handle) = graph_query.single() {
         if let Some(mesh) = meshes.get_mut(&mesh_handle.0) {
-            *mesh = spectrum_mesh;
+            *mesh = new_mesh;
         }
+    }
+}
+
+pub fn update_calmness_histogram(
+    mut histogram_query: Query<
+        (&mut Visibility, &Mesh2d, &mut Transform),
+        (
+            With<CalmnessHistogram>,
+            Without<PitchBall>,
+            Without<BassCylinder>,
+            Without<PitchNameText>,
+            Without<Spectrum>,
+            Without<SpiderNetSegment>,
+            Without<GlissandoCurve>,
+            Without<HarmonicLine>,
+            Without<ChordDisplay>,
+            Without<RootNoteSlice>,
+        ),
+    >,
+    camera: &Query<(&mut Camera, Option<&mut Bloom>, Ref<Projection>)>,
+    meshes: &mut ResMut<Assets<Mesh>>,
+    analysis_state: &AnalysisState,
+    settings: &Res<Persistent<SettingsState>>,
+    range: &VqtRange,
+) -> Result<()> {
+    let (mut visibility, mesh_handle, mut transform) = histogram_query.single_mut()?;
+    // set visibility
+    if settings.display_mode == DisplayMode::Debugging {
+        *visibility = Visibility::Visible;
+    } else {
+        *visibility = Visibility::Hidden;
+        return Ok(());
+    }
+
+    // move to right
+    let (_, _, projection) = camera.single()?;
+    {
+        if let Projection::Orthographic(proj) = &*projection {
+            let Rect { max, .. } = proj.area;
+            *transform = Transform::from_xyz(
+                max.x - range.n_buckets() as f32 * 0.011 - 0.2,
+                max.y - 4.2,
+                -13.0,
+            )
+            .with_scale(Vec3::new(1.0, -1.0, 1.0));
+        } else {
+            panic!("Not an ortographic projection.");
+        }
+    }
+
+    let calmness_values = &analysis_state.calmness;
+
+    // Build contour line from calmness values (extending downward, 50% of spectrum height)
+    let mut all_vertices = Vec::new();
+    let mut all_indices = Vec::new();
+    let mut all_colors = Vec::new();
+    const THICKNESS: f32 = 0.01;
+    const HEIGHT_SCALE: f32 = 0.5;
+
+    // Build line segments
+    for i in 0..(calmness_values.len() - 1) {
+        let calmness_0 = calmness_values[i].get();
+        let calmness_1 = calmness_values[i + 1].get();
+
+        let p = Vec3::new(i as f32 * 0.011, calmness_0 * HEIGHT_SCALE, 0.0);
+        let q = Vec3::new((i + 1) as f32 * 0.011, calmness_1 * HEIGHT_SCALE, 0.0);
+
+        // Calculate color for this segment (using midpoint calmness)
+        let avg_calmness = (calmness_0 + calmness_1) / 2.0;
+        let color = calmness_to_color(avg_calmness);
+        let color_array = [
+            color.to_srgba().red,
+            color.to_srgba().green,
+            color.to_srgba().blue,
+            color.to_srgba().alpha,
+        ];
+
+        // Build quad for line segment
+        let dx = p.x - q.x;
+        let dy = p.y - q.y;
+        let l = dx.hypot(dy);
+        if l < 0.0001 {
+            continue; // Skip degenerate segments
+        }
+        let u = dx * THICKNESS * 0.5 / l;
+        let v = dy * THICKNESS * 0.5 / l;
+
+        let v0 = Vec3::new(p.x + v, p.y - u, 0.0);
+        let v1 = Vec3::new(p.x - v, p.y + u, 0.0);
+        let v2 = Vec3::new(q.x - v, q.y + u, 0.0);
+        let v3 = Vec3::new(q.x + v, q.y - u, 0.0);
+
+        let base_idx = all_vertices.len() as u32;
+        all_indices.extend_from_slice(&[
+            base_idx + 2,
+            base_idx + 1,
+            base_idx,
+            base_idx + 2,
+            base_idx,
+            base_idx + 3,
+        ]);
+
+        all_vertices.push((v0, [0.0, 0.0, 1.0], [0.0, 1.0]));
+        all_vertices.push((v1, [0.0, 0.0, 1.0], [0.0, 0.0]));
+        all_vertices.push((v2, [0.0, 0.0, 1.0], [1.0, 0.0]));
+        all_vertices.push((v3, [0.0, 0.0, 1.0], [1.0, 1.0]));
+
+        all_colors.extend_from_slice(&[color_array, color_array, color_array, color_array]);
+    }
+
+    // Build final mesh
+    use bevy::mesh::{Indices, PrimitiveTopology};
+    let positions: Vec<_> = all_vertices.iter().map(|(p, _, _)| *p).collect();
+    let normals: Vec<_> = all_vertices.iter().map(|(_, n, _)| *n).collect();
+    let uvs: Vec<_> = all_vertices.iter().map(|(_, _, uv)| *uv).collect();
+
+    let mut new_mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        bevy::asset::RenderAssetUsages::default(),
+    );
+    new_mesh.insert_indices(Indices::U32(all_indices));
+    new_mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+    new_mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+    new_mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
+    new_mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, all_colors);
+
+    // Update the mesh
+    if let Some(mesh) = meshes.get_mut(&mesh_handle.0) {
+        *mesh = new_mesh;
     }
 
     Ok(())
@@ -1460,6 +1730,20 @@ pub fn spectrogram_showhide(
 /// Show/hide chroma boxes based on display mode
 pub fn chroma_showhide(
     mut query: Query<&mut Visibility, With<ChromaBox>>,
+    settings: Res<Persistent<SettingsState>>,
+) {
+    for mut visibility in query.iter_mut() {
+        *visibility = if settings.display_mode == DisplayMode::Debugging {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        };
+    }
+}
+
+/// Show/hide scene calmness graph based on display mode
+pub fn scene_calmness_graph_showhide(
+    mut query: Query<&mut Visibility, With<SceneCalmnessGraph>>,
     settings: Res<Persistent<SettingsState>>,
 ) {
     for mut visibility in query.iter_mut() {

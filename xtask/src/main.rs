@@ -24,6 +24,12 @@ enum Commands {
         #[arg(last = true)]
         args: Vec<String>,
     },
+    /// Check the project (desktop only)
+    Check {
+        /// Extra arguments to pass to the binary
+        #[arg(last = true)]
+        args: Vec<String>,
+    },
     /// Clean build artifacts
     Clean {
         /// Target to clean (defaults to all)
@@ -76,6 +82,7 @@ fn main() -> Result<()> {
     match cli.command {
         Commands::Build { target } => build(target)?,
         Commands::Run { args } => run(args)?,
+        Commands::Check { args } => check(args)?,
         Commands::Clean { target } => clean(target.unwrap_or(CleanTarget::All))?,
     }
 
@@ -301,6 +308,31 @@ fn run(extra_args: Vec<String>) -> Result<()> {
         .arg("--release")
         .arg("--features")
         .arg("bevy/dynamic_linking,bevy/file_watcher")
+        .arg("--bin")
+        .arg("pitchvis");
+
+    if !extra_args.is_empty() {
+        cmd.arg("--").args(&extra_args);
+    }
+
+    let status = cmd.status().context("Failed to execute cargo run")?;
+
+    if !status.success() {
+        anyhow::bail!("Run failed");
+    }
+
+    Ok(())
+}
+
+fn check(extra_args: Vec<String>) -> Result<()> {
+    println!("Checking pitchvis...");
+
+    let viewer_dir = project_root().join("pitchvis_viewer");
+
+    let mut cmd = Command::new("cargo");
+    cmd.current_dir(&viewer_dir)
+        .arg("check")
+        .arg("--release")
         .arg("--bin")
         .arg("pitchvis");
 

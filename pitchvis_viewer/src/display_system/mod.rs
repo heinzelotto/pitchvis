@@ -63,6 +63,12 @@ pub struct ChromaBox {
     pub pitch_class: usize,
 }
 
+#[derive(Component)]
+pub struct SceneCalmnessGraph;
+
+#[derive(Component)]
+pub struct CalmnessHistogram;
+
 #[derive(PartialEq, Serialize, Deserialize)]
 pub enum DisplayMode {
     Normal,
@@ -125,6 +131,27 @@ pub struct SpectrogramResource {
     pub write_index: usize,
     /// Height of the spectrogram (number of historical frames)
     pub height: usize,
+}
+
+/// Resource to hold scene calmness history
+#[derive(Resource)]
+pub struct SceneCalmnessHistory {
+    /// Circular buffer of historical calmness values
+    pub values: Vec<f32>,
+    /// Write index for circular buffer
+    pub write_index: usize,
+    /// Capacity of the buffer
+    pub capacity: usize,
+}
+
+impl SceneCalmnessHistory {
+    pub fn new(capacity: usize) -> Self {
+        Self {
+            values: vec![0.0; capacity],
+            write_index: 0,
+            capacity,
+        }
+    }
 }
 
 pub fn setup_display_to_system(
@@ -228,6 +255,21 @@ pub fn update_display_to_system(
             Without<ChordDisplay>,
         ),
     >,
+    Query<
+        (&mut Visibility, &Mesh2d, &mut Transform),
+        (
+            With<CalmnessHistogram>,
+            Without<PitchBall>,
+            Without<BassCylinder>,
+            Without<PitchNameText>,
+            Without<Spectrum>,
+            Without<SpiderNetSegment>,
+            Without<GlissandoCurve>,
+            Without<HarmonicLine>,
+            Without<ChordDisplay>,
+            Without<RootNoteSlice>,
+        ),
+    >,
 ) -> Result<()> {
     let range = range.clone();
     move |set: ParamSet<(
@@ -284,6 +326,21 @@ pub fn update_display_to_system(
             Without<HarmonicLine>,
             Without<ChordDisplay>,
         ),
+    >,
+          histogram: Query<
+        (&mut Visibility, &Mesh2d, &mut Transform),
+        (
+            With<CalmnessHistogram>,
+            Without<PitchBall>,
+            Without<BassCylinder>,
+            Without<PitchNameText>,
+            Without<Spectrum>,
+            Without<SpiderNetSegment>,
+            Without<GlissandoCurve>,
+            Without<HarmonicLine>,
+            Without<ChordDisplay>,
+            Without<RootNoteSlice>,
+        ),
     >| {
         update::update_display(
             &range,
@@ -298,6 +355,7 @@ pub fn update_display_to_system(
             run_time,
             camera,
             root_slice,
+            histogram,
         )?;
 
         Ok(())
