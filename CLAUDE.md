@@ -1,49 +1,28 @@
-# Claude AI Assistant Guide for PitchVis
+# CLAUDE.md
 
-This file provides guidance for AI assistants (like Claude) working with the PitchVis codebase.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Project Overview
 
-PitchVis is a real-time musical pitch analysis and visualization application written in Rust. It captures audio input, performs frequency analysis using Variable Q Transform (VQT), detects musical pitches, and renders beautiful visualizations using the Bevy game engine.
+PitchVis is a real-time musical pitch analysis and visualization system that analyzes live audio input to detect musical pitches and provides colorful visualizations. The project supports multiple deployment targets including desktop, web (WASM), Android, and serial output for LED hardware controllers.
 
 **Target Platforms**: Desktop (Linux/macOS/Windows), Web (WASM), Android
 
 **Primary Use Case**: Real-time visualization of musical pitches for musicians, audio engineers, and music enthusiasts.
 
-## Quick Start
+## Multi-Crate Architecture
 
-### Building and Running
+This is a Rust workspace with 9 main crates:
 
-**Desktop (recommended for development)**:
-```bash
-cd pitchvis_viewer
-cargo run --features bevy/dynamic_linking --bin pitchvis
-```
-
-**Web/WASM**:
-```bash
-npm install
-npm run serve  # Local development
-npm run build  # Production build to dist/
-```
-
-**Serial output (for LED strips)**:
-```bash
-cd pitchvis_serial
-cargo run --bin pitchvis_serial -- /path/to/serial/device 115200
-```
-
-### Prerequisites
-
-System dependencies (Linux):
-- `libasound2-dev` (ALSA audio)
-- `libudev-dev` (device detection)
-- `libwayland-dev` (Wayland display server - for desktop builds)
-- `libxkbcommon-dev` (keyboard handling)
-
-**Note**: The `check-desktop.sh` script can be used to verify that all packages compile correctly.
-
-## Architecture Summary
+- **`pitchvis_analysis`** - Core VQT (Variable-Q Transform) and pitch detection algorithms
+- **`pitchvis_audio`** - Cross-platform audio input (CPAL for desktop, Web Audio API for WASM)
+- **`pitchvis_colors`** - Color space conversion and pitch-to-color mapping
+- **`pitchvis_viewer`** - Main visualization app using Bevy engine (desktop, WASM, Android)
+- **`pitchvis_serial`** - Serial output for hardware LED controllers
+- **`pitchvis_train`** - ML training utilities with TinySOL dataset and MIDI synthesis
+- **`pitchvis_android_serial`** - Android-specific serial implementation
+- **`pitchvis_wasm_kiss3d`** - Alternative WASM renderer using Kiss3D
+- **`dagc_fork`** / **`rustysynth_fork`** - Forked dependencies for audio processing and MIDI synthesis
 
 ### Crate Organization
 
@@ -58,6 +37,56 @@ pitchvis/
 ├── dagc_fork/            # Automatic Gain Control (forked)
 └── rustysynth_fork/      # SoundFont synth (forked)
 ```
+
+## Quick Start
+
+### Building and Running
+
+PitchVis uses a unified build system powered by `cargo xtask`. This is the recommended way to build and run the project.
+
+**Desktop (recommended for development)**:
+```bash
+cargo xtask run  # Fast iteration with dynamic linking and file watcher
+```
+
+**Desktop production build**:
+```bash
+cargo xtask build desktop  # Always builds in release mode
+```
+
+**Web/WASM**:
+```bash
+cargo xtask build wasm           # Development build
+cargo xtask build wasm --release # Production build
+cd pitchvis_viewer/wasm/
+npm run serve                    # Local development server
+```
+
+**Android**:
+```bash
+cargo xtask build android           # Debug APK
+cargo xtask build android --release # Release AAB
+```
+
+**Serial output (for LED strips)**:
+```bash
+cd pitchvis_serial
+cargo run --bin pitchvis_serial -- /path/to/serial/device 115200
+```
+
+See the [Cargo xtask Build System](#cargo-xtask-build-system) section below for complete documentation.
+
+### Prerequisites
+
+System dependencies (Linux):
+- `libasound2-dev` (ALSA audio)
+- `libudev-dev` (device detection)
+- `libwayland-dev` (Wayland display server - for desktop builds)
+- `libxkbcommon-dev` (keyboard handling)
+
+**Note**: The `check-desktop.sh` script can be used to verify that all packages compile correctly.
+
+## Architecture Summary
 
 ### Data Flow
 
@@ -74,6 +103,208 @@ Audio Input (cpal) → Ring Buffer (with AGC) → VQT → Peak Detection → Vis
 5. **ML System**: Optional ML inference (feature-gated)
 
 See `ARCHITECTURE.md` and `pitchvis_viewer/ARCHITECTURE.md` for detailed documentation.
+
+### Key Technical Concepts
+
+**Variable-Q Transform (VQT)**: The core audio analysis uses VQT algorithms in `pitchvis_analysis` for musical pitch detection. VQT provides better frequency resolution at lower frequencies, making it ideal for musical analysis.
+
+**Real-time Pipeline**: Audio input → Digital AGC → VQT analysis → Peak detection → Color mapping → Visualization
+
+**Serial Protocol Format**: For hardware LED controllers: `0xFF <num_triples> <r1> <g1> <b1> <r2> <g2> <b2> ...`
+LED values are in range [0x00; 0xFE], with 0xFF as the marker byte.
+
+## Cargo xtask Build System
+
+PitchVis uses a unified, type-safe build automation system implemented as a Rust crate. This replaces older shell scripts and provides a consistent, cross-platform command interface for all build operations.
+
+### Why xtask?
+
+- **Type-safe**: Commands are checked by the Rust compiler
+- **Cross-platform**: Works on Linux, macOS, and Windows
+- **Discoverable**: Built-in help via `cargo xtask --help`
+- **Unified**: Single interface for all platforms (Desktop, WASM, Android)
+- **Clear errors**: Better error messages than shell scripts
+
+### Available Commands
+
+#### Build Command
+
+```bash
+cargo xtask build <target> [options]
+```
+
+**Desktop**:
+```bash
+cargo xtask build desktop  # Always builds in release mode (Bevy recommendation)
+```
+- Always uses `--release` profile for optimal performance
+- Does NOT include development features (dynamic_linking, file_watcher)
+- Use for production builds
+
+**WASM/Web**:
+```bash
+cargo xtask build wasm              # Development build
+cargo xtask build wasm --release    # Production build (optimized for size)
+cargo xtask build wasm --rust-only  # Build Rust only, skip npm
+```
+- Automatically installs npm dependencies
+- Runs wasm-pack and webpack
+- Output to `pitchvis_viewer/wasm/dist/`
+
+**Android**:
+```bash
+cargo xtask build android              # Debug APK
+cargo xtask build android --release    # Release AAB (Android App Bundle)
+cargo xtask build android --skip-setup # Skip asset/library copying
+```
+- Automatically copies native libraries (libc++_shared.so)
+- Copies shader assets to Android project
+- Builds with cargo-ndk for arm64-v8a architecture
+- Uses Gradle for final APK/AAB packaging
+
+#### Run Command
+
+```bash
+cargo xtask run [-- args...]
+```
+
+Runs the desktop viewer optimized for **fast development iteration**:
+- Always uses `--release` mode (per Bevy recommendations)
+- Enables `bevy/dynamic_linking` for faster compile times
+- Enables `bevy/file_watcher` for hot reload of assets
+- Equivalent to: `cargo run --release --features bevy/dynamic_linking,bevy/file_watcher --bin pitchvis`
+
+**Pass custom arguments**:
+```bash
+cargo xtask run -- --your-custom-args
+```
+
+**Set logging level**:
+```bash
+RUST_LOG=debug cargo xtask run
+RUST_LOG=warn cargo xtask run
+```
+
+#### Clean Command
+
+```bash
+cargo xtask clean [target]
+```
+
+Clean build artifacts for specific targets or all:
+```bash
+cargo xtask clean desktop   # Clean desktop builds
+cargo xtask clean wasm      # Clean WASM builds and node_modules
+cargo xtask clean android   # Clean Android builds with Gradle
+cargo xtask clean all       # Clean everything (default)
+```
+
+### Platform-Specific Notes
+
+#### Desktop
+
+**Development**: Use `cargo xtask run` for fastest iteration
+- Compiles in release mode but with dynamic linking enabled
+- File watcher enables hot reloading of shaders and assets
+- Typical rebuild time: ~3-10 seconds (depending on changes)
+
+**Production**: Use `cargo xtask build desktop`
+- Full release optimization without dev features
+- Binary located at: `target/release/pitchvis`
+
+**Why always release mode?**
+Bevy (the game engine used) is significantly slower in debug mode. Even for development, release mode with dynamic linking provides the best experience.
+
+#### WASM/Web
+
+**Prerequisites**:
+- Node.js and npm
+- wasm-pack: `cargo install wasm-pack`
+
+**Build process**:
+1. Installs npm dependencies (if needed)
+2. Compiles Rust to WebAssembly
+3. Bundles with webpack to `dist/`
+
+**Development workflow**:
+```bash
+cargo xtask build wasm
+cd pitchvis_viewer/wasm
+npm run serve  # Starts local server with live reload
+```
+
+**Production deployment**:
+```bash
+cargo xtask build wasm --release
+# Deploy contents of pitchvis_viewer/wasm/dist/
+```
+
+#### Android
+
+**Prerequisites**:
+- Android SDK (set `ANDROID_SDK_ROOT` or `ANDROID_HOME`)
+- Android NDK (set `ANDROID_NDK_ROOT`)
+- cargo-ndk: `cargo install cargo-ndk`
+
+**Build process**:
+1. Copies native libraries from NDK
+2. Copies shader assets to Android project
+3. Builds Rust library with cargo-ndk
+4. Packages with Gradle
+
+**Installation**:
+Debug builds are automatically installed to connected device.
+
+**Output locations**:
+- Debug APK: `android/app/build/outputs/apk/debug/app-debug.apk`
+- Release AAB: `android/app/build/outputs/bundle/release/app-release.aab`
+
+### Common Workflows
+
+**Quick development session**:
+```bash
+cargo xtask run
+# Make changes, Ctrl+C to stop, run again
+```
+
+**Test all platforms**:
+```bash
+cargo xtask build desktop
+cargo xtask build wasm
+cargo xtask build android
+```
+
+**Clean rebuild**:
+```bash
+cargo xtask clean all
+cargo xtask build desktop
+```
+
+**WASM development with live server**:
+```bash
+cargo xtask build wasm
+cd pitchvis_viewer/wasm
+npm run serve
+# Edit code, rebuild with cargo xtask build wasm in another terminal
+```
+
+### Getting Help
+
+All commands have built-in help:
+```bash
+cargo xtask --help
+cargo xtask build --help
+cargo xtask run --help
+cargo xtask clean --help
+```
+
+### Implementation
+
+The xtask system is located in `/xtask/` and uses:
+- **anyhow**: Error handling
+- **clap**: CLI argument parsing
+
+All build logic is in Rust, making it type-safe and cross-platform.
 
 ## Code Conventions
 
@@ -194,6 +425,8 @@ fn android_only() { }
 cargo test --workspace
 ```
 
+Tests are primarily in `pitchvis_analysis` for VQT accuracy validation.
+
 ### Manual Testing
 
 1. Run the viewer: `cargo run --features bevy/dynamic_linking --bin pitchvis`
@@ -288,6 +521,8 @@ When in debugging mode (press Space or click to toggle), additional analysis vis
 
 ## Build Profiles
 
+The workspace defines several optimized build profiles:
+
 ```toml
 [profile.dev]
 opt-level = 1  # Workspace: Fast compilation, basic optimization
@@ -303,7 +538,17 @@ strip = true   # Remove debug symbols
 opt-level = 'z'  # Optimize for binary size
 lto = "thin"
 panic = "abort"
+
+[profile.non-web-release]
+# Performance-optimized for desktop/mobile
 ```
+
+## Training Data
+
+The project includes:
+- **TinySOL Dataset**: 2,913 classical instrument samples for ML training
+- **Large MIDI Collection**: Thousands of MIDI files in `pitchvis_train/midi/`
+- **SoundFont Integration**: Multiple .sf2/.sf3 files for realistic synthesis
 
 ## Debugging
 
@@ -385,6 +630,13 @@ Requires PyTorch (`tch` crate) and model file (`model.pt`).
 - Settings stored in app data directory
 - Lifecycle managed by `android-activity` crate
 
+## Architecture Notes
+
+- Uses Bevy ECS for the main visualization application
+- Cross-platform audio via CPAL (desktop) and Web Audio API (WASM)
+- Shared analysis crate ensures consistent pitch detection across all platforms
+- Modular design allows mixing and matching components for different deployment scenarios
+
 ## Contributing Guidelines
 
 When making changes:
@@ -400,21 +652,26 @@ When making changes:
 
 ```bash
 # Development
-cargo run --features bevy/dynamic_linking --bin pitchvis
-cargo test --workspace
-cargo clippy --workspace
-cargo fmt --all
+cargo xtask run                # Run with dev features (recommended)
+cargo test --workspace         # Run tests
+cargo clippy --workspace       # Lint code
+cargo fmt --all                # Format code
 
-# Release builds
-cargo build --release --bin pitchvis
-npm run build  # WASM
+# Production builds
+cargo xtask build desktop      # Desktop release
+cargo xtask build wasm --release  # WASM release
+cargo xtask build android --release  # Android release
 
 # Clean builds
-cargo clean
-rm -rf dist/  # WASM output
+cargo xtask clean all          # Clean all targets
+cargo xtask clean desktop      # Clean desktop only
 
 # Documentation
 cargo doc --open --no-deps
+
+# Direct cargo commands (if not using xtask)
+cargo run --release --features bevy/dynamic_linking,bevy/file_watcher --bin pitchvis
+cargo build --release --bin pitchvis
 ```
 
 ## Resources

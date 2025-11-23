@@ -19,6 +19,9 @@ PitchVis uses a unified build system powered by `cargo xtask`.
 # Run desktop viewer (development mode with fast iteration)
 cargo xtask run
 
+# Build desktop for production (always in release mode)
+cargo xtask build desktop
+
 # Build for WASM/web
 cargo xtask build wasm
 
