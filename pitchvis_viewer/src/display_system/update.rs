@@ -1257,7 +1257,6 @@ pub fn update_spectrogram_system(
     let write_idx = spectrogram_res.write_index;
 
     use super::SpectrogramMode;
-    use crate::app::SettingsState;
 
     match settings.spectrogram_mode {
         SpectrogramMode::VQT => {

@@ -2415,7 +2415,7 @@ pub fn create_persistent_settings(
             visuals_mode: display_system::VisualsMode::Full,
             fps_limit: Some(default_fps),
             vqt_smoothing_mode: display_system::VQTSmoothingMode::Default,
-            spectrogram_mode: display_system::SpectrogramMode::VQT,
+            spectrogram_mode: display_system::SpectrogramMode::Peaks,
             enable_vibrato: false,
             enable_attack_detection: false,
             enable_glissando: false,

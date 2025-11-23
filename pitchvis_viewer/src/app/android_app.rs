@@ -279,7 +279,8 @@ fn main() -> AppExit {
         );
 
     let vqt_parameters: VqtParameters = VqtParameters::default();
-    let vqt = pitchvis_analysis::vqt::Vqt::new(&vqt_parameters);
+    let vqt = pitchvis_analysis::vqt::Vqt::new(&vqt_parameters)
+        .expect("Failed to create VQT with default parameters");
 
     // Android-specific: Setup Oboe audio stream with custom callback
     let mut ring_buffer = pitchvis_audio::RingBuffer {
