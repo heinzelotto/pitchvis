@@ -18,12 +18,8 @@ enum Commands {
         #[command(subcommand)]
         target: BuildTarget,
     },
-    /// Run the project (desktop only)
+    /// Run the project (desktop only, optimized for development with fast iteration)
     Run {
-        /// Build profile (dev uses dynamic linking for faster iteration)
-        #[arg(short, long, default_value = "dev")]
-        profile: Profile,
-
         /// Extra arguments to pass to the binary
         #[arg(last = true)]
         args: Vec<String>,
@@ -38,12 +34,11 @@ enum Commands {
 
 #[derive(Subcommand)]
 enum BuildTarget {
-    /// Build for desktop (native)
+    /// Build for desktop (native) - always builds in release mode per Bevy recommendations
     Desktop {
-        /// Build in release mode
-        #[arg(short, long)]
+        /// Build in release mode (always enabled for desktop builds)
+        #[arg(short, long, hide = true)]
         release: bool,
-        // TODO: always build in release, but toggle `--features bevy/dynamic_linking,bevy/file_watcher`
     },
     /// Build for WASM/web
     Wasm {
@@ -68,12 +63,6 @@ enum BuildTarget {
 }
 
 #[derive(Clone, ValueEnum)]
-enum Profile {
-    Dev,
-    Release,
-}
-
-#[derive(Clone, ValueEnum)]
 enum CleanTarget {
     Desktop,
     Wasm,
@@ -86,7 +75,7 @@ fn main() -> Result<()> {
 
     match cli.command {
         Commands::Build { target } => build(target)?,
-        Commands::Run { profile, args } => run(profile, args)?,
+        Commands::Run { args } => run(args)?,
         Commands::Clean { target } => clean(target.unwrap_or(CleanTarget::All))?,
     }
 
@@ -105,23 +94,18 @@ fn build(target: BuildTarget) -> Result<()> {
     Ok(())
 }
 
-fn build_desktop(release: bool) -> Result<()> {
+fn build_desktop(_release: bool) -> Result<()> {
     println!("🔨 Building pitchvis for desktop...");
 
     let viewer_dir = project_root().join("pitchvis_viewer");
 
+    // Desktop always builds in release mode per Bevy recommendations
     let mut cmd = Command::new("cargo");
     cmd.current_dir(&viewer_dir)
         .arg("build")
         .arg("--bin")
-        .arg("pitchvis");
-
-    if release {
-        cmd.arg("--release");
-    } else {
-        // Use dynamic linking for faster development builds
-        cmd.arg("--features").arg("bevy/dynamic_linking");
-    }
+        .arg("pitchvis")
+        .arg("--release");
 
     let status = cmd.status().context("Failed to execute cargo build")?;
 
@@ -129,8 +113,7 @@ fn build_desktop(release: bool) -> Result<()> {
         anyhow::bail!("Build failed");
     }
 
-    let profile = if release { "release" } else { "debug" };
-    let binary_path = viewer_dir.join(format!("../target/{}/pitchvis", profile));
+    let binary_path = viewer_dir.join("../target/release/pitchvis");
 
     println!("✅ Build complete!");
     println!("   Binary: {}", binary_path.display());
@@ -305,34 +288,24 @@ fn build_android(release: bool, skip_setup: bool) -> Result<()> {
     Ok(())
 }
 
-fn run(profile: Profile, extra_args: Vec<String>) -> Result<()> {
+fn run(extra_args: Vec<String>) -> Result<()> {
     println!("🚀 Running pitchvis...");
 
     let viewer_dir = project_root().join("pitchvis_viewer");
 
+    // Run in release mode with dev features for fast iteration
+    // (dynamic_linking speeds up compile times, file_watcher enables hot reload)
     let mut cmd = Command::new("cargo");
     cmd.current_dir(&viewer_dir)
         .arg("run")
+        .arg("--release")
+        .arg("--features")
+        .arg("bevy/dynamic_linking,bevy/file_watcher")
         .arg("--bin")
         .arg("pitchvis");
 
-    match profile {
-        Profile::Dev => {
-            // Use dynamic linking for faster iteration
-            cmd.arg("--features").arg("bevy/dynamic_linking");
-        }
-        Profile::Release => {
-            cmd.arg("--release");
-        }
-    }
-
     if !extra_args.is_empty() {
         cmd.arg("--").args(&extra_args);
-    }
-
-    // Set default log level
-    if std::env::var("RUST_LOG").is_err() {
-        cmd.env("RUST_LOG", "error,pitchvis_analysis=debug");
     }
 
     let status = cmd.status().context("Failed to execute cargo run")?;
