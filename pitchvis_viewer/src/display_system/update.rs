@@ -484,7 +484,7 @@ fn update_bloom(
     settings_state: &SettingsState,
 ) -> Result<()> {
     if let (_, Some(mut bloom_settings), _) = camera.single_mut()? {
-        if settings_state.visuals_mode == VisualsMode::Performance {
+        if !settings_state.enable_bloom || settings_state.visuals_mode == VisualsMode::Performance {
             bloom_settings.intensity = 0.0;
             return Ok(());
         }

@@ -48,6 +48,8 @@ pub struct SettingsState {
     pub enable_harmonic_lines: bool,
     #[serde(default = "default_false")]
     pub enable_root_note_tinting: bool,
+    #[serde(default = "default_true")]
+    pub enable_bloom: bool,
 }
 
 fn default_false() -> bool {
@@ -1635,6 +1637,7 @@ pub enum ButtonAction {
     ToggleChordRecognition,
     ToggleHarmonicLines,
     ToggleRootNoteTinting,
+    ToggleBloom,
 }
 
 #[derive(Component)]
@@ -1960,6 +1963,29 @@ pub fn setup_feature_toggle_buttons(
                     TextColor(Color::WHITE),
                     text_font.clone(),
                 ));
+
+            // Bloom toggle
+            let (bg_color, border_color) = button_colors(settings.enable_bloom);
+            parent
+                .spawn((
+                    Button,
+                    Node {
+                        ..button_node.clone()
+                    },
+                    bg_color,
+                    border_color,
+                    BorderRadius::MAX,
+                    ButtonAction::ToggleBloom,
+                ))
+                .insert(ConsumesPressEvents)
+                .with_child((
+                    Text::new(format!(
+                        "Bloom: {}",
+                        if settings.enable_bloom { "On" } else { "Off" }
+                    )),
+                    TextColor(Color::WHITE),
+                    text_font.clone(),
+                ));
         });
 }
 
@@ -2141,6 +2167,23 @@ pub fn update_button_system(
                     update_toggle_button_colors(
                         entity,
                         settings.enable_root_note_tinting,
+                        &mut bg_color_query,
+                        &mut border_color_query,
+                    );
+                }
+                ButtonAction::ToggleBloom => {
+                    settings
+                        .update(|settings| {
+                            settings.enable_bloom = !settings.enable_bloom;
+                        })
+                        .expect("failed to update settings");
+                    **text = format!(
+                        "Bloom: {}",
+                        if settings.enable_bloom { "On" } else { "Off" }
+                    );
+                    update_toggle_button_colors(
+                        entity,
+                        settings.enable_bloom,
                         &mut bg_color_query,
                         &mut border_color_query,
                     );
@@ -2422,6 +2465,7 @@ pub fn create_persistent_settings(
             enable_chord_recognition: true,
             enable_harmonic_lines: false,
             enable_root_note_tinting: false,
+            enable_bloom: true,
         })
         .revertible(true)
         .revert_to_default_on_deserialization_errors(true)
