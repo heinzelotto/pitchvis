@@ -1,3 +1,26 @@
-/target
+target/
 /.vscode
 /TinySOL*
+
+# build artifacts and IDE state
+pitchvis_viewer/android/build/
+pitchvis_viewer/android/CsoundAndroid/build/
+pitchvis_viewer/android/app/.idea/
+pitchvis_wasm_kiss3d/dist/
+pitchvis_wasm_kiss3d/web-release/
+pitchvis_viewer/wasm/wasm/
+cargo-timing-*.html
+
+# profiling output
+perf.data*
+flamegraph.svg
+
+# large binary data (soundfonts, models, audio)
+*.sf2
+*.sf3
+*.npy
+*.pt
+*.wav
+
+# local secrets
+keystore.properties
