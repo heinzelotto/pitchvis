@@ -38,6 +38,8 @@ pub struct SettingsState {
     pub spectrogram_mode: display_system::SpectrogramMode,
     #[serde(default = "default_true")]
     pub enable_bloom: bool,
+    #[serde(default)]
+    pub enable_analysis_config: bool,
 }
 
 fn default_true() -> bool {
@@ -829,7 +831,9 @@ pub fn debug_text_showhide(
     settings: Res<Persistent<SettingsState>>,
 ) -> Result<()> {
     let mut vis = q.single_mut()?;
-    if settings.display_mode == display_system::DisplayMode::Debugging {
+    if settings.display_mode == display_system::DisplayMode::Debugging
+        && settings.enable_analysis_config
+    {
         *vis = Visibility::Visible;
     } else {
         *vis = Visibility::Hidden;
@@ -1386,6 +1390,7 @@ pub enum ButtonAction {
     FpsLimit,
     VQTSmoothing,
     ToggleBloom,
+    ToggleAnalysisConfig,
 }
 
 #[derive(Component)]
@@ -1576,6 +1581,33 @@ pub fn setup_feature_toggle_buttons(
                     TextColor(Color::WHITE),
                     text_font.clone(),
                 ));
+
+            // Analysis Config toggle
+            let (bg_color, border_color) = button_colors(settings.enable_analysis_config);
+            parent
+                .spawn((
+                    Button,
+                    Node {
+                        ..button_node.clone()
+                    },
+                    bg_color,
+                    border_color,
+                    BorderRadius::MAX,
+                    ButtonAction::ToggleAnalysisConfig,
+                ))
+                .insert(ConsumesPressEvents)
+                .with_child((
+                    Text::new(format!(
+                        "Analysis Config: {}",
+                        if settings.enable_analysis_config {
+                            "On"
+                        } else {
+                            "Off"
+                        }
+                    )),
+                    TextColor(Color::WHITE),
+                    text_font.clone(),
+                ));
         });
 }
 
@@ -1652,6 +1684,27 @@ pub fn update_button_system(
                     update_toggle_button_colors(
                         entity,
                         settings.enable_bloom,
+                        &mut bg_color_query,
+                        &mut border_color_query,
+                    );
+                }
+                ButtonAction::ToggleAnalysisConfig => {
+                    settings
+                        .update(|settings| {
+                            settings.enable_analysis_config = !settings.enable_analysis_config;
+                        })
+                        .expect("failed to update settings");
+                    **text = format!(
+                        "Analysis Config: {}",
+                        if settings.enable_analysis_config {
+                            "On"
+                        } else {
+                            "Off"
+                        }
+                    );
+                    update_toggle_button_colors(
+                        entity,
+                        settings.enable_analysis_config,
                         &mut bg_color_query,
                         &mut border_color_query,
                     );
@@ -1914,6 +1967,7 @@ pub fn create_persistent_settings(
             vqt_smoothing_mode: display_system::VQTSmoothingMode::Default,
             spectrogram_mode: display_system::SpectrogramMode::Peaks,
             enable_bloom: true,
+            enable_analysis_config: false,
         })
         .revertible(true)
         .revert_to_default_on_deserialization_errors(true)
