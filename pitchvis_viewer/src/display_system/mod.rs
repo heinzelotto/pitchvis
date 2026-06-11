@@ -37,12 +37,6 @@ pub struct Spectrum;
 pub struct PitchNameText;
 
 #[derive(Component)]
-pub struct ChordDisplay;
-
-#[derive(Component)]
-pub struct RootNoteSlice;
-
-#[derive(Component)]
 pub struct SpectrogramDisplay;
 
 #[derive(Component)]
@@ -196,7 +190,6 @@ pub fn update_display_to_system(
         Query<(&PitchNameText, &mut Visibility)>,
         Query<(&mut Visibility, &Mesh2d, &mut Transform), With<Spectrum>>,
         Query<&mut Visibility, With<SpiderNetSegment>>,
-        Query<(&mut Text2d, &mut TextColor, &mut Visibility), With<ChordDisplay>>,
     )>,
     ResMut<Assets<ColorMaterial>>,
     ResMut<Assets<NoisyColorMaterial>>,
@@ -207,18 +200,6 @@ pub fn update_display_to_system(
     Res<Time>,
     Query<(&mut Camera, Option<&mut Bloom>, Ref<Projection>)>,
     Query<
-        (&mut Visibility, &Mesh2d, &mut MeshMaterial2d<ColorMaterial>),
-        (
-            With<RootNoteSlice>,
-            Without<PitchBall>,
-            Without<BassCylinder>,
-            Without<PitchNameText>,
-            Without<Spectrum>,
-            Without<SpiderNetSegment>,
-            Without<ChordDisplay>,
-        ),
-    >,
-    Query<
         (&mut Visibility, &Mesh2d, &mut Transform),
         (
             With<CalmnessHistogram>,
@@ -227,8 +208,6 @@ pub fn update_display_to_system(
             Without<PitchNameText>,
             Without<Spectrum>,
             Without<SpiderNetSegment>,
-            Without<ChordDisplay>,
-            Without<RootNoteSlice>,
         ),
     >,
 ) -> Result<()> {
@@ -248,7 +227,6 @@ pub fn update_display_to_system(
         Query<(&PitchNameText, &mut Visibility)>,
         Query<(&mut Visibility, &Mesh2d, &mut Transform), With<Spectrum>>,
         Query<&mut Visibility, With<SpiderNetSegment>>,
-        Query<(&mut Text2d, &mut TextColor, &mut Visibility), With<ChordDisplay>>,
     )>,
           color_materials: ResMut<Assets<ColorMaterial>>,
           noisy_color_materials: ResMut<Assets<NoisyColorMaterial>>,
@@ -258,18 +236,6 @@ pub fn update_display_to_system(
           settings_state: Res<Persistent<SettingsState>>,
           run_time: Res<Time>,
           camera: Query<(&mut Camera, Option<&mut Bloom>, Ref<Projection>)>,
-          root_slice: Query<
-        (&mut Visibility, &Mesh2d, &mut MeshMaterial2d<ColorMaterial>),
-        (
-            With<RootNoteSlice>,
-            Without<PitchBall>,
-            Without<BassCylinder>,
-            Without<PitchNameText>,
-            Without<Spectrum>,
-            Without<SpiderNetSegment>,
-            Without<ChordDisplay>,
-        ),
-    >,
           histogram: Query<
         (&mut Visibility, &Mesh2d, &mut Transform),
         (
@@ -279,8 +245,6 @@ pub fn update_display_to_system(
             Without<PitchNameText>,
             Without<Spectrum>,
             Without<SpiderNetSegment>,
-            Without<ChordDisplay>,
-            Without<RootNoteSlice>,
         ),
     >| {
         update::update_display(
@@ -294,7 +258,6 @@ pub fn update_display_to_system(
             settings_state,
             run_time,
             camera,
-            root_slice,
             histogram,
         )?;
 

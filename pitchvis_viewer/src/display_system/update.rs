@@ -1,10 +1,10 @@
 use super::{
     material::{NoisyColorMaterial, SpectrogramMaterial},
     util::bin_to_spiral,
-    BassCylinder, CalmnessHistogram, ChordDisplay, ChromaBox, CylinderEntityListResource,
-    DisplayMode, LineList, PitchBall, PitchNameText, RootNoteSlice, SceneCalmnessGraph,
-    SceneCalmnessHistory, SpectrogramDisplay, SpectrogramResource, Spectrum, SpiderNetSegment,
-    VisualsMode, CLEAR_COLOR_GALAXY, CLEAR_COLOR_NEUTRAL,
+    BassCylinder, CalmnessHistogram, ChromaBox, CylinderEntityListResource, DisplayMode, LineList,
+    PitchBall, PitchNameText, SceneCalmnessGraph, SceneCalmnessHistory, SpectrogramDisplay,
+    SpectrogramResource, Spectrum, SpiderNetSegment, VisualsMode, CLEAR_COLOR_GALAXY,
+    CLEAR_COLOR_NEUTRAL,
 };
 use bevy::{post_process::bloom::Bloom, prelude::*};
 use bevy_persistent::Persistent;
@@ -52,7 +52,6 @@ pub fn update_display(
         Query<(&PitchNameText, &mut Visibility)>,
         Query<(&mut Visibility, &Mesh2d, &mut Transform), With<Spectrum>>,
         Query<&mut Visibility, With<SpiderNetSegment>>,
-        Query<(&mut Text2d, &mut TextColor, &mut Visibility), With<ChordDisplay>>,
     )>,
     mut color_materials: ResMut<Assets<ColorMaterial>>,
     mut noisy_color_materials: ResMut<Assets<NoisyColorMaterial>>,
@@ -66,18 +65,6 @@ pub fn update_display(
         Option<&mut Bloom>,
         Ref<Projection>, // Ref because we want to check `is_changed` later
     )>,
-    root_slice: Query<
-        (&mut Visibility, &Mesh2d, &mut MeshMaterial2d<ColorMaterial>),
-        (
-            With<RootNoteSlice>,
-            Without<PitchBall>,
-            Without<BassCylinder>,
-            Without<PitchNameText>,
-            Without<Spectrum>,
-            Without<SpiderNetSegment>,
-            Without<ChordDisplay>,
-        ),
-    >,
     histogram: Query<
         (&mut Visibility, &Mesh2d, &mut Transform),
         (
@@ -87,8 +74,6 @@ pub fn update_display(
             Without<PitchNameText>,
             Without<Spectrum>,
             Without<SpiderNetSegment>,
-            Without<ChordDisplay>,
-            Without<RootNoteSlice>,
         ),
     >,
 ) -> Result<()> {
@@ -144,28 +129,6 @@ pub fn update_display(
     show_hide_spider_net(set.p4(), &settings_state);
 
     toggle_background(&mut camera, &settings_state, analysis_state)?;
-
-    if settings_state.enable_chord_recognition {
-        // Update chord display
-        let mut chord_display = set.p5();
-        update_chord_display(&mut chord_display, analysis_state, &settings_state);
-    } else {
-        let mut chord_display = set.p5();
-        if let Ok((_, _, mut visibility)) = chord_display.single_mut() {
-            *visibility = Visibility::Hidden;
-        }
-    }
-
-    // Update root note slice visualization
-    {
-        update_root_note_slice(
-            root_slice,
-            &mut meshes,
-            &mut color_materials,
-            analysis_state,
-            &settings_state,
-        );
-    }
 
     Ok(())
 }
@@ -813,8 +776,6 @@ pub fn update_calmness_histogram(
             Without<PitchNameText>,
             Without<Spectrum>,
             Without<SpiderNetSegment>,
-            Without<ChordDisplay>,
-            Without<RootNoteSlice>,
         ),
     >,
     camera: &Query<(&mut Camera, Option<&mut Bloom>, Ref<Projection>)>,
@@ -979,190 +940,9 @@ fn toggle_background(
         VisualsMode::Galaxy => CLEAR_COLOR_GALAXY,
     };
 
-    // Tint background based on detected chord root note
-    // if let Some(chord) = &analysis_state.detected_chord {
-    //     if chord.confidence > 0.5 {
-    //         // Get color for the root note
-    //         let root_color_rgb = COLORS[chord.root];
-    //         let tint_strength = 0.05; // Subtle tint
-
-    //         // Mix base color with root note color
-    //         let base = match base_color {
-    //             ClearColorConfig::Custom(c) => c,
-    //             _ => Color::srgb(0.23, 0.23, 0.25),
-    //         };
-
-    //         let base_srgba = base.to_srgba();
-    //         let tinted = Color::srgb(
-    //             base_srgba.red * (1.0 - tint_strength) + root_color_rgb[0] * tint_strength,
-    //             base_srgba.green * (1.0 - tint_strength) + root_color_rgb[1] * tint_strength,
-    //             base_srgba.blue * (1.0 - tint_strength) + root_color_rgb[2] * tint_strength,
-    //         );
-
-    //         cam.clear_color = ClearColorConfig::Custom(tinted);
-    //     } else {
-    //         cam.clear_color = base_color;
-    //     }
-    // } else {
     cam.clear_color = base_color;
-    // }
 
     Ok(())
-}
-
-fn update_chord_display(
-    chord_display_query: &mut Query<
-        (&mut Text2d, &mut TextColor, &mut Visibility),
-        With<ChordDisplay>,
-    >,
-    analysis_state: &AnalysisState,
-    settings_state: &Res<Persistent<SettingsState>>,
-) {
-    // Only show in Full and Performance modes
-    let should_show_visuals = matches!(
-        settings_state.visuals_mode,
-        VisualsMode::Full | VisualsMode::Performance
-    );
-
-    // Update chord display
-    if let Ok((mut text, mut text_color, mut visibility)) = chord_display_query.single_mut() {
-        if settings_state.enable_chord_recognition {
-            if let Some(chord) = &analysis_state.detected_chord {
-                if should_show_visuals && chord.confidence > 0.5 {
-                    **text = chord.name();
-
-                    // Set color based on root note, alpha based on confidence
-                    let root_color = pitchvis_colors::COLORS[chord.root];
-                    // Map confidence [0.5, 1.0] to alpha [0.4, 1.0] for visibility
-                    let alpha = ((chord.confidence - 0.5) / 0.5 * 0.6 + 0.4).clamp(0.4, 1.0);
-                    **text_color = Color::srgba(root_color[0], root_color[1], root_color[2], alpha);
-
-                    *visibility = Visibility::Visible;
-                } else {
-                    *visibility = Visibility::Hidden;
-                }
-            } else {
-                *visibility = Visibility::Hidden;
-            }
-        } else {
-            *visibility = Visibility::Hidden;
-        }
-    }
-}
-
-#[allow(clippy::type_complexity)]
-fn update_root_note_slice(
-    mut root_slice_query: Query<
-        (&mut Visibility, &Mesh2d, &mut MeshMaterial2d<ColorMaterial>),
-        (
-            With<RootNoteSlice>,
-            Without<PitchBall>,
-            Without<BassCylinder>,
-            Without<PitchNameText>,
-            Without<Spectrum>,
-            Without<SpiderNetSegment>,
-            Without<ChordDisplay>,
-        ),
-    >,
-    meshes: &mut ResMut<Assets<Mesh>>,
-    color_materials: &mut ResMut<Assets<ColorMaterial>>,
-    analysis_state: &AnalysisState,
-    settings_state: &Res<Persistent<SettingsState>>,
-) {
-    if let Ok((mut visibility, mesh_handle, material_handle)) = root_slice_query.single_mut() {
-        // Check if feature is enabled and chord is detected
-        if !settings_state.enable_root_note_tinting {
-            *visibility = Visibility::Hidden;
-            return;
-        }
-
-        // TODO: make pizza slice be centered around actual precise bass note position and use color
-        // interpolation between pitch color and off-pitch gray.
-
-        if let Some(chord) = &analysis_state.detected_chord {
-            if chord.confidence > 0.5 {
-                // Get the root note color
-                let root_color_rgb = COLORS[chord.root];
-
-                // Calculate the angle for the root note
-                // Notes are arranged in a circle, starting from C at 12 o'clock (pi/2 radians)
-                // and going clockwise
-                let angle_per_note = std::f32::consts::PI * 2.0 / 12.0;
-                let root_angle = chord.root as f32 * angle_per_note * -1.0 + 3.0 * angle_per_note;
-
-                // Create a pizza slice that spans about 30 degrees (PI/6) on each side
-                let slice_width = std::f32::consts::PI / 6.0;
-                let start_angle = root_angle - slice_width / 2.0;
-                let end_angle = root_angle + slice_width / 2.0;
-
-                // Create the slice mesh - from center to outer radius
-                let outer_radius = 20.0; // Make it large enough to cover the entire view
-                let segments = 20; // Number of segments for smooth curve
-
-                let mut vertices = Vec::new();
-                let mut indices = Vec::new();
-
-                // Center point
-                vertices.push(([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], [0.5, 0.5]));
-
-                // Create arc vertices
-                for i in 0..=segments {
-                    let t = i as f32 / segments as f32;
-                    let angle = start_angle + t * (end_angle - start_angle);
-                    let x = angle.cos() * outer_radius;
-                    let y = angle.sin() * outer_radius;
-                    vertices.push(([x, y, 0.0], [0.0, 0.0, 1.0], [0.0, 0.0]));
-                }
-
-                // Create triangles
-                for i in 0..segments {
-                    indices.push(0); // Center
-                    indices.push((i + 1) as u32);
-                    indices.push((i + 2) as u32);
-                }
-
-                // Create the mesh
-                use bevy::asset::RenderAssetUsages;
-                use bevy::mesh::{Indices, PrimitiveTopology};
-
-                let mut mesh = Mesh::new(
-                    PrimitiveTopology::TriangleList,
-                    RenderAssetUsages::default(),
-                );
-
-                let positions: Vec<_> = vertices.iter().map(|(p, _, _)| *p).collect();
-                let normals: Vec<_> = vertices.iter().map(|(_, n, _)| *n).collect();
-                let uvs: Vec<_> = vertices.iter().map(|(_, _, uv)| *uv).collect();
-
-                mesh.insert_indices(Indices::U32(indices));
-                mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
-                mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
-                mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
-
-                // Update the mesh
-                if let Some(mesh_asset) = meshes.get_mut(&mesh_handle.0) {
-                    *mesh_asset = mesh;
-                }
-
-                // Update the color with alpha based on confidence
-                let alpha = (chord.confidence * chord.confidence - 0.5) * 0.3; // Scale 0.5-1.0 confidence to 0.0-0.15 alpha
-                if let Some(material) = color_materials.get_mut(&material_handle.0) {
-                    material.color = Color::srgba(
-                        root_color_rgb[0],
-                        root_color_rgb[1],
-                        root_color_rgb[2],
-                        alpha.clamp(0.0, 0.15),
-                    );
-                }
-
-                *visibility = Visibility::Visible;
-            } else {
-                *visibility = Visibility::Hidden;
-            }
-        } else {
-            *visibility = Visibility::Hidden;
-        }
-    }
 }
 
 // #[derive(PartialEq)]

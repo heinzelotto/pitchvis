@@ -37,15 +37,7 @@ pub struct SettingsState {
     #[serde(default = "default_spectrogram_mode")]
     pub spectrogram_mode: display_system::SpectrogramMode,
     #[serde(default = "default_true")]
-    pub enable_chord_recognition: bool,
-    #[serde(default = "default_false")]
-    pub enable_root_note_tinting: bool,
-    #[serde(default = "default_true")]
     pub enable_bloom: bool,
-}
-
-fn default_false() -> bool {
-    false
 }
 
 fn default_true() -> bool {
@@ -389,16 +381,6 @@ pub fn setup_analysis_text(mut commands: Commands) {
                 TextColor(Color::WHITE),
                 text_font.clone(),
             ));
-            builder.spawn((
-                TextSpan::new("\nChord: "),
-                TextColor(Color::WHITE),
-                text_font.clone(),
-            ));
-            builder.spawn((
-                TextSpan::new("None"),
-                TextColor(Color::WHITE),
-                text_font.clone(),
-            ));
         });
 }
 
@@ -427,42 +409,6 @@ pub fn update_analysis_text_system(
     } else {
         Color::srgb(1.0, 0.0, 0.0)
     });
-
-    // Detected chord
-    let detector_name = match analysis.0.params.chord_detector_type {
-        pitchvis_analysis::analysis::ChordDetectorType::Builtin => "Built-in",
-        pitchvis_analysis::analysis::ChordDetectorType::External => "External",
-    };
-
-    if let Some(ref chord) = analysis.0.detected_chord {
-        *writer.text(entity, 4) = format!(
-            "{} ({}) [conf:{:.2} plaus:{:.2}]",
-            chord.name(),
-            detector_name,
-            chord.confidence,
-            chord.plausibility
-        );
-
-        // Color based on confidence: green (high) → yellow (medium) → red (low)
-        // Map confidence [0.0, 1.0] to color gradient
-        let color = if chord.confidence > 0.8 {
-            // High confidence: bright green
-            Color::srgb(0.3, 1.0, 0.3)
-        } else if chord.confidence > 0.6 {
-            // Medium-high confidence: yellow-green
-            Color::srgb(0.7, 1.0, 0.3)
-        } else if chord.confidence > 0.4 {
-            // Medium confidence: yellow
-            Color::srgb(1.0, 1.0, 0.3)
-        } else {
-            // Low confidence: orange-red
-            Color::srgb(1.0, 0.6, 0.3)
-        };
-        *writer.color(entity, 4) = TextColor(color);
-    } else {
-        *writer.text(entity, 4) = format!("None ({})", detector_name);
-        *writer.color(entity, 4) = TextColor(Color::srgb(0.6, 0.6, 0.6)); // Gray when no chord
-    }
 
     Ok(())
 }
@@ -519,18 +465,6 @@ pub fn setup_debug_text(mut commands: Commands) {
             builder.spawn((
                 TextSpan::new("=== AnalysisParameters ===\n"),
                 TextColor(Color::srgb(0.8, 0.8, 1.0)),
-                text_font.clone(),
-            ));
-
-            // chord_detector_type
-            builder.spawn((
-                TextSpan::new("[0] chord_detector: "),
-                TextColor(Color::WHITE),
-                text_font.clone(),
-            ));
-            builder.spawn((
-                TextSpan::new("N/A\n"),
-                TextColor(Color::srgb(0.9, 0.9, 0.9)),
                 text_font.clone(),
             ));
 
@@ -783,93 +717,87 @@ pub fn update_debug_text_system(
     let entity = query.single()?;
     let params = &analysis.0.params;
 
-    // chord_detector_type (index 4)
-    *writer.text(entity, 4) = match params.chord_detector_type {
-        pitchvis_analysis::analysis::ChordDetectorType::Builtin => "Builtin\n".to_string(),
-        pitchvis_analysis::analysis::ChordDetectorType::External => "External\n".to_string(),
-    };
-
-    // spectrogram_mode (index 6)
-    *writer.text(entity, 6) = match settings.spectrogram_mode {
+    // spectrogram_mode (index 4)
+    *writer.text(entity, 4) = match settings.spectrogram_mode {
         display_system::SpectrogramMode::VQT => "VQT\n".to_string(),
         display_system::SpectrogramMode::Peaks => "Peaks\n".to_string(),
     };
 
     // Single-digit parameters
-    // bassline_peak_config (index 8)
-    *writer.text(entity, 8) = format!(
+    // bassline_peak_config (index 6)
+    *writer.text(entity, 6) = format!(
         "  prom: {:.1}, height: {:.1}\n",
         params.bassline_peak_config.min_prominence, params.bassline_peak_config.min_height
     );
 
-    // highest_bassnote (index 10)
-    *writer.text(entity, 10) = format!("{}\n", params.highest_bassnote);
+    // highest_bassnote (index 8)
+    *writer.text(entity, 8) = format!("{}\n", params.highest_bassnote);
 
-    // vqt_smoothing_duration_base (index 12)
+    // vqt_smoothing_duration_base (index 10)
     let vqt_smooth_ms = params.vqt_smoothing_duration_base.as_millis();
-    *writer.text(entity, 12) = if vqt_smooth_ms > 0 {
+    *writer.text(entity, 10) = if vqt_smooth_ms > 0 {
         format!("{}ms\n", vqt_smooth_ms)
     } else {
         "None\n".to_string()
     };
 
-    // vqt_smoothing_calmness min/max (index 14)
-    *writer.text(entity, 14) = format!(
+    // vqt_smoothing_calmness min/max (index 12)
+    *writer.text(entity, 12) = format!(
         "{:.2} - {:.2}\n",
         params.vqt_smoothing_calmness_min, params.vqt_smoothing_calmness_max
     );
 
-    // note_calmness_smoothing_duration (index 16)
-    *writer.text(entity, 16) = format!(
+    // note_calmness_smoothing_duration (index 14)
+    *writer.text(entity, 14) = format!(
         "{}ms\n",
         params.note_calmness_smoothing_duration.as_millis()
     );
 
-    // scene_calmness_smoothing_duration (index 18)
-    *writer.text(entity, 18) = format!(
+    // scene_calmness_smoothing_duration (index 16)
+    *writer.text(entity, 16) = format!(
         "{}ms\n",
         params.scene_calmness_smoothing_duration.as_millis()
     );
 
-    // tuning_inaccuracy_smoothing_duration (index 20)
-    *writer.text(entity, 20) = format!(
+    // tuning_inaccuracy_smoothing_duration (index 18)
+    *writer.text(entity, 18) = format!(
         "{}ms\n",
         params.tuning_inaccuracy_smoothing_duration.as_millis()
     );
 
     // Two-digit parameters
-    // main_peak config (index 23)
-    *writer.text(entity, 23) = format!(
+    // main_peak config (index 21)
+    *writer.text(entity, 21) = format!(
         "p{:.1} h{:.1}\n",
         params.peak_config.min_prominence, params.peak_config.min_height
     );
 
-    // harmonic_threshold (index 25)
-    *writer.text(entity, 25) = format!("{:.2}\n", params.harmonic_threshold);
+    // harmonic_threshold (index 23)
+    *writer.text(entity, 23) = format!("{:.2}\n", params.harmonic_threshold);
 
-    // spectrogram_length (index 27)
-    *writer.text(entity, 27) = format!("{}\n", params.spectrogram_length);
+    // spectrogram_length (index 25)
+    *writer.text(entity, 25) = format!("{}\n", params.spectrogram_length);
 
     // VQT parameters
-    // Q (index 32)
-    *writer.text(entity, 32) = format!("{:.2}", vqt_params.parameters.quality);
+    // Q (index 30)
+    *writer.text(entity, 30) = format!("{:.2}", vqt_params.parameters.quality);
 
-    // gamma (index 34)
-    *writer.text(entity, 34) = format!("{:.2}\n", vqt_params.parameters.gamma);
+    // gamma (index 32)
+    *writer.text(entity, 32) = format!("{:.2}\n", vqt_params.parameters.gamma);
 
-    // sparsity (index 36)
-    *writer.text(entity, 36) = format!("{:.4}", vqt_params.parameters.sparsity_quantile);
+    // sparsity (index 34)
+    *writer.text(entity, 34) = format!("{:.4}", vqt_params.parameters.sparsity_quantile);
 
-    // n_fft (index 38)
-    *writer.text(entity, 38) = format!("{}\n", vqt_params.parameters.n_fft);
+    // n_fft (index 36)
+    *writer.text(entity, 36) = format!("{}\n", vqt_params.parameters.n_fft);
 
     // AnalysisState
-    // smoothed_scene_calmness (index 42)
+    // smoothed_scene_calmness (index 40)
     let scene_calmness = analysis.0.smoothed_scene_calmness.get();
-    *writer.text(entity, 42) = format!("{:.3}\n", scene_calmness);
+    *writer.text(entity, 40) = format!("{:.3}\n", scene_calmness);
 
     // Color code the calmness value
-    *writer.color(entity, 42) = TextColor(if scene_calmness > 0.7 {
+    *writer.color(entity, 40) = TextColor(if scene_calmness > 0.7 {
         Color::srgb(0.5, 0.8, 1.0) // Cyan for calm
     } else if scene_calmness > 0.3 {
         Color::srgb(1.0, 1.0, 0.5) // Yellow for medium
@@ -877,12 +805,12 @@ pub fn update_debug_text_system(
         Color::srgb(1.0, 0.5, 0.5) // Red for energetic
     });
 
-    // number of detected peaks (index 44)
+    // number of detected peaks (index 42)
     let num_peaks = analysis.0.peaks.len();
-    *writer.text(entity, 44) = format!("{}", num_peaks);
+    *writer.text(entity, 42) = format!("{}", num_peaks);
 
     // Color code based on number of peaks
-    *writer.color(entity, 44) = TextColor(if num_peaks == 0 {
+    *writer.color(entity, 42) = TextColor(if num_peaks == 0 {
         Color::srgb(0.5, 0.5, 0.5) // Gray for no peaks
     } else if num_peaks <= 3 {
         Color::srgb(0.5, 1.0, 0.5) // Green for few peaks
@@ -926,18 +854,6 @@ pub fn update_analysis_parameters_system(
 
     let dt = time.delta_secs();
     let params = &mut analysis.0.params;
-
-    // Check for toggle key (0) to switch chord detector type
-    if keycode.just_pressed(KeyCode::Digit0) {
-        params.chord_detector_type = match params.chord_detector_type {
-            pitchvis_analysis::analysis::ChordDetectorType::Builtin => {
-                pitchvis_analysis::analysis::ChordDetectorType::External
-            }
-            pitchvis_analysis::analysis::ChordDetectorType::External => {
-                pitchvis_analysis::analysis::ChordDetectorType::Builtin
-            }
-        };
-    }
 
     // Check for toggle key (S) to switch spectrogram mode
     if keycode.just_pressed(KeyCode::KeyS) {
@@ -1469,8 +1385,6 @@ pub enum ButtonAction {
     VisualsMode,
     FpsLimit,
     VQTSmoothing,
-    ToggleChordRecognition,
-    ToggleRootNoteTinting,
     ToggleBloom,
 }
 
@@ -1640,60 +1554,6 @@ pub fn setup_feature_toggle_buttons(
             Visibility::Visible,
         ))
         .with_children(|parent| {
-            // Chord Recognition toggle
-            let (bg_color, border_color) = button_colors(settings.enable_chord_recognition);
-            parent
-                .spawn((
-                    Button,
-                    Node {
-                        ..button_node.clone()
-                    },
-                    bg_color,
-                    border_color,
-                    BorderRadius::MAX,
-                    ButtonAction::ToggleChordRecognition,
-                ))
-                .insert(ConsumesPressEvents)
-                .with_child((
-                    Text::new(format!(
-                        "Chords: {}",
-                        if settings.enable_chord_recognition {
-                            "On"
-                        } else {
-                            "Off"
-                        }
-                    )),
-                    TextColor(Color::WHITE),
-                    text_font.clone(),
-                ));
-
-            // Root Note Tinting toggle
-            let (bg_color, border_color) = button_colors(settings.enable_root_note_tinting);
-            parent
-                .spawn((
-                    Button,
-                    Node {
-                        ..button_node.clone()
-                    },
-                    bg_color,
-                    border_color,
-                    BorderRadius::MAX,
-                    ButtonAction::ToggleRootNoteTinting,
-                ))
-                .insert(ConsumesPressEvents)
-                .with_child((
-                    Text::new(format!(
-                        "Root Tinting: {}",
-                        if settings.enable_root_note_tinting {
-                            "On"
-                        } else {
-                            "Off"
-                        }
-                    )),
-                    TextColor(Color::WHITE),
-                    text_font.clone(),
-                ));
-
             // Bloom toggle
             let (bg_color, border_color) = button_colors(settings.enable_bloom);
             parent
@@ -1777,48 +1637,6 @@ pub fn update_button_system(
                             display_system::VQTSmoothingMode::Default => "Default",
                             display_system::VQTSmoothingMode::Long => "Long",
                         }
-                    );
-                }
-                ButtonAction::ToggleChordRecognition => {
-                    settings
-                        .update(|settings| {
-                            settings.enable_chord_recognition = !settings.enable_chord_recognition;
-                        })
-                        .expect("failed to update settings");
-                    **text = format!(
-                        "Chords: {}",
-                        if settings.enable_chord_recognition {
-                            "On"
-                        } else {
-                            "Off"
-                        }
-                    );
-                    update_toggle_button_colors(
-                        entity,
-                        settings.enable_chord_recognition,
-                        &mut bg_color_query,
-                        &mut border_color_query,
-                    );
-                }
-                ButtonAction::ToggleRootNoteTinting => {
-                    settings
-                        .update(|settings| {
-                            settings.enable_root_note_tinting = !settings.enable_root_note_tinting;
-                        })
-                        .expect("failed to update settings");
-                    **text = format!(
-                        "Root Tinting: {}",
-                        if settings.enable_root_note_tinting {
-                            "On"
-                        } else {
-                            "Off"
-                        }
-                    );
-                    update_toggle_button_colors(
-                        entity,
-                        settings.enable_root_note_tinting,
-                        &mut bg_color_query,
-                        &mut border_color_query,
                     );
                 }
                 ButtonAction::ToggleBloom => {
@@ -1938,7 +1756,6 @@ pub fn user_input_system(
     mut tap_time: ResMut<ScreenLockTapTime>,
     active_touches: Res<ActiveTouches>,
     indicator_pressed: Res<ScreenLockIndicatorPressed>,
-    mut analysis: ResMut<AnalysisStateResource>,
     mut commands: Commands,
 ) {
     const LONG_PRESS_DURATION: f32 = 1.5;
@@ -2011,19 +1828,6 @@ pub fn user_input_system(
                 KeyCode::KeyL => {
                     // Ctrl+L or just L to toggle lock on desktop
                     lock_state.0 = !lock_state.0;
-                }
-                KeyCode::KeyC => {
-                    // Toggle chord detector type
-                    use pitchvis_analysis::analysis::ChordDetectorType;
-                    analysis.0.params.chord_detector_type =
-                        match analysis.0.params.chord_detector_type {
-                            ChordDetectorType::Builtin => ChordDetectorType::External,
-                            ChordDetectorType::External => ChordDetectorType::Builtin,
-                        };
-                    log::info!(
-                        "Toggled chord detector to: {:?}",
-                        analysis.0.params.chord_detector_type
-                    );
                 }
                 _ => {}
             }
@@ -2109,8 +1913,6 @@ pub fn create_persistent_settings(
             fps_limit: Some(default_fps),
             vqt_smoothing_mode: display_system::VQTSmoothingMode::Default,
             spectrogram_mode: display_system::SpectrogramMode::Peaks,
-            enable_chord_recognition: true,
-            enable_root_note_tinting: false,
             enable_bloom: true,
         })
         .revertible(true)

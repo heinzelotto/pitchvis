@@ -4,7 +4,7 @@ use super::{
     LineList, PitchBall, PitchNameText, Spectrum,
 };
 use super::{
-    CalmnessHistogram, ChromaBox, CylinderEntityListResource, RootNoteSlice, SceneCalmnessGraph,
+    CalmnessHistogram, ChromaBox, CylinderEntityListResource, SceneCalmnessGraph,
     SpectrogramDisplay, SpectrogramResource, SpiderNetSegment, CLEAR_COLOR_NEUTRAL,
 };
 use bevy::camera::ScalingMode;
@@ -73,11 +73,7 @@ pub fn setup_display(
 
     spawn_camera(&mut commands);
 
-    spawn_chord_display(&mut commands, &asset_server);
-
     spawn_pitch_names_text(&mut commands, range, asset_server);
-
-    spawn_root_note_slice(&mut commands, &mut meshes, &mut color_materials);
 
     spawn_spectrogram(
         &mut commands,
@@ -417,62 +413,6 @@ fn spawn_pitch_names_text(
             Visibility::Visible,
         ));
     }
-}
-
-fn spawn_chord_display(commands: &mut Commands, asset_server: &Res<AssetServer>) {
-    use super::ChordDisplay;
-
-    let font = asset_server.load("fonts/DejaVuSans.ttf");
-    let text_font = TextFont {
-        font,
-        font_size: 60.0,
-        ..Default::default()
-    };
-
-    commands.spawn((
-        ChordDisplay,
-        Text2d::new(""),
-        TextColor(Color::srgba(1.0, 1.0, 1.0, 0.8)),
-        text_font,
-        TextLayout::new_with_justify(Justify::Left),
-        // Position in bottom left: x=-10.5 (left), y=-6.5 (bottom with clearance)
-        Transform::from_xyz(-10.5, -6.5, 0.0).with_scale(vec3(0.02, 0.02, 1.0)),
-        Visibility::Hidden,
-    ));
-}
-
-fn spawn_root_note_slice(
-    commands: &mut Commands,
-    meshes: &mut ResMut<Assets<Mesh>>,
-    color_materials: &mut ResMut<Assets<ColorMaterial>>,
-) {
-    // Create a pizza slice mesh pointing from center outward
-    // The slice will be dynamically updated in the update system
-    // Start with an empty mesh
-    use bevy::asset::RenderAssetUsages;
-    use bevy::mesh::{Indices, PrimitiveTopology};
-
-    let mut mesh = Mesh::new(
-        PrimitiveTopology::TriangleList,
-        RenderAssetUsages::default(),
-    );
-
-    // Empty mesh initially - will be filled in update_root_note_slice
-    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, Vec::<[f32; 3]>::new());
-    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, Vec::<[f32; 3]>::new());
-    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, Vec::<[f32; 2]>::new());
-    mesh.insert_indices(Indices::U32(Vec::new()));
-
-    commands.spawn((
-        RootNoteSlice,
-        Mesh2d(meshes.add(mesh)),
-        MeshMaterial2d(color_materials.add(ColorMaterial {
-            color: Color::srgba(1.0, 1.0, 1.0, 0.15),
-            ..default()
-        })),
-        Transform::from_xyz(0.0, 0.0, -12.9), // Behind everything except background
-        Visibility::Hidden,                   // Hidden by default
-    ));
 }
 
 fn spawn_spectrogram(

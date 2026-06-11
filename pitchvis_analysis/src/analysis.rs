@@ -32,19 +32,8 @@ use crate::analysis_modules::{
 // Re-export commonly used types from modules for backwards compatibility
 pub use crate::analysis_modules::{ContinuousPeak, PeakDetectionParameters};
 
-/// Which chord detection implementation to use
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ChordDetectorType {
-    /// Built-in chord detector (chord.rs)
-    Builtin,
-    /// External chord_detector library (chord_detector_wrapper.rs)
-    External,
-}
-
 #[derive(Debug, Clone)]
 pub struct AnalysisParameters {
-    /// Which chord detection implementation to use
-    pub chord_detector_type: ChordDetectorType,
     /// The length of the spectrogram in frames.
     pub spectrogram_length: usize,
     /// Peak detection parameters for the general peaks.
@@ -82,7 +71,6 @@ impl AnalysisParameters {
 impl Default for AnalysisParameters {
     fn default() -> Self {
         Self {
-            chord_detector_type: ChordDetectorType::Builtin,
             spectrogram_length: 400,
             peak_config: PeakDetectionParameters {
                 min_prominence: 10.0,
@@ -193,14 +181,6 @@ pub struct AnalysisState {
     /// Also, overtones that don't fit to the tuning grid will also impact the inaccuracy.
     pub smoothed_tuning_grid_inaccuracy: EmaMeasurement,
 
-    /// Currently detected chord, if any
-    pub detected_chord: Option<crate::chord::DetectedChord>,
-
-    /// Previous chord detection for smoothing
-    prev_chord_detection: Option<crate::chord::DetectedChord>,
-
-    /// Time since last chord change (in seconds)
-    time_since_chord_change: f32,
 }
 
 impl AnalysisState {
@@ -266,9 +246,6 @@ impl AnalysisState {
                 Some(params.tuning_inaccuracy_smoothing_duration),
                 0.0,
             ),
-            detected_chord: None,
-            prev_chord_detection: None,
-            time_since_chord_change: 0.0,
         }
     }
 
@@ -434,143 +411,11 @@ impl AnalysisState {
             &mut self.pitch_deviation,
         );
 
-        // Update chord detection
-        self.update_chord_detection();
-
-        // Update time tracking
-        self.time_since_chord_change += frame_time.as_secs_f32();
     }
 
     /// Convert bin index to frequency (Hz)
     pub fn bin_to_frequency(&self, bin_idx: usize) -> f32 {
         self.range.min_freq * 2.0_f32.powf(bin_idx as f32 / self.range.buckets_per_octave as f32)
-    }
-
-    fn update_chord_detection(&mut self) {
-        use std::collections::HashMap;
-
-        // Build map of active bins with their strengths
-        let mut active_bins: HashMap<usize, f32> = HashMap::new();
-
-        for p in &self.peaks_continuous {
-            let bin_idx = p.center.round() as usize;
-            if bin_idx < self.x_vqt_peakfiltered.len() {
-                // Use peak size as strength
-                active_bins.insert(bin_idx, p.size);
-            }
-        }
-
-        // Detect chord using the selected detector
-        let new_detection = match self.params.chord_detector_type {
-            ChordDetectorType::Builtin => {
-                // Use our built-in chord detector from chord.rs
-                crate::chord::detect_chord(
-                    &active_bins,
-                    self.range.buckets_per_octave,
-                    self.range.min_freq,
-                    2, // minimum 2 notes for a chord
-                )
-            }
-            ChordDetectorType::External => {
-                // Use external chord_detector library
-                crate::chord_detector_wrapper::detect_chord_with_external_lib(
-                    &active_bins,
-                    self.range.buckets_per_octave,
-                    self.range.min_freq,
-                )
-                .map(|result| {
-                    // Convert ChordDetectorResult to DetectedChord
-                    // Parse root from debug format (e.g., "C" = 0, "C#" = 1, etc.)
-                    let _root_mapping = [
-                        "C", "Cs", "D", "Ds", "E", "F", "Fs", "G", "Gs", "A", "As", "B",
-                    ];
-                    let root = result.pitch_classes.first().copied().unwrap_or(0);
-
-                    // NOTE: chord_detector library returns confidence=0.0, which doesn't match our threshold
-                    // Use a default confidence that passes our threshold (0.5) since the library detected a chord
-                    let confidence = if result.confidence > 0.0 {
-                        result.confidence
-                    } else {
-                        0.7 // Default confidence when external detector finds a match
-                    };
-
-                    // Convert chromagram array to HashMap for plausibility calculation
-                    let mut pitch_class_map = std::collections::HashMap::new();
-                    for (pc, &power) in result.chromagram.iter().enumerate() {
-                        if power > 0.0 {
-                            pitch_class_map.insert(pc, power);
-                        }
-                    }
-
-                    // Calculate plausibility using the chromagram data
-                    let quality = crate::chord::ChordQuality::Major; // Simplified for now
-                    let plausibility =
-                        crate::chord::calculate_plausibility(&pitch_class_map, root, &quality);
-
-                    crate::chord::DetectedChord {
-                        root,
-                        quality,
-                        notes: result.pitch_classes,
-                        confidence,
-                        plausibility,
-                    }
-                })
-            }
-        };
-
-        // Apply temporal smoothing and hysteresis to prevent oscillation
-        const MIN_CONFIDENCE_THRESHOLD: f32 = 0.5;
-        const CHORD_CHANGE_HYSTERESIS: f32 = 0.15;
-        const MIN_STABLE_TIME: f32 = 0.15;
-
-        // Helper function to check if two chords are the same
-        let chords_match = |a: &crate::chord::DetectedChord, b: &crate::chord::DetectedChord| {
-            a.root == b.root
-                && std::mem::discriminant(&a.quality) == std::mem::discriminant(&b.quality)
-        };
-
-        match (&self.detected_chord, &new_detection) {
-            (None, Some(new_chord)) => {
-                if new_chord.confidence >= MIN_CONFIDENCE_THRESHOLD {
-                    self.detected_chord = new_detection.clone();
-                    self.prev_chord_detection = new_detection;
-                    self.time_since_chord_change = 0.0;
-                } else {
-                    self.detected_chord = None;
-                }
-            }
-            (Some(_current_chord), None) => {
-                if self.time_since_chord_change > MIN_STABLE_TIME {
-                    self.detected_chord = None;
-                    self.prev_chord_detection = None;
-                    self.time_since_chord_change = 0.0;
-                }
-            }
-            (Some(current_chord), Some(new_chord)) => {
-                if chords_match(current_chord, new_chord) {
-                    let mut updated_chord = new_chord.clone();
-                    updated_chord.confidence =
-                        current_chord.confidence * 0.7 + new_chord.confidence * 0.3;
-                    self.detected_chord = Some(updated_chord);
-                } else {
-                    let confidence_boost = new_chord.confidence - current_chord.confidence;
-                    let should_change = (confidence_boost > CHORD_CHANGE_HYSTERESIS)
-                        || (current_chord.confidence < 0.4
-                            && new_chord.confidence > MIN_CONFIDENCE_THRESHOLD)
-                        || (self.time_since_chord_change > MIN_STABLE_TIME
-                            && new_chord.confidence > MIN_CONFIDENCE_THRESHOLD);
-
-                    if should_change {
-                        self.detected_chord = new_detection.clone();
-                        self.prev_chord_detection = new_detection;
-                        self.time_since_chord_change = 0.0;
-                    }
-                }
-            }
-            (None, None) => {
-                self.detected_chord = None;
-            }
-        }
     }
 }
 
