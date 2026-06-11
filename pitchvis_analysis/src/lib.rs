@@ -18,7 +18,7 @@ mod tests {
         let _ = env_logger::try_init();
 
         let params = VqtParameters::default();
-        let vqt = Vqt::new(&params);
+        let vqt = Vqt::new(&params).unwrap();
 
         let mut num_peaks_found = Vec::new();
         const SUBDIVISIONS_PER_OCTAVE: u16 = 30;
@@ -45,7 +45,7 @@ mod tests {
     #[test]
     fn test_vqt_high_frequencies() {
         let params = VqtParameters::default();
-        let vqt = Vqt::new(&params);
+        let vqt = Vqt::new(&params).unwrap();
 
         let mut inf = f32::MAX;
         let mut sup = 0.0;

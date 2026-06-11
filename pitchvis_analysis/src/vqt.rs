@@ -103,7 +103,7 @@
 //!
 //! // Create VQT with default parameters
 //! let params = VqtParameters::default();
-//! let vqt = Vqt::new(&params);
+//! let vqt = Vqt::new(&params).unwrap();
 //!
 //! // Prepare audio buffer (must be of length params.n_fft)
 //! let audio_buffer: Vec<f32> = vec![0.0; params.n_fft];
@@ -1123,7 +1123,7 @@ mod test {
         let _ = env_logger::try_init();
 
         let params = VqtParameters::default();
-        let vqt = Vqt::new(&params);
+        let vqt = Vqt::new(&params).unwrap();
 
         const SUBDIVISIONS_PER_BUCKET: usize = 20;
         let mut max_single_response = 0.0_f32;
@@ -1161,7 +1161,7 @@ mod test {
     #[test]
     fn test_vqt_delay() {
         let params = VqtParameters::default();
-        let vqt = Vqt::new(&params);
+        let vqt = Vqt::new(&params).unwrap();
 
         println!("VQT delay: {} ms.", vqt.delay.as_millis());
         assert!(vqt.delay.as_millis() < 100);
