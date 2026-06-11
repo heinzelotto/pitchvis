@@ -1437,11 +1437,11 @@ pub fn setup_buttons(mut commands: Commands, settings: Res<Persistent<SettingsSt
                 .spawn((
                     Button,
                     Node {
+                        border_radius: BorderRadius::MAX,
                         ..button_node.clone()
                     },
                     BackgroundColor(Color::srgba(0.0, 0.2, 0.0, 0.5)),
                     BorderColor::all(Color::srgb(0.0, 0.5, 0.0)),
-                    BorderRadius::MAX,
                     ButtonAction::VisualsMode,
                 ))
                 .insert(ConsumesPressEvents)
@@ -1462,11 +1462,11 @@ pub fn setup_buttons(mut commands: Commands, settings: Res<Persistent<SettingsSt
                 .spawn((
                     Button,
                     Node {
+                        border_radius: BorderRadius::MAX,
                         ..button_node.clone()
                     },
                     BackgroundColor(Color::srgba(0.0, 0.2, 0.0, 0.5)),
                     BorderColor::all(Color::srgb(0.0, 0.5, 0.0)),
-                    BorderRadius::MAX,
                     ButtonAction::FpsLimit,
                 ))
                 .insert(ConsumesPressEvents)
@@ -1483,11 +1483,11 @@ pub fn setup_buttons(mut commands: Commands, settings: Res<Persistent<SettingsSt
                 .spawn((
                     Button,
                     Node {
+                        border_radius: BorderRadius::MAX,
                         ..button_node.clone()
                     },
                     BackgroundColor(Color::srgba(0.0, 0.2, 0.0, 0.5)),
                     BorderColor::all(Color::srgb(0.0, 0.5, 0.0)),
-                    BorderRadius::MAX,
                     ButtonAction::VQTSmoothing,
                 ))
                 .insert(ConsumesPressEvents)
@@ -1565,11 +1565,11 @@ pub fn setup_feature_toggle_buttons(
                 .spawn((
                     Button,
                     Node {
+                        border_radius: BorderRadius::MAX,
                         ..button_node.clone()
                     },
                     bg_color,
                     border_color,
-                    BorderRadius::MAX,
                     ButtonAction::ToggleBloom,
                 ))
                 .insert(ConsumesPressEvents)
@@ -1588,11 +1588,11 @@ pub fn setup_feature_toggle_buttons(
                 .spawn((
                     Button,
                     Node {
+                        border_radius: BorderRadius::MAX,
                         ..button_node.clone()
                     },
                     bg_color,
                     border_color,
-                    BorderRadius::MAX,
                     ButtonAction::ToggleAnalysisConfig,
                 ))
                 .insert(ConsumesPressEvents)

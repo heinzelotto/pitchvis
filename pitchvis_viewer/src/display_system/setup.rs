@@ -529,11 +529,11 @@ fn spawn_chroma_display(commands: &mut Commands) {
                 height: Val::Px(40.0),
                 left: Val::Px(400.0 + pitch_class as f32 * 45.0), // Adjust position as needed
                 bottom: Val::Px(10.0),
+                border_radius: BorderRadius::all(Val::Px(4.0)),
                 ..default()
             },
             BackgroundColor(Color::srgba(r, g, b, 0.0)), // Start transparent
             BorderColor::all(Color::srgba(r, g, b, 0.5)),
-            BorderRadius::all(Val::Px(4.0)),
             ZIndex(i32::MAX),
             Visibility::Hidden, // Hidden by default, shown in debug mode
         ));
