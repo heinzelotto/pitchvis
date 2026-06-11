@@ -88,4 +88,7 @@ pub fn update_calmness(
         smoothed_scene_calmness
             .update_with_timestep(weighted_calmness_sum / weight_sum, frame_time);
     }
+    // In silence (weight_sum == 0) the scene calmness deliberately holds its last value
+    // instead of drifting toward an arbitrary target, so the scene resumes from where it
+    // left off when sound returns.
 }

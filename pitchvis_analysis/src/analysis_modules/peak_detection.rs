@@ -196,10 +196,9 @@ pub fn promote_bass_peaks_with_harmonics(
         for (harmonic_num, weight) in (2..=5).zip(harmonic_weights.iter()) {
             let harmonic_freq = fundamental_freq * harmonic_num as f32;
 
-            // Convert to bin index
+            // Convert to bin index (log2 spacing: octaves above min_freq times bins per octave)
             let harmonic_bin = if harmonic_freq >= range.min_freq {
                 (harmonic_freq.log2() - range.min_freq.log2()) * range.buckets_per_octave as f32
-                    / 2.0_f32.log2()
             } else {
                 continue;
             };

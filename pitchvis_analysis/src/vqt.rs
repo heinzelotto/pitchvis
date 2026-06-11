@@ -350,17 +350,6 @@ struct Filter {
     bandwidth_3db_in_hz: (f32, f32),
 }
 
-/// A pair of precomputed FFTs for a given size:
-/// one for forward transformation and one for inverse transformation.
-struct PrecomputedFft {
-    /// The forward FFT.
-    fwd_fft: Arc<dyn Fft<f32>>,
-
-    /// The inverse FFT (unused after frequency-domain resampling optimization).
-    #[allow(dead_code)]
-    inv_fft: Arc<dyn Fft<f32>>,
-}
-
 /// The `Vqt` struct represents a Variable Q Transform (VQT), a type of spectral transform.
 /// It is based on the Constant Q Transform (CQT), a time-frequency representation where the
 /// frequency bins are geometrically spaced. The variable Q Transform extends the CQT with an
@@ -379,10 +368,9 @@ pub struct Vqt {
     /// signal is input to the system and when its VQT is available.
     pub delay: Duration,
 
-    /// A map from FFT sizes to precomputed FFT objects. Each FFT object is used to resample the
-    /// input signal to the corresponding size. The map contains a pair of FFTs for each size:
-    /// one for forward transformation and one for inverse transformation.
-    resample_ffts: HashMap<usize, PrecomputedFft>,
+    /// A map from input sizes to precomputed forward FFT objects, used to transform the input
+    /// signal into the frequency domain for resampling.
+    resample_ffts: HashMap<usize, Arc<dyn Fft<f32>>>,
 
     #[allow(dead_code)]
     t_diff: f32,
@@ -422,31 +410,13 @@ impl Vqt {
         let mut resample_ffts = HashMap::new();
         let mut planner = FftPlanner::new();
         for FilterGrouping {
-            sr_downscaling_factor,
-            unscaled_window,
-            ..
+            unscaled_window, ..
         } in vqt_kernel.windows.grouped_by_sr_scaling.iter()
         {
             let cur_unscaled_fft_length = unscaled_window.sufficient_n_fft_size;
             resample_ffts
                 .entry(cur_unscaled_fft_length)
-                .or_insert_with(|| {
-                    PrecomputedFft {
-                        fwd_fft: planner.plan_fft_forward(cur_unscaled_fft_length),
-                        inv_fft: planner.plan_fft_inverse(cur_unscaled_fft_length), // unused (kept for struct compatibility)
-                    }
-                });
-
-            // Note: We no longer need FFTs for the scaled length since resample() now returns
-            // frequency-domain data directly. These are kept for backwards compatibility but unused.
-            let cur_scaled_fft_length =
-                unscaled_window.sufficient_n_fft_size / sr_downscaling_factor;
-            resample_ffts
-                .entry(cur_scaled_fft_length)
-                .or_insert_with(|| PrecomputedFft {
-                    fwd_fft: planner.plan_fft_forward(cur_scaled_fft_length), // unused
-                    inv_fft: planner.plan_fft_inverse(cur_scaled_fft_length), // unused
-                });
+                .or_insert_with(|| planner.plan_fft_forward(cur_unscaled_fft_length));
         }
 
         Ok(Self {
@@ -917,7 +887,7 @@ impl Vqt {
             .map(|f| rustfft::num_complex::Complex32::new(*f, 0.0))
             .collect::<Vec<rustfft::num_complex::Complex32>>();
 
-        let PrecomputedFft { fwd_fft, .. } = self.resample_ffts.get(&v.len()).unwrap();
+        let fwd_fft = self.resample_ffts.get(&v.len()).unwrap();
 
         // Forward FFT
         fwd_fft.process(&mut x_fft);
