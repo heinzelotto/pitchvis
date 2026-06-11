@@ -37,10 +37,6 @@ pub struct SettingsState {
     #[serde(default = "default_spectrogram_mode")]
     pub spectrogram_mode: display_system::SpectrogramMode,
     #[serde(default = "default_true")]
-    pub enable_vibrato: bool,
-    #[serde(default = "default_true")]
-    pub enable_attack_detection: bool,
-    #[serde(default = "default_true")]
     pub enable_glissando: bool,
     #[serde(default = "default_true")]
     pub enable_chord_recognition: bool,
@@ -398,26 +394,6 @@ pub fn setup_analysis_text(mut commands: Commands) {
                 text_font.clone(),
             ));
             // builder.spawn((
-            //     TextSpan::new("\nActive attacks: "),
-            //     TextColor(Color::WHITE),
-            //     text_font.clone(),
-            // ));
-            // builder.spawn((
-            //     TextSpan::new("0"),
-            //     TextColor(Color::WHITE),
-            //     text_font.clone(),
-            // ));
-            // builder.spawn((
-            //     TextSpan::new("\nVibrato (conf>0.7): "),
-            //     TextColor(Color::WHITE),
-            //     text_font.clone(),
-            // // ));
-            // builder.spawn((
-            //     TextSpan::new("0"),
-            //     TextColor(Color::WHITE),
-            //     text_font.clone(),
-            // ));
-            // builder.spawn((
             //     TextSpan::new("\nGlissandi: "),
             //     TextColor(Color::WHITE),
             //     text_font.clone(),
@@ -475,29 +451,6 @@ pub fn update_analysis_text_system(
     } else {
         Color::srgb(1.0, 0.0, 0.0)
     });
-
-    // Active attacks count
-    // let active_attacks = analysis.0.current_attacks.len();
-    // *writer.text(entity, 4) = format!("{}", active_attacks);
-    // *writer.color(entity, 4) = if active_attacks > 0 {
-    //     TextColor(Color::srgb(1.0, 0.8, 0.0)) // Yellow when attacks are happening
-    // } else {
-    //     TextColor(Color::WHITE)
-    // };
-
-    // Vibrato count (confidence > 0.7)
-    // let vibrato_count = analysis
-    //     .0
-    //     .vibrato_states
-    //     .iter()
-    //     .filter(|v| v.is_active && v.confidence > 0.7)
-    //     .count();
-    // *writer.text(entity, 6) = format!("{}", vibrato_count);
-    // *writer.color(entity, 6) = if vibrato_count > 0 {
-    //     TextColor(Color::srgb(0.5, 0.8, 1.0)) // Cyan when vibrato detected
-    // } else {
-    //     TextColor(Color::WHITE)
-    // };
 
     // Glissandi count
     // let glissando_count = analysis.0.glissandi.len();
@@ -1631,8 +1584,6 @@ pub enum ButtonAction {
     VisualsMode,
     FpsLimit,
     VQTSmoothing,
-    ToggleVibrato,
-    ToggleAttackDetection,
     ToggleGlissando,
     ToggleChordRecognition,
     ToggleHarmonicLines,
@@ -1806,56 +1757,6 @@ pub fn setup_feature_toggle_buttons(
             Visibility::Visible,
         ))
         .with_children(|parent| {
-            // Vibrato toggle
-            // let (bg_color, border_color) = button_colors(settings.enable_vibrato);
-            // parent
-            //     .spawn((
-            //         Button,
-            //         Node {
-            //             ..button_node.clone()
-            //         },
-            //         bg_color,
-            //         border_color,
-            //         BorderRadius::MAX,
-            //         ButtonAction::ToggleVibrato,
-            //     ))
-            //     .insert(ConsumesPressEvents)
-            //     .with_child((
-            //         Text::new(format!(
-            //             "Vibrato: {}",
-            //             if settings.enable_vibrato { "On" } else { "Off" }
-            //         )),
-            //         TextColor(Color::WHITE),
-            //         text_font.clone(),
-            //     ));
-
-            // Attack Detection toggle
-            // let (bg_color, border_color) = button_colors(settings.enable_attack_detection);
-            // parent
-            //     .spawn((
-            //         Button,
-            //         Node {
-            //             ..button_node.clone()
-            //         },
-            //         bg_color,
-            //         border_color,
-            //         BorderRadius::MAX,
-            //         ButtonAction::ToggleAttackDetection,
-            //     ))
-            //     .insert(ConsumesPressEvents)
-            //     .with_child((
-            //         Text::new(format!(
-            //             "Attack Det.: {}",
-            //             if settings.enable_attack_detection {
-            //                 "On"
-            //             } else {
-            //                 "Off"
-            //             }
-            //         )),
-            //         TextColor(Color::WHITE),
-            //         text_font.clone(),
-            //     ));
-
             // Glissando toggle
             // let (bg_color, border_color) = button_colors(settings.enable_glissando);
             // parent
@@ -2048,44 +1949,6 @@ pub fn update_button_system(
                             display_system::VQTSmoothingMode::Long => "Long",
                         }
                     );
-                }
-                ButtonAction::ToggleVibrato => {
-                    // settings
-                    //     .update(|settings| {
-                    //         settings.enable_vibrato = !settings.enable_vibrato;
-                    //     })
-                    //     .expect("failed to update settings");
-                    // **text = format!(
-                    //     "Vibrato: {}",
-                    //     if settings.enable_vibrato { "On" } else { "Off" }
-                    // );
-                    // update_toggle_button_colors(
-                    //     entity,
-                    //     settings.enable_vibrato,
-                    //     &mut bg_color_query,
-                    //     &mut border_color_query,
-                    // );
-                }
-                ButtonAction::ToggleAttackDetection => {
-                    // settings
-                    //     .update(|settings| {
-                    //         settings.enable_attack_detection = !settings.enable_attack_detection;
-                    //     })
-                    //     .expect("failed to update settings");
-                    // **text = format!(
-                    //     "Attack Det.: {}",
-                    //     if settings.enable_attack_detection {
-                    //         "On"
-                    //     } else {
-                    //         "Off"
-                    //     }
-                    // );
-                    // update_toggle_button_colors(
-                    //     entity,
-                    //     settings.enable_attack_detection,
-                    //     &mut bg_color_query,
-                    //     &mut border_color_query,
-                    // );
                 }
                 ButtonAction::ToggleGlissando => {
                     // settings
@@ -2459,8 +2322,6 @@ pub fn create_persistent_settings(
             fps_limit: Some(default_fps),
             vqt_smoothing_mode: display_system::VQTSmoothingMode::Default,
             spectrogram_mode: display_system::SpectrogramMode::Peaks,
-            enable_vibrato: false,
-            enable_attack_detection: false,
             enable_glissando: false,
             enable_chord_recognition: true,
             enable_harmonic_lines: false,

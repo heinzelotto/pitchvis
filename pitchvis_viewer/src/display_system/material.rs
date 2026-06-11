@@ -23,10 +23,6 @@ pub struct Params {
     pub calmness: f32,
     /// Global time in seconds - for noise animation
     pub time: f32,
-    /// Vibrato rate in Hz [0.0, 10.0] - 0.0 if no vibrato
-    pub vibrato_rate: f32,
-    /// Vibrato extent normalized [0.0, 1.0] - 0.0 if no vibrato
-    pub vibrato_extent: f32,
     /// Pitch accuracy [0.0, 1.0], 1.0 = perfectly on pitch
     pub pitch_accuracy: f32,
     /// Pitch deviation in semitones: negative = flat, positive = sharp, 0.0 = perfectly in tune

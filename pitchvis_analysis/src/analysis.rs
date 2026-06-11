@@ -2,7 +2,7 @@
 ///
 /// This module orchestrates various analysis components that extract interesting
 /// features from VQT frames, including peak detection, calmness analysis, pitch
-/// accuracy, attack detection, and more.
+/// accuracy, and more.
 ///
 /// TODO:
 /// There are lots of parameters that can be adjusted and fine-tuned to improve the detection of
@@ -31,9 +31,7 @@ use crate::analysis_modules::{
 
 // Re-export commonly used types from modules for backwards compatibility
 pub use crate::analysis_modules::{
-    AttackDetectionParameters, AttackEvent, AttackState, ContinuousPeak, Glissando,
-    GlissandoParameters, PeakDetectionParameters, TrackedPeak, VibratoAnalysis, VibratoCategory,
-    VibratoDetectionParameters, VibratoState,
+    ContinuousPeak, Glissando, GlissandoParameters, PeakDetectionParameters, TrackedPeak,
 };
 
 /// Which chord detection implementation to use
@@ -76,12 +74,6 @@ pub struct AnalysisParameters {
     /// A harmonic is considered present if its power >= threshold * fundamental_power.
     /// Note: VQT is in dB, so we convert: power = 10^(dB/10)
     pub harmonic_threshold: f32,
-    /// Attack detection parameters (currently disabled)
-    #[allow(dead_code)]
-    attack_detection_config: AttackDetectionParameters,
-    /// Vibrato detection parameters (currently disabled)
-    #[allow(dead_code)]
-    vibrato_detection_config: VibratoDetectionParameters,
     /// Glissando detection parameters
     pub glissando_config: GlissandoParameters,
 }
@@ -116,8 +108,6 @@ impl Default for AnalysisParameters {
             tuning_inaccuracy_smoothing_duration: Duration::from_millis(4_000),
             // Harmonics need to have at least 30% of fundamental's **power** (not dB!)
             harmonic_threshold: 0.3,
-            attack_detection_config: AttackDetectionParameters::default(),
-            vibrato_detection_config: VibratoDetectionParameters::default(),
             glissando_config: GlissandoParameters::default(),
         }
     }
@@ -208,21 +198,6 @@ pub struct AnalysisState {
     /// Also, overtones that don't fit to the tuning grid will also impact the inaccuracy.
     pub smoothed_tuning_grid_inaccuracy: EmaMeasurement,
 
-    /// Per-bin attack state tracking (onset detection, percussion classification)
-    pub attack_state: Vec<AttackState>,
-
-    /// Per-bin percussion score (0.0 = melodic, 1.0 = percussive)
-    pub percussion_score: Vec<f32>,
-
-    /// Attack events detected in the current frame (for visualization)
-    pub current_attacks: Vec<AttackEvent>,
-
-    /// Per-bin vibrato state tracking
-    pub vibrato_states: Vec<VibratoState>,
-
-    /// Accumulated time for vibrato analysis (seconds)
-    accumulated_time: f32,
-
     /// Currently detected chord, if any
     pub detected_chord: Option<crate::chord::DetectedChord>,
 
@@ -308,11 +283,6 @@ impl AnalysisState {
                 Some(params.tuning_inaccuracy_smoothing_duration),
                 0.0,
             ),
-            attack_state: vec![AttackState::new(); n_buckets],
-            percussion_score: vec![0.0; n_buckets],
-            current_attacks: Vec::new(),
-            vibrato_states: vec![VibratoState::new(); n_buckets],
-            accumulated_time: 0.0,
             detected_chord: None,
             prev_chord_detection: None,
             time_since_chord_change: 0.0,
@@ -501,30 +471,11 @@ impl AnalysisState {
 
         // Update time tracking
         self.time_since_chord_change += frame_time.as_secs_f32();
-        self.accumulated_time += frame_time.as_secs_f32();
     }
 
     /// Convert bin index to frequency (Hz)
     pub fn bin_to_frequency(&self, bin_idx: usize) -> f32 {
         self.range.min_freq * 2.0_f32.powf(bin_idx as f32 / self.range.buckets_per_octave as f32)
-    }
-
-    /// Get vibrato analysis for a specific bin (public API)
-    pub fn get_vibrato_analysis(&self, bin_idx: usize) -> Option<VibratoAnalysis> {
-        if bin_idx >= self.vibrato_states.len() {
-            return None;
-        }
-
-        let state = &self.vibrato_states[bin_idx];
-
-        Some(VibratoAnalysis {
-            rate: state.rate,
-            extent: state.extent,
-            regularity: state.regularity,
-            is_present: state.is_active,
-            center_frequency: state.center_frequency,
-            category: state.get_category(),
-        })
     }
 
     fn update_chord_detection(&mut self) {
@@ -672,6 +623,4 @@ mod tests {
         assert!(!analysis.x_vqt_smoothed.is_empty());
         assert!(analysis.x_vqt_smoothed.iter().all(|x| x.get() == 0.0));
     }
-
-    // Note: Vibrato tests are currently disabled as the vibrato feature itself is disabled
 }
