@@ -46,7 +46,7 @@ pub async fn main_fun() -> Result<(), JsValue> {
     let window_config = Window {
         title: "PitchVis".into(),
         name: Some("bevy.app".into()),
-        resolution: (500., 300.).into(),
+        resolution: [500, 300].into(),
         present_mode: PresentMode::AutoVsync,
         // Tells Wasm to use the canvas with the id "pitchviscanvas" as the main window
         canvas: Some("#pitchviscanvas".into()),
