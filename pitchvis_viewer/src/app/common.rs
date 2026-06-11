@@ -37,8 +37,6 @@ pub struct SettingsState {
     #[serde(default = "default_spectrogram_mode")]
     pub spectrogram_mode: display_system::SpectrogramMode,
     #[serde(default = "default_true")]
-    pub enable_glissando: bool,
-    #[serde(default = "default_true")]
     pub enable_chord_recognition: bool,
     #[serde(default = "default_true")]
     pub enable_harmonic_lines: bool,
@@ -393,26 +391,6 @@ pub fn setup_analysis_text(mut commands: Commands) {
                 TextColor(Color::WHITE),
                 text_font.clone(),
             ));
-            // builder.spawn((
-            //     TextSpan::new("\nGlissandi: "),
-            //     TextColor(Color::WHITE),
-            //     text_font.clone(),
-            // ));
-            // builder.spawn((
-            //     TextSpan::new("0"),
-            //     TextColor(Color::WHITE),
-            //     text_font.clone(),
-            // ));
-            // builder.spawn((
-            //     TextSpan::new("\nTracked peaks: "),
-            //     TextColor(Color::WHITE),
-            //     text_font.clone(),
-            // ));
-            // builder.spawn((
-            //     TextSpan::new("0"),
-            //     TextColor(Color::WHITE),
-            //     text_font.clone(),
-            // ));
             builder.spawn((
                 TextSpan::new("\nChord: "),
                 TextColor(Color::WHITE),
@@ -451,19 +429,6 @@ pub fn update_analysis_text_system(
     } else {
         Color::srgb(1.0, 0.0, 0.0)
     });
-
-    // Glissandi count
-    // let glissando_count = analysis.0.glissandi.len();
-    // *writer.text(entity, 8) = format!("{}", glissando_count);
-    // *writer.color(entity, 8) = if glissando_count > 0 {
-    //     TextColor(Color::srgb(1.0, 0.5, 1.0)) // Magenta when glissandi present
-    // } else {
-    //     TextColor(Color::WHITE)
-    // };
-
-    // Tracked peaks count
-    // let tracked_peaks = analysis.0.tracked_peaks.len();
-    // *writer.text(entity, 10) = format!("{}", tracked_peaks);
 
     // Detected chord
     let detector_name = match analysis.0.params.chord_detector_type {
@@ -699,17 +664,6 @@ pub fn setup_debug_text(mut commands: Commands) {
             ));
 
             builder.spawn((
-                TextSpan::new("[34/45/56/67/78] glissando: "),
-                TextColor(Color::WHITE),
-                text_font.clone(),
-            ));
-            builder.spawn((
-                TextSpan::new("N/A\n"),
-                TextColor(Color::srgb(0.9, 0.9, 0.9)),
-                text_font.clone(),
-            ));
-
-            builder.spawn((
                 TextSpan::new("[89] spectrogram_len: "),
                 TextColor(Color::WHITE),
                 text_font.clone(),
@@ -895,39 +849,29 @@ pub fn update_debug_text_system(
     // harmonic_threshold (index 25)
     *writer.text(entity, 25) = format!("{:.2}\n", params.harmonic_threshold);
 
-    // glissando (index 27) - compact summary
-    *writer.text(entity, 27) = format!(
-        "d{:.0}/{:.0} t{:.2} h{} l{:.1}\n",
-        params.glissando_config.peak_tracking_max_distance,
-        params.glissando_config.glissando_min_distance,
-        params.glissando_config.peak_tracking_timeout,
-        params.glissando_config.peak_tracking_history_length,
-        params.glissando_config.glissando_lifetime
-    );
-
-    // spectrogram_length (index 29)
-    *writer.text(entity, 29) = format!("{}\n", params.spectrogram_length);
+    // spectrogram_length (index 27)
+    *writer.text(entity, 27) = format!("{}\n", params.spectrogram_length);
 
     // VQT parameters
-    // Q (index 34)
-    *writer.text(entity, 34) = format!("{:.2}", vqt_params.parameters.quality);
+    // Q (index 32)
+    *writer.text(entity, 32) = format!("{:.2}", vqt_params.parameters.quality);
 
-    // gamma (index 36)
-    *writer.text(entity, 36) = format!("{:.2}\n", vqt_params.parameters.gamma);
+    // gamma (index 34)
+    *writer.text(entity, 34) = format!("{:.2}\n", vqt_params.parameters.gamma);
 
-    // sparsity (index 38)
-    *writer.text(entity, 38) = format!("{:.4}", vqt_params.parameters.sparsity_quantile);
+    // sparsity (index 36)
+    *writer.text(entity, 36) = format!("{:.4}", vqt_params.parameters.sparsity_quantile);
 
-    // n_fft (index 40)
-    *writer.text(entity, 40) = format!("{}\n", vqt_params.parameters.n_fft);
+    // n_fft (index 38)
+    *writer.text(entity, 38) = format!("{}\n", vqt_params.parameters.n_fft);
 
     // AnalysisState
-    // smoothed_scene_calmness (index 44)
+    // smoothed_scene_calmness (index 42)
     let scene_calmness = analysis.0.smoothed_scene_calmness.get();
-    *writer.text(entity, 44) = format!("{:.3}\n", scene_calmness);
+    *writer.text(entity, 42) = format!("{:.3}\n", scene_calmness);
 
     // Color code the calmness value
-    *writer.color(entity, 44) = TextColor(if scene_calmness > 0.7 {
+    *writer.color(entity, 42) = TextColor(if scene_calmness > 0.7 {
         Color::srgb(0.5, 0.8, 1.0) // Cyan for calm
     } else if scene_calmness > 0.3 {
         Color::srgb(1.0, 1.0, 0.5) // Yellow for medium
@@ -935,12 +879,12 @@ pub fn update_debug_text_system(
         Color::srgb(1.0, 0.5, 0.5) // Red for energetic
     });
 
-    // number of detected peaks (index 46)
+    // number of detected peaks (index 44)
     let num_peaks = analysis.0.peaks.len();
-    *writer.text(entity, 46) = format!("{}", num_peaks);
+    *writer.text(entity, 44) = format!("{}", num_peaks);
 
     // Color code based on number of peaks
-    *writer.color(entity, 46) = TextColor(if num_peaks == 0 {
+    *writer.color(entity, 44) = TextColor(if num_peaks == 0 {
         Color::srgb(0.5, 0.5, 0.5) // Gray for no peaks
     } else if num_peaks <= 3 {
         Color::srgb(0.5, 1.0, 0.5) // Green for few peaks
@@ -1068,63 +1012,6 @@ pub fn update_analysis_parameters_system(
             } else {
                 params.harmonic_threshold += direction * 0.1 * dt;
                 params.harmonic_threshold = params.harmonic_threshold.clamp(0.05, 0.8);
-            }
-        } else if d3 && d4 {
-            // Glissando peak tracking max distance
-            if reset_pressed {
-                params.glissando_config.peak_tracking_max_distance =
-                    defaults.glissando_config.peak_tracking_max_distance;
-            } else {
-                params.glissando_config.peak_tracking_max_distance += direction * 5.0 * dt;
-                params.glissando_config.peak_tracking_max_distance = params
-                    .glissando_config
-                    .peak_tracking_max_distance
-                    .clamp(1.0, 30.0);
-            }
-        } else if d4 && d5 {
-            // Glissando min distance
-            if reset_pressed {
-                params.glissando_config.glissando_min_distance =
-                    defaults.glissando_config.glissando_min_distance;
-            } else {
-                params.glissando_config.glissando_min_distance += direction * 5.0 * dt;
-                params.glissando_config.glissando_min_distance = params
-                    .glissando_config
-                    .glissando_min_distance
-                    .clamp(3.0, 40.0);
-            }
-        } else if d5 && d6 {
-            // Glissando tracking timeout
-            if reset_pressed {
-                params.glissando_config.peak_tracking_timeout =
-                    defaults.glissando_config.peak_tracking_timeout;
-            } else {
-                params.glissando_config.peak_tracking_timeout += direction * 0.1 * dt;
-                params.glissando_config.peak_tracking_timeout = params
-                    .glissando_config
-                    .peak_tracking_timeout
-                    .clamp(0.05, 1.0);
-            }
-        } else if d6 && d7 {
-            // Glissando tracking history length (integer)
-            if reset_pressed {
-                params.glissando_config.peak_tracking_history_length =
-                    defaults.glissando_config.peak_tracking_history_length;
-            } else {
-                let new_val = (params.glissando_config.peak_tracking_history_length as f32
-                    + direction * 30.0 * dt)
-                    .round() as usize;
-                params.glissando_config.peak_tracking_history_length = new_val.clamp(30, 300);
-            }
-        } else if d7 && d8 {
-            // Glissando lifetime
-            if reset_pressed {
-                params.glissando_config.glissando_lifetime =
-                    defaults.glissando_config.glissando_lifetime;
-            } else {
-                params.glissando_config.glissando_lifetime += direction * 0.5 * dt;
-                params.glissando_config.glissando_lifetime =
-                    params.glissando_config.glissando_lifetime.clamp(0.2, 5.0);
             }
         } else if d8 && d9 {
             // Spectrogram length (integer)
@@ -1584,7 +1471,6 @@ pub enum ButtonAction {
     VisualsMode,
     FpsLimit,
     VQTSmoothing,
-    ToggleGlissando,
     ToggleChordRecognition,
     ToggleHarmonicLines,
     ToggleRootNoteTinting,
@@ -1757,33 +1643,6 @@ pub fn setup_feature_toggle_buttons(
             Visibility::Visible,
         ))
         .with_children(|parent| {
-            // Glissando toggle
-            // let (bg_color, border_color) = button_colors(settings.enable_glissando);
-            // parent
-            //     .spawn((
-            //         Button,
-            //         Node {
-            //             ..button_node.clone()
-            //         },
-            //         bg_color,
-            //         border_color,
-            //         BorderRadius::MAX,
-            //         ButtonAction::ToggleGlissando,
-            //     ))
-            //     .insert(ConsumesPressEvents)
-            //     .with_child((
-            //         Text::new(format!(
-            //             "Glissando: {}",
-            //             if settings.enable_glissando {
-            //                 "On"
-            //             } else {
-            //                 "Off"
-            //             }
-            //         )),
-            //         TextColor(Color::WHITE),
-            //         text_font.clone(),
-            //     ));
-
             // Chord Recognition toggle
             let (bg_color, border_color) = button_colors(settings.enable_chord_recognition);
             parent
@@ -1949,27 +1808,6 @@ pub fn update_button_system(
                             display_system::VQTSmoothingMode::Long => "Long",
                         }
                     );
-                }
-                ButtonAction::ToggleGlissando => {
-                    // settings
-                    //     .update(|settings| {
-                    //         settings.enable_glissando = !settings.enable_glissando;
-                    //     })
-                    //     .expect("failed to update settings");
-                    // **text = format!(
-                    //     "Glissando: {}",
-                    //     if settings.enable_glissando {
-                    //         "On"
-                    //     } else {
-                    //         "Off"
-                    //     }
-                    // );
-                    // update_toggle_button_colors(
-                    //     entity,
-                    //     settings.enable_glissando,
-                    //     &mut bg_color_query,
-                    //     &mut border_color_query,
-                    // );
                 }
                 ButtonAction::ToggleChordRecognition => {
                     settings
@@ -2322,7 +2160,6 @@ pub fn create_persistent_settings(
             fps_limit: Some(default_fps),
             vqt_smoothing_mode: display_system::VQTSmoothingMode::Default,
             spectrogram_mode: display_system::SpectrogramMode::Peaks,
-            enable_glissando: false,
             enable_chord_recognition: true,
             enable_harmonic_lines: false,
             enable_root_note_tinting: false,
@@ -2357,7 +2194,6 @@ pub fn insert_common_resources(
             AnalysisParameters::default(),
         )))
         .insert_resource(display_system::CylinderEntityListResource(Vec::new()))
-        .insert_resource(display_system::GlissandoCurveEntityListResource(Vec::new()))
         .insert_resource(display_system::SceneCalmnessHistory::new(300))
         .insert_resource(settings)
         .insert_resource(CurrentFpsLimit(Some(default_fps)))

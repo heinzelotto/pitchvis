@@ -25,14 +25,12 @@ use std::{collections::HashSet, time::Duration};
 // Import analysis modules
 use crate::analysis_modules::{
     apply_peak_filter, enhance_peaks_continuous, find_peaks, promote_bass_peaks_with_harmonics,
-    update_afterglow, update_calmness, update_peak_tracking, update_pitch_accuracy_and_deviation,
+    update_afterglow, update_calmness, update_pitch_accuracy_and_deviation,
     update_tuning_inaccuracy,
 };
 
 // Re-export commonly used types from modules for backwards compatibility
-pub use crate::analysis_modules::{
-    ContinuousPeak, Glissando, GlissandoParameters, PeakDetectionParameters, TrackedPeak,
-};
+pub use crate::analysis_modules::{ContinuousPeak, PeakDetectionParameters};
 
 /// Which chord detection implementation to use
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -74,8 +72,6 @@ pub struct AnalysisParameters {
     /// A harmonic is considered present if its power >= threshold * fundamental_power.
     /// Note: VQT is in dB, so we convert: power = 10^(dB/10)
     pub harmonic_threshold: f32,
-    /// Glissando detection parameters
-    pub glissando_config: GlissandoParameters,
 }
 
 impl AnalysisParameters {
@@ -108,7 +104,6 @@ impl Default for AnalysisParameters {
             tuning_inaccuracy_smoothing_duration: Duration::from_millis(4_000),
             // Harmonics need to have at least 30% of fundamental's **power** (not dB!)
             harmonic_threshold: 0.3,
-            glissando_config: GlissandoParameters::default(),
         }
     }
 }
@@ -206,18 +201,6 @@ pub struct AnalysisState {
 
     /// Time since last chord change (in seconds)
     time_since_chord_change: f32,
-
-    /// Tracked peaks for glissando detection
-    pub tracked_peaks: Vec<TrackedPeak>,
-
-    /// Active glissandi for rendering
-    pub glissandi: Vec<Glissando>,
-
-    /// Counter for generating unique peak IDs
-    next_peak_id: u64,
-
-    /// Elapsed time in seconds since analysis started
-    elapsed_time: f32,
 }
 
 impl AnalysisState {
@@ -286,10 +269,6 @@ impl AnalysisState {
             detected_chord: None,
             prev_chord_detection: None,
             time_since_chord_change: 0.0,
-            tracked_peaks: Vec::new(),
-            glissandi: Vec::new(),
-            next_peak_id: 0,
-            elapsed_time: 0.0,
         }
     }
 
@@ -457,17 +436,6 @@ impl AnalysisState {
 
         // Update chord detection
         self.update_chord_detection();
-
-        // Update peak tracking for glissando detection
-        update_peak_tracking(
-            &self.peaks_continuous,
-            frame_time,
-            &self.params.glissando_config,
-            &mut self.tracked_peaks,
-            &mut self.glissandi,
-            &mut self.next_peak_id,
-            &mut self.elapsed_time,
-        );
 
         // Update time tracking
         self.time_since_chord_change += frame_time.as_secs_f32();

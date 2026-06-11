@@ -4,14 +4,12 @@
 /// all contained in a single monolithic analysis.rs file.
 pub mod afterglow;
 pub mod calmness;
-pub mod glissando;
 pub mod peak_detection;
 pub mod pitch_analysis;
 
 // Re-export commonly used types
 pub use afterglow::{apply_peak_filter, update_afterglow};
 pub use calmness::update_calmness;
-pub use glissando::{update_peak_tracking, Glissando, GlissandoParameters, TrackedPeak};
 pub use peak_detection::{
     enhance_peaks_continuous, find_peaks, promote_bass_peaks_with_harmonics, ContinuousPeak,
     PeakDetectionParameters,

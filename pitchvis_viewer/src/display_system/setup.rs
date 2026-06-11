@@ -4,9 +4,8 @@ use super::{
     LineList, PitchBall, PitchNameText, Spectrum,
 };
 use super::{
-    CalmnessHistogram, ChromaBox, CylinderEntityListResource, GlissandoCurve,
-    GlissandoCurveEntityListResource, RootNoteSlice, SceneCalmnessGraph, SpectrogramDisplay,
-    SpectrogramResource, SpiderNetSegment, CLEAR_COLOR_NEUTRAL,
+    CalmnessHistogram, ChromaBox, CylinderEntityListResource, RootNoteSlice, SceneCalmnessGraph,
+    SpectrogramDisplay, SpectrogramResource, SpiderNetSegment, CLEAR_COLOR_NEUTRAL,
 };
 use bevy::camera::ScalingMode;
 use bevy::core_pipeline::tonemapping::Tonemapping;
@@ -18,7 +17,7 @@ use itertools::Itertools;
 use nalgebra::{Rotation3, Vector3};
 use std::f32::consts::PI;
 
-use super::{BassCylinder, GLISSANDO_LINE_THICKNESS};
+use super::BassCylinder;
 use pitchvis_analysis::vqt::VqtRange;
 use pitchvis_colors::{COLORS, PITCH_NAMES};
 
@@ -33,7 +32,6 @@ pub fn setup_display(
     mut spectrogram_materials: ResMut<Assets<SpectrogramMaterial>>,
     mut images: ResMut<Assets<Image>>,
     mut cylinder_entities: ResMut<CylinderEntityListResource>,
-    mut glissando_curve_entities: ResMut<GlissandoCurveEntityListResource>,
     range: &VqtRange,
     asset_server: Res<AssetServer>,
 ) {
@@ -70,13 +68,6 @@ pub fn setup_display(
     spawn_scene_calmness_graph(&mut commands, &mut meshes, &mut color_materials);
 
     spawn_calmness_histogram(&mut commands, &mut meshes, &mut color_materials, range);
-
-    spawn_glissando_curves(
-        &mut commands,
-        &mut glissando_curve_entities,
-        &mut meshes,
-        &mut color_materials,
-    );
 
     spawn_light(&mut commands);
 
@@ -478,43 +469,6 @@ fn spawn_chord_display(commands: &mut Commands, asset_server: &Res<AssetServer>)
         Transform::from_xyz(-10.5, -6.5, 0.0).with_scale(vec3(0.02, 0.02, 1.0)),
         Visibility::Hidden,
     ));
-}
-
-fn spawn_glissando_curves(
-    commands: &mut Commands,
-    glissando_curve_entities: &mut ResMut<GlissandoCurveEntityListResource>,
-    meshes: &mut ResMut<Assets<Mesh>>,
-    color_materials: &mut ResMut<Assets<ColorMaterial>>,
-) {
-    // TODO: Make this useful. actually track glissandi. Decide which color a glissando line shall have
-    // (rainbow, starting color, ending color). Make it work for actual isolated glissandi sung into
-    // the microphone.
-
-    // Create a pool of glissando curve entities (max 50 concurrent glissandi)
-    const MAX_GLISSANDI: usize = 50;
-
-    for index in 0..MAX_GLISSANDI {
-        // Create an empty line mesh
-        let mesh = meshes.add(LineList {
-            lines: vec![],
-            thickness: GLISSANDO_LINE_THICKNESS,
-        });
-
-        let material =
-            color_materials.add(ColorMaterial::from_color(Color::srgba(1.0, 1.0, 1.0, 0.0)));
-
-        let entity = commands
-            .spawn((
-                GlissandoCurve { index },
-                Mesh2d(mesh),
-                MeshMaterial2d(material),
-                Transform::from_xyz(0.0, 0.0, -13.00), // Behind bass spiral (more negative = farther back)
-                Visibility::Hidden,
-            ))
-            .id();
-
-        glissando_curve_entities.0.push(entity);
-    }
 }
 
 fn spawn_root_note_slice(

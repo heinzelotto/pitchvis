@@ -2,10 +2,9 @@ use super::{
     material::{NoisyColorMaterial, SpectrogramMaterial},
     util::bin_to_spiral,
     BassCylinder, CalmnessHistogram, ChordDisplay, ChromaBox, CylinderEntityListResource,
-    DisplayMode, GlissandoCurve, GlissandoCurveEntityListResource, HarmonicLine, LineList,
-    PitchBall, PitchNameText, RootNoteSlice, SceneCalmnessGraph, SceneCalmnessHistory,
-    SpectrogramDisplay, SpectrogramResource, Spectrum, SpiderNetSegment, VisualsMode,
-    CLEAR_COLOR_GALAXY, CLEAR_COLOR_NEUTRAL, GLISSANDO_LINE_THICKNESS,
+    DisplayMode, HarmonicLine, LineList, PitchBall, PitchNameText, RootNoteSlice,
+    SceneCalmnessGraph, SceneCalmnessHistory, SpectrogramDisplay, SpectrogramResource, Spectrum,
+    SpiderNetSegment, VisualsMode, CLEAR_COLOR_GALAXY, CLEAR_COLOR_NEUTRAL,
 };
 use bevy::{post_process::bloom::Bloom, prelude::*};
 use bevy_persistent::Persistent;
@@ -53,12 +52,6 @@ pub fn update_display(
         Query<(&PitchNameText, &mut Visibility)>,
         Query<(&mut Visibility, &Mesh2d, &mut Transform), With<Spectrum>>,
         Query<&mut Visibility, With<SpiderNetSegment>>,
-        Query<(
-            &GlissandoCurve,
-            &mut Visibility,
-            &Mesh2d,
-            &mut MeshMaterial2d<ColorMaterial>,
-        )>,
         Query<
             (
                 &mut Visibility,
@@ -75,7 +68,6 @@ pub fn update_display(
     mut meshes: ResMut<Assets<Mesh>>,
     analysis_state: Res<AnalysisStateResource>,
     cylinder_entities: Res<CylinderEntityListResource>,
-    glissando_curve_entities: Res<GlissandoCurveEntityListResource>,
     settings_state: Res<Persistent<SettingsState>>,
     run_time: Res<Time>,
     mut camera: Query<(
@@ -92,7 +84,6 @@ pub fn update_display(
             Without<PitchNameText>,
             Without<Spectrum>,
             Without<SpiderNetSegment>,
-            Without<GlissandoCurve>,
             Without<HarmonicLine>,
             Without<ChordDisplay>,
         ),
@@ -106,7 +97,6 @@ pub fn update_display(
             Without<PitchNameText>,
             Without<Spectrum>,
             Without<SpiderNetSegment>,
-            Without<GlissandoCurve>,
             Without<HarmonicLine>,
             Without<ChordDisplay>,
             Without<RootNoteSlice>,
@@ -142,21 +132,6 @@ pub fn update_display(
         range.buckets_per_octave,
     );
 
-    if settings_state.enable_glissando {
-        update_glissandi(
-            set.p5(),
-            &mut meshes,
-            &mut color_materials,
-            &glissando_curve_entities,
-            &analysis_state.glissandi,
-            range.buckets_per_octave,
-            run_time.elapsed_secs(),
-        );
-    } else {
-        // Hide all glissandi when disabled
-        hide_all_glissandi(set.p5());
-    }
-
     update_spectrum(
         set.p3(),
         &camera,
@@ -185,7 +160,7 @@ pub fn update_display(
     // ParamSet doesn't allow extracting multiple queries at once, so we handle them in sequence
     if settings_state.enable_harmonic_lines {
         // Update harmonic lines
-        let mut harmonic_lines = set.p6();
+        let mut harmonic_lines = set.p5();
         update_harmonic_lines(
             &mut harmonic_lines,
             analysis_state,
@@ -196,7 +171,7 @@ pub fn update_display(
         );
     } else {
         // Hide all harmonic lines when disabled
-        let mut harmonic_lines = set.p6();
+        let mut harmonic_lines = set.p5();
         for (mut visibility, _, _, _) in &mut harmonic_lines {
             *visibility = Visibility::Hidden;
         }
@@ -204,10 +179,10 @@ pub fn update_display(
 
     if settings_state.enable_chord_recognition {
         // Update chord display
-        let mut chord_display = set.p7();
+        let mut chord_display = set.p6();
         update_chord_display(&mut chord_display, analysis_state, &settings_state);
     } else {
-        let mut chord_display = set.p7();
+        let mut chord_display = set.p6();
         if let Ok((_, _, mut visibility)) = chord_display.single_mut() {
             *visibility = Visibility::Hidden;
         }
@@ -544,87 +519,6 @@ fn update_bass_spiral(
     }
 }
 
-fn update_glissandi(
-    mut glissando_curves: Query<(
-        &GlissandoCurve,
-        &mut Visibility,
-        &Mesh2d,
-        &mut MeshMaterial2d<ColorMaterial>,
-    )>,
-    meshes: &mut ResMut<Assets<Mesh>>,
-    materials: &mut ResMut<Assets<ColorMaterial>>,
-    glissando_curve_entities: &Res<GlissandoCurveEntityListResource>,
-    glissandi: &[pitchvis_analysis::analysis::Glissando],
-    buckets_per_octave: u16,
-    current_time: f32,
-) {
-    // Hide all curves first
-    for (_, mut visibility, _, _) in &mut glissando_curves {
-        *visibility = Visibility::Hidden;
-    }
-
-    // Render active glissandi using the entity pool
-    for (glissando_idx, glissando) in glissandi.iter().enumerate() {
-        if glissando_idx >= glissando_curve_entities.0.len() {
-            // Pool exhausted, skip remaining glissandi
-            break;
-        }
-
-        let entity = glissando_curve_entities.0[glissando_idx];
-        if let Ok((_, mut visibility, mesh_handle, material_handle)) =
-            glissando_curves.get_mut(entity)
-        {
-            // Convert path from bucket positions to spiral coordinates
-            let line_segments: Vec<(Vec3, Vec3)> = glissando
-                .path
-                .windows(2)
-                .map(|window| {
-                    let (x1, y1, _) = bin_to_spiral(buckets_per_octave, window[0]);
-                    let (x2, y2, _) = bin_to_spiral(buckets_per_octave, window[1]);
-                    (Vec3::new(x1, y1, 0.0), Vec3::new(x2, y2, 0.0))
-                })
-                .collect();
-
-            if line_segments.is_empty() {
-                continue;
-            }
-
-            // Update mesh
-            let mesh = LineList {
-                lines: line_segments,
-                thickness: GLISSANDO_LINE_THICKNESS,
-            };
-
-            if let Some(mesh_asset) = meshes.get_mut(&mesh_handle.0) {
-                *mesh_asset = mesh.into();
-            }
-
-            // Calculate color based on average position (for pitch color)
-            let avg_position = glissando.path.iter().sum::<f32>() / glissando.path.len() as f32;
-            let (r, g, b) = pitchvis_colors::calculate_color(
-                buckets_per_octave,
-                (avg_position + (buckets_per_octave - 3 * (buckets_per_octave / 12)) as f32)
-                    % buckets_per_octave as f32,
-                pitchvis_colors::COLORS,
-                pitchvis_colors::GRAY_LEVEL,
-                pitchvis_colors::EASING_POW,
-            );
-
-            // Fade out based on age
-            let age = current_time - glissando.creation_time;
-            let fade_duration = 2.0; // Match glissando_lifetime from AnalysisParameters
-            let alpha = (1.0 - age / fade_duration).clamp(0.0, 1.0);
-
-            // Update material color
-            if let Some(material) = materials.get_mut(&material_handle.0) {
-                material.color = Color::srgba(r, g, b, alpha * 0.6); // 0.6 for slight transparency
-            }
-
-            *visibility = Visibility::Visible;
-        }
-    }
-}
-
 /// Helper struct for building circle geometry
 struct CircleGeometry {
     vertices: Vec<(Vec3, [f32; 3], [f32; 2])>,
@@ -951,7 +845,6 @@ pub fn update_calmness_histogram(
             Without<PitchNameText>,
             Without<Spectrum>,
             Without<SpiderNetSegment>,
-            Without<GlissandoCurve>,
             Without<HarmonicLine>,
             Without<ChordDisplay>,
             Without<RootNoteSlice>,
@@ -1298,19 +1191,6 @@ fn update_harmonic_lines(
     }
 }
 
-fn hide_all_glissandi(
-    mut glissando_curves: Query<(
-        &GlissandoCurve,
-        &mut Visibility,
-        &Mesh2d,
-        &mut MeshMaterial2d<ColorMaterial>,
-    )>,
-) {
-    for (_, mut visibility, _, _) in &mut glissando_curves {
-        *visibility = Visibility::Hidden;
-    }
-}
-
 fn update_root_note_slice(
     mut root_slice_query: Query<
         (&mut Visibility, &Mesh2d, &mut MeshMaterial2d<ColorMaterial>),
@@ -1321,7 +1201,6 @@ fn update_root_note_slice(
             Without<PitchNameText>,
             Without<Spectrum>,
             Without<SpiderNetSegment>,
-            Without<GlissandoCurve>,
             Without<HarmonicLine>,
             Without<ChordDisplay>,
         ),

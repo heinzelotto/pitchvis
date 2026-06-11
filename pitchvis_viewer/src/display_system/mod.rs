@@ -21,8 +21,6 @@ const CLEAR_COLOR_NEUTRAL: ClearColorConfig =
 const CLEAR_COLOR_GALAXY: ClearColorConfig = ClearColorConfig::Custom(Color::srgb(0.05, 0.0, 0.05));
 const _CLEAR_COLOR_EINK: ClearColorConfig = ClearColorConfig::Custom(Color::srgb(0.95, 0.95, 0.95));
 
-const GLISSANDO_LINE_THICKNESS: f32 = 0.20;
-
 #[derive(Component)]
 pub struct PitchBall(usize);
 
@@ -43,13 +41,6 @@ pub struct HarmonicLine;
 
 #[derive(Component)]
 pub struct ChordDisplay;
-
-#[derive(Component)]
-pub struct GlissandoCurve {
-    /// Index of this curve in the pool
-    #[allow(dead_code)]
-    pub index: usize,
-}
 
 #[derive(Component)]
 pub struct RootNoteSlice;
@@ -116,10 +107,6 @@ pub enum SpectrogramMode {
 #[derive(Resource)]
 pub struct CylinderEntityListResource(pub Vec<Entity>);
 
-/// keep an index -> entity mapping for the glissando curves
-#[derive(Resource)]
-pub struct GlissandoCurveEntityListResource(pub Vec<Entity>);
-
 /// Resource to hold spectrogram state
 #[derive(Resource)]
 pub struct SpectrogramResource {
@@ -164,7 +151,6 @@ pub fn setup_display_to_system(
     ResMut<Assets<SpectrogramMaterial>>,
     ResMut<Assets<Image>>,
     ResMut<CylinderEntityListResource>,
-    ResMut<GlissandoCurveEntityListResource>,
     Res<AssetServer>,
 ) {
     let range = range.clone();
@@ -175,7 +161,6 @@ pub fn setup_display_to_system(
           spectrogram_materials: ResMut<Assets<SpectrogramMaterial>>,
           images: ResMut<Assets<Image>>,
           cylinder_entities: ResMut<CylinderEntityListResource>,
-          glissando_curve_entities: ResMut<GlissandoCurveEntityListResource>,
           asset_server: Res<AssetServer>| {
         setup::setup_display(
             commands,
@@ -185,7 +170,6 @@ pub fn setup_display_to_system(
             spectrogram_materials,
             images,
             cylinder_entities,
-            glissando_curve_entities,
             &range,
             asset_server,
         )
@@ -215,12 +199,6 @@ pub fn update_display_to_system(
         Query<(&PitchNameText, &mut Visibility)>,
         Query<(&mut Visibility, &Mesh2d, &mut Transform), With<Spectrum>>,
         Query<&mut Visibility, With<SpiderNetSegment>>,
-        Query<(
-            &GlissandoCurve,
-            &mut Visibility,
-            &Mesh2d,
-            &mut MeshMaterial2d<ColorMaterial>,
-        )>,
         Query<
             (
                 &mut Visibility,
@@ -237,7 +215,6 @@ pub fn update_display_to_system(
     ResMut<Assets<Mesh>>,
     Res<AnalysisStateResource>,
     Res<CylinderEntityListResource>,
-    Res<GlissandoCurveEntityListResource>,
     Res<Persistent<SettingsState>>,
     Res<Time>,
     Query<(&mut Camera, Option<&mut Bloom>, Ref<Projection>)>,
@@ -250,7 +227,6 @@ pub fn update_display_to_system(
             Without<PitchNameText>,
             Without<Spectrum>,
             Without<SpiderNetSegment>,
-            Without<GlissandoCurve>,
             Without<HarmonicLine>,
             Without<ChordDisplay>,
         ),
@@ -264,7 +240,6 @@ pub fn update_display_to_system(
             Without<PitchNameText>,
             Without<Spectrum>,
             Without<SpiderNetSegment>,
-            Without<GlissandoCurve>,
             Without<HarmonicLine>,
             Without<ChordDisplay>,
             Without<RootNoteSlice>,
@@ -287,12 +262,6 @@ pub fn update_display_to_system(
         Query<(&PitchNameText, &mut Visibility)>,
         Query<(&mut Visibility, &Mesh2d, &mut Transform), With<Spectrum>>,
         Query<&mut Visibility, With<SpiderNetSegment>>,
-        Query<(
-            &GlissandoCurve,
-            &mut Visibility,
-            &Mesh2d,
-            &mut MeshMaterial2d<ColorMaterial>,
-        )>,
         Query<
             (
                 &mut Visibility,
@@ -309,7 +278,6 @@ pub fn update_display_to_system(
           meshes: ResMut<Assets<Mesh>>,
           analysis_state: Res<AnalysisStateResource>,
           cylinder_entities: Res<CylinderEntityListResource>,
-          glissando_curve_entities: Res<GlissandoCurveEntityListResource>,
           settings_state: Res<Persistent<SettingsState>>,
           run_time: Res<Time>,
           camera: Query<(&mut Camera, Option<&mut Bloom>, Ref<Projection>)>,
@@ -322,7 +290,6 @@ pub fn update_display_to_system(
             Without<PitchNameText>,
             Without<Spectrum>,
             Without<SpiderNetSegment>,
-            Without<GlissandoCurve>,
             Without<HarmonicLine>,
             Without<ChordDisplay>,
         ),
@@ -336,7 +303,6 @@ pub fn update_display_to_system(
             Without<PitchNameText>,
             Without<Spectrum>,
             Without<SpiderNetSegment>,
-            Without<GlissandoCurve>,
             Without<HarmonicLine>,
             Without<ChordDisplay>,
             Without<RootNoteSlice>,
@@ -350,7 +316,6 @@ pub fn update_display_to_system(
             meshes,
             analysis_state,
             cylinder_entities,
-            glissando_curve_entities,
             settings_state,
             run_time,
             camera,
