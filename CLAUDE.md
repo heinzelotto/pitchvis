@@ -475,9 +475,8 @@ When in debugging mode (press Space or click to toggle), additional analysis vis
 - Uses power domain: `10^(dB/10)` for energy calculation
 - Position: adjustable in `display_system/setup.rs:563`
 
-**Tuning & Chord Info** (Bottom-right):
+**Tuning Info** (Bottom-right):
 - Tuning drift in cents (color-coded: green <10¢, yellow 10-20¢, orange 20-30¢, red >30¢)
-- Detected chord name (if any)
 
 **Control Buttons** (Left side):
 - Visuals Mode: Full / Zen / Performance / Galaxy
@@ -485,8 +484,7 @@ When in debugging mode (press Space or click to toggle), additional analysis vis
 - VQT Smoothing: None / Short / Default / Long
 
 **Feature Toggles** (Right side):
-- Chord Recognition: On/Off
-- Root Note Tinting: On/Off
+- Bloom: On/Off
 
 ### Performance Testing
 
@@ -585,7 +583,7 @@ Levels: `error`, `warn`, `info`, `debug`, `trace`
 
 ### Key External Crates
 
-- **bevy** (0.16): Game engine, ECS, rendering
+- **bevy** (0.17): Game engine, ECS, rendering
 - **cpal** (0.16): Cross-platform audio I/O
 - **rustfft** (6.1): Fast Fourier Transform
 - **dagc**: Digital Automatic Gain Control (forked)
