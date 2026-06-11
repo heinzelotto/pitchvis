@@ -2,32 +2,43 @@ plugins {
     id 'com.android.application'
 }
 
+// Release signing credentials live in the gitignored keystore.properties
+// (next to settings.gradle). Without it, release builds are unsigned but
+// debug builds work normally.
+def keystorePropertiesFile = rootProject.file('keystore.properties')
+def keystoreProperties = new Properties()
+if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.withInputStream { keystoreProperties.load(it) }
+}
+
 android {
-    ndkVersion "26.3.11579264"
-    compileSdk 34
+    ndkVersion "28.2.13676358"
+    compileSdk 36
 
     defaultConfig {
         applicationId "org.p1graph.pitchvis"
         minSdk 29
-        targetSdk 34
-        versionCode 18 // Change to a higher number for each new release
-        versionName "1.18" // Change to a higher number for each new release
+        targetSdk 36
+        versionCode 25 // Change to a higher number for each new release
+        versionName "1.25" // Change to a higher number for each new release
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
 
     signingConfigs {
         release {
-            storeFile file('') // Change to the path to your keystore file
-            storePassword '' // Change to your keystore password
-            keyAlias '' // Change to your key alias
-            keyPassword '' // Change to your key password
+            if (keystorePropertiesFile.exists()) {
+                storeFile file(keystoreProperties['storeFile'])
+                storePassword keystoreProperties['storePassword']
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+            }
         }
     }
 
     buildTypes {
         release {
-            signingConfig signingConfigs.release
+            signingConfig keystorePropertiesFile.exists() ? signingConfigs.release : null
             // minifyEnabled true
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
@@ -50,7 +61,9 @@ android {
 dependencies {
     implementation libs.appcompat
     implementation libs.material
-    implementation libs.games.activity
+//    implementation "androidx.games:games-activity:4.0.0"
+    implementation "androidx.games:games-activity:2.0.2"
+//    implementation project(':CsoundAndroid')
     testImplementation libs.junit
     androidTestImplementation libs.ext.junit
     androidTestImplementation libs.espresso.core
