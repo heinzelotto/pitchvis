@@ -37,9 +37,6 @@ pub struct Spectrum;
 pub struct PitchNameText;
 
 #[derive(Component)]
-pub struct HarmonicLine;
-
-#[derive(Component)]
 pub struct ChordDisplay;
 
 #[derive(Component)]
@@ -199,15 +196,6 @@ pub fn update_display_to_system(
         Query<(&PitchNameText, &mut Visibility)>,
         Query<(&mut Visibility, &Mesh2d, &mut Transform), With<Spectrum>>,
         Query<&mut Visibility, With<SpiderNetSegment>>,
-        Query<
-            (
-                &mut Visibility,
-                &mut Transform,
-                &mut Mesh2d,
-                &mut MeshMaterial2d<ColorMaterial>,
-            ),
-            With<HarmonicLine>,
-        >,
         Query<(&mut Text2d, &mut TextColor, &mut Visibility), With<ChordDisplay>>,
     )>,
     ResMut<Assets<ColorMaterial>>,
@@ -227,7 +215,6 @@ pub fn update_display_to_system(
             Without<PitchNameText>,
             Without<Spectrum>,
             Without<SpiderNetSegment>,
-            Without<HarmonicLine>,
             Without<ChordDisplay>,
         ),
     >,
@@ -240,7 +227,6 @@ pub fn update_display_to_system(
             Without<PitchNameText>,
             Without<Spectrum>,
             Without<SpiderNetSegment>,
-            Without<HarmonicLine>,
             Without<ChordDisplay>,
             Without<RootNoteSlice>,
         ),
@@ -262,15 +248,6 @@ pub fn update_display_to_system(
         Query<(&PitchNameText, &mut Visibility)>,
         Query<(&mut Visibility, &Mesh2d, &mut Transform), With<Spectrum>>,
         Query<&mut Visibility, With<SpiderNetSegment>>,
-        Query<
-            (
-                &mut Visibility,
-                &mut Transform,
-                &mut Mesh2d,
-                &mut MeshMaterial2d<ColorMaterial>,
-            ),
-            With<HarmonicLine>,
-        >,
         Query<(&mut Text2d, &mut TextColor, &mut Visibility), With<ChordDisplay>>,
     )>,
           color_materials: ResMut<Assets<ColorMaterial>>,
@@ -290,7 +267,6 @@ pub fn update_display_to_system(
             Without<PitchNameText>,
             Without<Spectrum>,
             Without<SpiderNetSegment>,
-            Without<HarmonicLine>,
             Without<ChordDisplay>,
         ),
     >,
@@ -303,7 +279,6 @@ pub fn update_display_to_system(
             Without<PitchNameText>,
             Without<Spectrum>,
             Without<SpiderNetSegment>,
-            Without<HarmonicLine>,
             Without<ChordDisplay>,
             Without<RootNoteSlice>,
         ),

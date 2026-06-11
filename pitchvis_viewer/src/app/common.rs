@@ -38,8 +38,6 @@ pub struct SettingsState {
     pub spectrogram_mode: display_system::SpectrogramMode,
     #[serde(default = "default_true")]
     pub enable_chord_recognition: bool,
-    #[serde(default = "default_true")]
-    pub enable_harmonic_lines: bool,
     #[serde(default = "default_false")]
     pub enable_root_note_tinting: bool,
     #[serde(default = "default_true")]
@@ -1472,7 +1470,6 @@ pub enum ButtonAction {
     FpsLimit,
     VQTSmoothing,
     ToggleChordRecognition,
-    ToggleHarmonicLines,
     ToggleRootNoteTinting,
     ToggleBloom,
 }
@@ -1670,33 +1667,6 @@ pub fn setup_feature_toggle_buttons(
                     text_font.clone(),
                 ));
 
-            // Harmonic Lines toggle
-            // let (bg_color, border_color) = button_colors(settings.enable_harmonic_lines);
-            // parent
-            //     .spawn((
-            //         Button,
-            //         Node {
-            //             ..button_node.clone()
-            //         },
-            //         bg_color,
-            //         border_color,
-            //         BorderRadius::MAX,
-            //         ButtonAction::ToggleHarmonicLines,
-            //     ))
-            //     .insert(ConsumesPressEvents)
-            //     .with_child((
-            //         Text::new(format!(
-            //             "Harmonic Lines: {}",
-            //             if settings.enable_harmonic_lines {
-            //                 "On"
-            //             } else {
-            //                 "Off"
-            //             }
-            //         )),
-            //         TextColor(Color::WHITE),
-            //         text_font.clone(),
-            //     ));
-
             // Root Note Tinting toggle
             let (bg_color, border_color) = button_colors(settings.enable_root_note_tinting);
             parent
@@ -1829,27 +1799,6 @@ pub fn update_button_system(
                         &mut bg_color_query,
                         &mut border_color_query,
                     );
-                }
-                ButtonAction::ToggleHarmonicLines => {
-                    // settings
-                    //     .update(|settings| {
-                    //         settings.enable_harmonic_lines = !settings.enable_harmonic_lines;
-                    //     })
-                    //     .expect("failed to update settings");
-                    // **text = format!(
-                    //     "Harmonic Lines: {}",
-                    //     if settings.enable_harmonic_lines {
-                    //         "On"
-                    //     } else {
-                    //         "Off"
-                    //     }
-                    // );
-                    // update_toggle_button_colors(
-                    //     entity,
-                    //     settings.enable_harmonic_lines,
-                    //     &mut bg_color_query,
-                    //     &mut border_color_query,
-                    // );
                 }
                 ButtonAction::ToggleRootNoteTinting => {
                     settings
@@ -2161,7 +2110,6 @@ pub fn create_persistent_settings(
             vqt_smoothing_mode: display_system::VQTSmoothingMode::Default,
             spectrogram_mode: display_system::SpectrogramMode::Peaks,
             enable_chord_recognition: true,
-            enable_harmonic_lines: false,
             enable_root_note_tinting: false,
             enable_bloom: true,
         })

@@ -2,9 +2,9 @@ use super::{
     material::{NoisyColorMaterial, SpectrogramMaterial},
     util::bin_to_spiral,
     BassCylinder, CalmnessHistogram, ChordDisplay, ChromaBox, CylinderEntityListResource,
-    DisplayMode, HarmonicLine, LineList, PitchBall, PitchNameText, RootNoteSlice,
-    SceneCalmnessGraph, SceneCalmnessHistory, SpectrogramDisplay, SpectrogramResource, Spectrum,
-    SpiderNetSegment, VisualsMode, CLEAR_COLOR_GALAXY, CLEAR_COLOR_NEUTRAL,
+    DisplayMode, LineList, PitchBall, PitchNameText, RootNoteSlice, SceneCalmnessGraph,
+    SceneCalmnessHistory, SpectrogramDisplay, SpectrogramResource, Spectrum, SpiderNetSegment,
+    VisualsMode, CLEAR_COLOR_GALAXY, CLEAR_COLOR_NEUTRAL,
 };
 use bevy::{post_process::bloom::Bloom, prelude::*};
 use bevy_persistent::Persistent;
@@ -52,15 +52,6 @@ pub fn update_display(
         Query<(&PitchNameText, &mut Visibility)>,
         Query<(&mut Visibility, &Mesh2d, &mut Transform), With<Spectrum>>,
         Query<&mut Visibility, With<SpiderNetSegment>>,
-        Query<
-            (
-                &mut Visibility,
-                &mut Transform,
-                &mut Mesh2d,
-                &mut MeshMaterial2d<ColorMaterial>,
-            ),
-            With<HarmonicLine>,
-        >,
         Query<(&mut Text2d, &mut TextColor, &mut Visibility), With<ChordDisplay>>,
     )>,
     mut color_materials: ResMut<Assets<ColorMaterial>>,
@@ -84,7 +75,6 @@ pub fn update_display(
             Without<PitchNameText>,
             Without<Spectrum>,
             Without<SpiderNetSegment>,
-            Without<HarmonicLine>,
             Without<ChordDisplay>,
         ),
     >,
@@ -97,7 +87,6 @@ pub fn update_display(
             Without<PitchNameText>,
             Without<Spectrum>,
             Without<SpiderNetSegment>,
-            Without<HarmonicLine>,
             Without<ChordDisplay>,
             Without<RootNoteSlice>,
         ),
@@ -156,33 +145,12 @@ pub fn update_display(
 
     toggle_background(&mut camera, &settings_state, analysis_state)?;
 
-    // Handle harmonic lines and chord display
-    // ParamSet doesn't allow extracting multiple queries at once, so we handle them in sequence
-    if settings_state.enable_harmonic_lines {
-        // Update harmonic lines
-        let mut harmonic_lines = set.p5();
-        update_harmonic_lines(
-            &mut harmonic_lines,
-            analysis_state,
-            &mut meshes,
-            &mut color_materials,
-            &settings_state,
-            range,
-        );
-    } else {
-        // Hide all harmonic lines when disabled
-        let mut harmonic_lines = set.p5();
-        for (mut visibility, _, _, _) in &mut harmonic_lines {
-            *visibility = Visibility::Hidden;
-        }
-    }
-
     if settings_state.enable_chord_recognition {
         // Update chord display
-        let mut chord_display = set.p6();
+        let mut chord_display = set.p5();
         update_chord_display(&mut chord_display, analysis_state, &settings_state);
     } else {
-        let mut chord_display = set.p6();
+        let mut chord_display = set.p5();
         if let Ok((_, _, mut visibility)) = chord_display.single_mut() {
             *visibility = Visibility::Hidden;
         }
@@ -845,7 +813,6 @@ pub fn update_calmness_histogram(
             Without<PitchNameText>,
             Without<Spectrum>,
             Without<SpiderNetSegment>,
-            Without<HarmonicLine>,
             Without<ChordDisplay>,
             Without<RootNoteSlice>,
         ),
@@ -1084,113 +1051,6 @@ fn update_chord_display(
 }
 
 #[allow(clippy::type_complexity)]
-fn update_harmonic_lines(
-    harmonic_lines_query: &mut Query<
-        (
-            &mut Visibility,
-            &mut Transform,
-            &mut Mesh2d,
-            &mut MeshMaterial2d<ColorMaterial>,
-        ),
-        With<HarmonicLine>,
-    >,
-    analysis_state: &AnalysisState,
-    meshes: &mut ResMut<Assets<Mesh>>,
-    _color_materials: &mut ResMut<Assets<ColorMaterial>>,
-    settings_state: &Res<Persistent<SettingsState>>,
-    range: &VqtRange,
-) {
-    // Only show in Full and Performance modes
-    let should_show_visuals = matches!(
-        settings_state.visuals_mode,
-        VisualsMode::Full | VisualsMode::Performance
-    );
-
-    // Update harmonic lines
-    if let Ok((mut visibility, _transform, mesh_handle, _material_handle)) =
-        harmonic_lines_query.single_mut()
-    {
-        if !settings_state.enable_harmonic_lines
-            || !should_show_visuals
-            || analysis_state.detected_chord.is_none()
-        {
-            *visibility = Visibility::Hidden;
-            return;
-        }
-
-        let chord = analysis_state.detected_chord.as_ref().unwrap();
-
-        // Build lines between harmonically related notes
-        let mut lines = Vec::new();
-
-        // Get positions of all active peaks
-        let mut peak_positions: HashMap<usize, (f32, f32)> = HashMap::new();
-        for peak in &analysis_state.peaks_continuous {
-            let (x, y, _z) = bin_to_spiral(range.buckets_per_octave, peak.center);
-            let bin_idx = peak.center.round() as usize;
-            peak_positions.insert(bin_idx, (x, y));
-        }
-
-        // Convert chord notes to bin indices (all octaves)
-        for &note1 in &chord.notes {
-            for &note2 in &chord.notes {
-                if note1 >= note2 {
-                    continue;
-                }
-
-                // Check harmonic relationship
-                let interval = (note2 + 12 - note1) % 12;
-
-                // Only draw lines for important intervals:
-                // Perfect fifth (7), Perfect fourth (5), Major third (4), Minor third (3)
-                let should_connect = matches!(interval, 3 | 4 | 5 | 7);
-
-                if should_connect {
-                    // Find all instances of these notes across octaves
-                    for (bin1, &(x1, y1)) in &peak_positions {
-                        let semitone1 = (bin1 * 12) / range.buckets_per_octave as usize;
-                        let pitch_class1 = semitone1 % 12;
-
-                        if pitch_class1 == note1 {
-                            for (bin2, &(x2, y2)) in &peak_positions {
-                                let semitone2 = (bin2 * 12) / range.buckets_per_octave as usize;
-                                let pitch_class2 = semitone2 % 12;
-
-                                if pitch_class2 == note2 {
-                                    // Add line, but only if bins are reasonably close (within 2 octaves)
-                                    let bin_distance = (*bin2 as i32 - *bin1 as i32).abs();
-                                    if bin_distance < (range.buckets_per_octave * 2) as i32 {
-                                        lines
-                                            .push((Vec3::new(x1, y1, 0.0), Vec3::new(x2, y2, 0.0)));
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        if lines.is_empty() {
-            *visibility = Visibility::Hidden;
-        } else {
-            *visibility = Visibility::Visible;
-
-            // Create line mesh
-            let line_list = LineList {
-                lines,
-                thickness: 0.01, // Thin lines to avoid clutter
-            };
-            let line_mesh: Mesh = line_list.into();
-
-            // Update the mesh
-            if let Some(mesh_asset) = meshes.get_mut(&mesh_handle.0) {
-                *mesh_asset = line_mesh;
-            }
-        }
-    }
-}
-
 fn update_root_note_slice(
     mut root_slice_query: Query<
         (&mut Visibility, &Mesh2d, &mut MeshMaterial2d<ColorMaterial>),
@@ -1201,7 +1061,6 @@ fn update_root_note_slice(
             Without<PitchNameText>,
             Without<Spectrum>,
             Without<SpiderNetSegment>,
-            Without<HarmonicLine>,
             Without<ChordDisplay>,
         ),
     >,
