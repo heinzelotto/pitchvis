@@ -180,7 +180,6 @@ pub struct AnalysisState {
     ///
     /// Also, overtones that don't fit to the tuning grid will also impact the inaccuracy.
     pub smoothed_tuning_grid_inaccuracy: EmaMeasurement,
-
 }
 
 impl AnalysisState {
@@ -410,7 +409,6 @@ impl AnalysisState {
             &mut self.pitch_accuracy,
             &mut self.pitch_deviation,
         );
-
     }
 
     /// Convert bin index to frequency (Hz)

@@ -97,5 +97,4 @@ mod tests {
 
     // TODO: a test case that ensures that the bass note is detected even when not played
     // for a few frames and in the presence of some noise
-
 }
