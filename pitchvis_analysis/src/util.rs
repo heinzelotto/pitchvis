@@ -2,8 +2,6 @@ use std::time::Duration;
 
 use log::trace;
 
-use crate::vqt::VqtParameters;
-
 /// Returns the maximum value in a slice of floats.
 /// This function is necessary because floats do not implement the Ord trait.
 /// It assumes that there are no NaN values in the slice.
@@ -58,21 +56,19 @@ pub fn arg_max(sl: &[f32]) -> usize {
         .0
 }
 
-//#green
-#[allow(dead_code)]
-pub fn test_create_sines(params: &VqtParameters, freqs: &[f32], t_diff: f32) -> Vec<f32> {
+/// Creates a test signal of length `n_fft` containing the given sine frequencies,
+/// shifted in time by `t_diff` seconds.
+#[cfg(test)]
+pub fn test_create_sines(
+    params: &crate::vqt::VqtParameters,
+    freqs: &[f32],
+    t_diff: f32,
+) -> Vec<f32> {
     use std::f32::consts::PI;
 
     let mut wave = vec![0.0; params.n_fft];
 
-    const LOWER_OCTAVE: usize = 0;
-    #[allow(clippy::erasing_op)]
-    for f in freqs
-    // ((12 * (LOWER_OCTAVE) + 2)..(12 * (params.range.octaves as usize - 1) + 12))
-    //     .step_by(5)
-    //     .map(|p| params.range.min_freq * (2.0).powf(p as f32 / 12.0))
-    {
-        //let f = 880.0 * 2.0.powf(1.0/12.0);
+    for f in freqs {
         for (i, w) in wave.iter_mut().enumerate() {
             let amp = (((i as f32 + t_diff * params.sr) * 2.0 * PI / params.sr) * f).sin() / 12.0;
             *w += amp;
@@ -81,21 +77,16 @@ pub fn test_create_sines(params: &VqtParameters, freqs: &[f32], t_diff: f32) -> 
 
     wave
 }
-//#
 
 /// Exponential moving average helper
 ///
 /// y is the EMA of the series of x put into the update function
 ///
-/// We calculate the decay factor ``alpha`` as 2 / (n + 1) where n is the number of
-/// timesteps in the time horizon. Since our FPS is not constant, calculate this
-/// factor for each update.
-///
-/// Note: Running the update with some timestep/2 twice is not the same as
-/// running it once with timestep. In fact, in the limit of n, running it n times with
-/// timestep/n is the same as running it once with 1 - exp(-timestep).
-///
-/// TODO: keep an eye on how consistent this is across different frame rates.
+/// The decay factor is `alpha = 1 - exp(-2 * timestep / time_horizon)`, the exact
+/// continuous-time form: updating n times with timestep/n is identical to updating once
+/// with timestep (toward a constant target), so the smoothing behavior is independent of
+/// the frame rate. For small timesteps this approaches the conventional "span" EMA with
+/// `alpha = 2 / (n + 1)` where n is the number of timesteps in the time horizon.
 #[derive(Debug, Clone)]
 pub struct EmaMeasurement {
     time_horizon: Option<Duration>,
@@ -114,9 +105,7 @@ impl EmaMeasurement {
 
     pub fn update_with_timestep(&mut self, new_value: f32, timestep: Duration) {
         if let Some(time_horizon) = self.time_horizon {
-            let n_horizon = time_horizon.as_secs_f32() / timestep.as_secs_f32();
-            let alpha = 2.0 / (n_horizon + 1.0);
-            // let alpha = 1.0 / (n_horizon);
+            let alpha = 1.0 - (-2.0 * timestep.as_secs_f32() / time_horizon.as_secs_f32()).exp();
 
             self.update_with_alpha(new_value, alpha);
             trace!(
@@ -129,10 +118,6 @@ impl EmaMeasurement {
             // no smoothing at all
             self.y = new_value;
         }
-    }
-
-    pub fn update_one_second(&mut self, new_value: f32) {
-        self.update_with_timestep(new_value, Duration::from_secs(1));
     }
 
     pub fn update_with_alpha(&mut self, new_value: f32, alpha: f32) {
@@ -198,9 +183,8 @@ mod tests {
 
     #[test]
     fn test_ema_limit() {
-        /// Running the update with some timestep/2 twice is not the same as
-        /// running it once with timestep. In fact, in the limit of n, running it n times with
-        /// timestep/n is the same as running it once with 1 - exp(-timestep).
+        // Updating n times with timestep/n toward a constant target is identical to
+        // updating once with timestep, independent of n (exact composability).
         const NEW_VALUE: f32 = 1.0;
         const TIME_HORIZON: Duration = Duration::from_secs(1);
         const N_HIGH: usize = 100;

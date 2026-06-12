@@ -1,7 +1,7 @@
-/// Afterglow effect module.
-///
-/// This module provides a visual decay effect for the VQT spectrum, creating a
-/// "trail" or afterglow that gradually fades away.
+//! Afterglow effect module.
+//!
+//! This module provides a visual decay effect for the VQT spectrum, creating a
+//! "trail" or afterglow that gradually fades away.
 
 /// Update afterglow effect
 ///

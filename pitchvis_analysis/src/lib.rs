@@ -18,12 +18,17 @@ mod tests {
         let _ = env_logger::try_init();
 
         let params = VqtParameters::default();
-        let vqt = Vqt::new(&params).unwrap();
+        let mut vqt = Vqt::new(&params).unwrap();
 
         let mut num_peaks_found = Vec::new();
         const SUBDIVISIONS_PER_OCTAVE: u16 = 30;
-        // test in the range starting at 2 octaves above the minimum frequency until almost the maximum frequency
-        for i in ((2.5 * SUBDIVISIONS_PER_OCTAVE as f32) as u16)
+        // Test from 2.6 octaves above the minimum frequency (~333 Hz) until almost the
+        // maximum frequency. Below that, two simultaneous notes a semitone apart blur
+        // into one peak: the filter bandwidth is dominated by gamma in the bass (see the
+        // module docs in vqt.rs). The limit sits at ~330 Hz with the default Q = 1.6; the
+        // previous default Q = 1.8 resolved down to ~310 Hz but left coverage gaps
+        // between adjacent bins at high frequencies.
+        for i in ((2.6 * SUBDIVISIONS_PER_OCTAVE as f32) as u16)
             ..(params.range.octaves as u16 * SUBDIVISIONS_PER_OCTAVE - SUBDIVISIONS_PER_OCTAVE / 2)
         {
             let log_note = i as f32 / SUBDIVISIONS_PER_OCTAVE as f32;
@@ -45,7 +50,7 @@ mod tests {
     #[test]
     fn test_vqt_high_frequencies() {
         let params = VqtParameters::default();
-        let vqt = Vqt::new(&params).unwrap();
+        let mut vqt = Vqt::new(&params).unwrap();
 
         let mut inf = f32::MAX;
         let mut sup = 0.0;

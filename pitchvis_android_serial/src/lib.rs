@@ -450,7 +450,7 @@ fn android_main(app: AndroidApp) {
         std::thread::sleep(std::time::Duration::from_millis(100));
     }
 
-    let vqt = pitchvis_analysis::vqt::Vqt::new(&VQT_PARAMETERS)
+    let mut vqt = pitchvis_analysis::vqt::Vqt::new(&VQT_PARAMETERS)
         .expect("Failed to create VQT with default parameters");
     let mut vqt_result = VqtResult::new(&VQT_PARAMETERS.range);
     let mut analysis_state =

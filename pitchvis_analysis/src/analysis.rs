@@ -34,7 +34,8 @@ pub use crate::analysis_modules::{ContinuousPeak, PeakDetectionParameters};
 
 #[derive(Debug, Clone)]
 pub struct AnalysisParameters {
-    /// The length of the spectrogram in frames.
+    /// The length of the spectrogram in frames. Currently unused within this crate (the
+    /// spectrogram display in the viewer keeps its own history buffer).
     pub spectrogram_length: usize,
     /// Peak detection parameters for the general peaks.
     pub peak_config: PeakDetectionParameters,
@@ -140,13 +141,6 @@ pub struct AnalysisState {
     /// Contains pairs of the estimated precise center and size of each detected peak.
     pub peaks_continuous: Vec<ContinuousPeak>,
 
-    /// A buffer for the spectrogram visualization. The size is determined by the `spectrum_size`
-    /// multiplied by the `spectrogram_length` and further multiplied by 4 for RGBA color data.
-    _spectrogram_buffer: Vec<u8>,
-
-    /// Points to the current start position in the circular `spectrogram_buffer`.
-    _spectrogram_front_idx: usize,
-
     /// A precomputed or user-defined list of MIDI pitches for machine learning or other
     /// algorithms, indexed by MIDI number.
     pub ml_midi_base_pitches: Vec<f32>,
@@ -221,8 +215,6 @@ impl AnalysisState {
             x_vqt_afterglow: vec![0.0; n_buckets],
             peaks: HashSet::new(),
             peaks_continuous: Vec::new(),
-            _spectrogram_buffer: vec![0; n_buckets * params.spectrogram_length * 4],
-            _spectrogram_front_idx: 0,
             ml_midi_base_pitches: vec![0.0; 128],
             calmness: vec![
                 EmaMeasurement::new(Some(params.note_calmness_smoothing_duration), 0.0);

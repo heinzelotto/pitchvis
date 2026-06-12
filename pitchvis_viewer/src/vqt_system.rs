@@ -20,41 +20,49 @@ impl VqtResultResource {
     }
 }
 
+#[allow(clippy::type_complexity)]
 pub fn update_vqt_to_system(
     bufsize: usize,
-) -> impl FnMut(ResMut<VqtResource>, Res<AudioBufferResource>, ResMut<VqtResultResource>) + Copy {
+) -> impl FnMut(
+    ResMut<VqtResource>,
+    Res<AudioBufferResource>,
+    ResMut<VqtResultResource>,
+    Local<Vec<f32>>,
+) + Copy {
     move |vqt: ResMut<VqtResource>,
           rb: Res<AudioBufferResource>,
-          vqt_result: ResMut<VqtResultResource>| {
-        update_vqt(bufsize, vqt, rb, vqt_result);
+          vqt_result: ResMut<VqtResultResource>,
+          x_scratch: Local<Vec<f32>>| {
+        update_vqt(bufsize, vqt, rb, vqt_result, x_scratch);
     }
 }
 
 pub fn update_vqt(
     bufsize: usize,
-    vqt: ResMut<VqtResource>,
+    mut vqt: ResMut<VqtResource>,
     rb: Res<AudioBufferResource>,
     mut vqt_result: ResMut<VqtResultResource>,
+    mut x_scratch: Local<Vec<f32>>,
 ) {
-    let (x, gain) = {
-        let n_fft = vqt.0.params().n_fft;
+    let n_fft = vqt.0.params().n_fft;
 
-        // Safety check: n_fft must not exceed bufsize
-        if n_fft > bufsize {
-            error!(
-                "VQT n_fft ({}) exceeds buffer size ({}). Skipping VQT calculation.",
-                n_fft, bufsize
-            );
-            // Return early with empty result
-            return;
-        }
+    // Safety check: n_fft must not exceed bufsize
+    if n_fft > bufsize {
+        error!(
+            "VQT n_fft ({}) exceeds buffer size ({}). Skipping VQT calculation.",
+            n_fft, bufsize
+        );
+        // Return early with empty result
+        return;
+    }
 
-        let mut x = vec![0.0_f32; n_fft];
+    x_scratch.resize(n_fft, 0.0);
+    let gain = {
         let rb = rb.0.lock().unwrap();
-        x.copy_from_slice(&rb.buf[(bufsize - n_fft)..]);
-        (x, rb.gain)
+        x_scratch.copy_from_slice(&rb.buf[(bufsize - n_fft)..]);
+        rb.gain
     };
 
-    vqt_result.x_vqt = vqt.0.calculate_vqt_instant_in_db(&x);
+    vqt_result.x_vqt = vqt.0.calculate_vqt_instant_in_db(&x_scratch);
     vqt_result.gain = gain;
 }

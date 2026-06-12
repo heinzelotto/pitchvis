@@ -122,7 +122,7 @@ pub fn train() -> Result<()> {
         quality: Q,
         gamma: GAMMA,
     };
-    let mut vqt = pitchvis_analysis::vqt::Vqt::new(&params)
+    let vqt = pitchvis_analysis::vqt::Vqt::new(&params)
         .expect("Failed to create VQT with default parameters");
 
     let vqt_delay_in_samples = (vqt.delay.as_millis() as usize * SR) / 1000;
@@ -145,37 +145,46 @@ pub fn train() -> Result<()> {
 
     let data: Vec<f32> = midi_paths
         .par_iter()
-        .flat_map(|p| {
-            println!("processing {p:?}");
-            let annotated_vqt = synthesize_midi_to_wav(
-                p.to_str().unwrap(),
-                sound_font.clone(),
-                vqt_delay_in_samples,
-                STEP_SIZE_IN_CHUNKS,
-                &vqt,
-            )
-            .unwrap_or_else(|_| {
-                println!(
-                    "failed to synthesize midi file {:?} to data point",
-                    p.to_str().unwrap()
-                );
-                vec![]
-            });
+        .map_init(
+            // the VQT computation needs mutable scratch space, so give each rayon worker
+            // thread its own instance
+            || {
+                pitchvis_analysis::vqt::Vqt::new(&params)
+                    .expect("Failed to create VQT with default parameters")
+            },
+            |vqt, p| {
+                println!("processing {p:?}");
+                let annotated_vqt = synthesize_midi_to_wav(
+                    p.to_str().unwrap(),
+                    sound_font.clone(),
+                    vqt_delay_in_samples,
+                    STEP_SIZE_IN_CHUNKS,
+                    vqt,
+                )
+                .unwrap_or_else(|_| {
+                    println!(
+                        "failed to synthesize midi file {:?} to data point",
+                        p.to_str().unwrap()
+                    );
+                    vec![]
+                });
 
-            annotated_vqt
-                .iter()
-                .flat_map(|x| {
-                    let (sample, target) = generate_data(&x);
-                    assert!(sample.len() == OCTAVES * BUCKETS_PER_OCTAVE);
-                    assert!(target.len() == 128);
-                    sample
-                        .iter()
-                        .chain(target.iter())
-                        .cloned()
-                        .collect::<Vec<f32>>()
-                })
-                .collect::<Vec<f32>>()
-        })
+                annotated_vqt
+                    .iter()
+                    .flat_map(|x| {
+                        let (sample, target) = generate_data(&x);
+                        assert!(sample.len() == OCTAVES * BUCKETS_PER_OCTAVE);
+                        assert!(target.len() == 128);
+                        sample
+                            .iter()
+                            .chain(target.iter())
+                            .cloned()
+                            .collect::<Vec<f32>>()
+                    })
+                    .collect::<Vec<f32>>()
+            },
+        )
+        .flatten()
         .collect();
 
     println!("{}", data.len());
@@ -245,7 +254,7 @@ fn synthesize_midi_to_wav(
     sound_font: Arc<SoundFont>,
     vqt_delay_in_samples: usize,
     step_size_in_chunks: usize,
-    vqt: &pitchvis_analysis::vqt::Vqt,
+    vqt: &mut pitchvis_analysis::vqt::Vqt,
 ) -> Result<Vec<(HashMap<i32, f32>, Vec<f32>)>> {
     // Load the MIDI file.
     let mut mid = File::open(midi_path).unwrap();

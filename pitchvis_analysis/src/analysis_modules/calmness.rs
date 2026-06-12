@@ -19,6 +19,7 @@ use super::peak_detection::PeakDetectionParameters;
 /// IMPROVEMENTS:
 /// 1. Amplitude-weighted: Louder notes contribute more to scene calmness (matches perception)
 /// 2. Released note tracking: Recently released notes contribute to prevent abrupt drops
+#[allow(clippy::too_many_arguments)]
 pub fn update_calmness(
     x_vqt: &[f32],
     x_vqt_smoothed_values: &[f32],

@@ -18,7 +18,7 @@ pub struct PeakDetectionParameters {
 pub struct ContinuousPeak {
     /// The estimated precise center of the peak, in buckets starting from the min_freq.
     pub center: f32,
-    /// The estimated precise amplitude of the peak, in ???
+    /// The estimated precise amplitude of the peak, in dB (same scale as the VQT output).
     pub size: f32,
 }
 
@@ -42,7 +42,7 @@ pub fn find_peaks(
     let peaks = fp.find_peaks();
 
     // Filter out lowest A and surroundings (first ~half semitone)
-    let min_bin = (buckets_per_octave as usize / 12 + 1) / 2;
+    let min_bin = (buckets_per_octave as usize / 12).div_ceil(2);
     peaks
         .iter()
         .filter(|p| p.middle_position() >= min_bin)
@@ -65,15 +65,15 @@ pub fn enhance_peaks_continuous(
 ) -> Vec<ContinuousPeak> {
     let mut peaks_continuous: Vec<_> = discrete_peaks
         .iter()
-        .filter_map(|p| {
+        .map(|p| {
             let p = *p;
 
             if p < 1 || p > range.n_buckets() - 2 {
                 // Edge case: use the discrete peak value directly
-                return Some(ContinuousPeak {
+                return ContinuousPeak {
                     center: p as f32,
                     size: vqt[p],
-                });
+                };
             }
 
             // Compute actual frequencies (logarithmically spaced)
@@ -92,10 +92,10 @@ pub fn enhance_peaks_continuous(
 
             if denom.abs() < f32::EPSILON {
                 // Degenerate case (shouldn't happen with logarithmic spacing)
-                return Some(ContinuousPeak {
+                return ContinuousPeak {
                     center: p as f32,
                     size: vqt[p],
-                });
+                };
             }
 
             // Compute parabola coefficients
@@ -136,10 +136,10 @@ pub fn enhance_peaks_continuous(
 
             let estimated_precise_size = vqt[lower_bin] * (1.0 - fract) + vqt[upper_bin] * fract;
 
-            Some(ContinuousPeak {
+            ContinuousPeak {
                 center: estimated_precise_center_clamped,
                 size: estimated_precise_size.max(0.0),
-            })
+            }
         })
         .collect();
     peaks_continuous.sort_by(|a, b| a.center.partial_cmp(&b.center).unwrap());

@@ -5707,8 +5707,10 @@ dependencies = [
  "lab",
  "log",
  "num-complex 0.4.6",
+ "realfft",
  "rustfft",
  "sprs",
+ "thiserror 2.0.17",
 ]
 
 [[package]]

@@ -54,7 +54,8 @@ pub fn update_tuning_inaccuracy(
     let mut inaccuracy_sum = 0.0;
     let mut power_sum = 0.0;
     for p in peaks_continuous {
-        let power = p.size * p.size;
+        // peak sizes are in dB; convert to power for physically meaningful weighting
+        let power = 10.0_f32.powf(p.size / 10.0);
         power_sum += power;
 
         let center_in_semitones = p.center * 12.0 / buckets_per_octave as f32;
