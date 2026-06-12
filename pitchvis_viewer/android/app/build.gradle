@@ -19,8 +19,8 @@ android {
         applicationId "org.p1graph.pitchvis"
         minSdk 29
         targetSdk 36
-        versionCode 25 // Change to a higher number for each new release
-        versionName "1.25" // Change to a higher number for each new release
+        versionCode 26 // Change to a higher number for each new release
+        versionName "1.26" // Change to a higher number for each new release
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -61,8 +61,10 @@ android {
 dependencies {
     implementation libs.appcompat
     implementation libs.material
-//    implementation "androidx.games:games-activity:4.0.0"
-    implementation "androidx.games:games-activity:2.0.2"
+    // Must match the GameActivity glue version bundled in the android-activity
+    // crate (the patched fork ships 4.0.0 glue; 2.0.2 aborts with
+    // "RegisterNatives failed for 'com/google/androidgamesdk/GameActivity'")
+    implementation "androidx.games:games-activity:4.0.0"
 //    implementation project(':CsoundAndroid')
     testImplementation libs.junit
     androidTestImplementation libs.ext.junit
