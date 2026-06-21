@@ -55,6 +55,13 @@ android {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
     }
+    // Store native libs compressed (extractNativeLibs=true) for a smaller APK
+    // download, at the cost of more on-device storage. Requested by F-Droid review.
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
     namespace 'org.p1graph.pitchvis'
 }
 
