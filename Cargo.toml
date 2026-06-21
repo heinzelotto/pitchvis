@@ -9,14 +9,15 @@ members = [
     "pitchvis_viewer",
     "dagc_fork",
     "rustysynth_fork",
-    "pitchvis_wasm_kiss3d",
-    "pitchvis_colors",
     "xtask",
 ]
 
 resolver = "2"
 
-exclude = ["na-mainloop"]
+# pitchvis_wasm_kiss3d is an archived alternative WASM renderer; excluded from the
+# workspace resolve so its kiss3d git fork is never fetched/built (it is unused by
+# pitchvis_viewer). See archive/pitchvis_wasm_kiss3d.
+exclude = ["na-mainloop", "archive/pitchvis_wasm_kiss3d"]
 
 # Enable a small amount of optimization in debug mode
 [profile.dev]
@@ -55,6 +56,5 @@ opt-level = "z" # Optimize for size.
 #panic = "abort"  # Abort on panic.
 
 [patch.crates-io]
-kiss3d = { git = "https://github.com/heinzelotto/kiss3d" }
 # FIXME: issue with stylus https://github.com/rust-mobile/android-activity/pull/191#issuecomment-3001694234
 android-activity = { git = "https://github.com/damus-io/android-activity", rev = "4ee16f1585e4a75031dc10785163d4b920f95805" }
