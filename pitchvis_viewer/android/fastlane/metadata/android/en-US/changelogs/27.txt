@@ -1,0 +1,3 @@
+Reworked the VQT analysis (shared-window real FFTs, exact conjugate handling) for cleaner,
+more accurate pitch detection. Ported the viewer to Bevy 0.18 and fixed an Android startup
+crash. First release published on F-Droid.
