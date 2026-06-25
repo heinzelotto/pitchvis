@@ -83,8 +83,22 @@ if [ -z "${KEYSTORE:-}" ]; then
   echo "Set KEYSTORE=/path/to/pitchvis-fdroid.jks to also sign. Skipping signing." >&2
   exit 0
 fi
-apksigner sign --ks "${KEYSTORE}" --ks-key-alias "${KS_ALIAS}" --out "${OUT}" "${UNSIGNED}"
-apksigner verify --print-certs "${OUT}" | grep -i 'SHA-256'
+# Sign so the published APK byte-matches F-Droid's unsigned rebuild except for the signature
+# (apksigcopier requirement). Per https://f-droid.org/en/docs/Reproducible_Builds/ :
+#   * Use apksigner from BUILD-TOOLS 34. Newer apksigner (35+) re-zipaligns the APK with its
+#     own scheme, shifting entry offsets a few bytes vs AGP's packaging, and apksigcopier
+#     "will fail" to reconcile it. build-tools 34 preserves the existing AGP alignment, so
+#     signing only inserts the APK Signing Block. (bt35+ CAN be made to work with
+#     `--alignment-preserved true`, but the F-Droid-sanctioned path is bt34.)
+#   * --v1-signing-enabled false : v1 (JAR) signing injects META-INF/{MANIFEST.MF,*.SF,*.RSA}
+#     zip entries the unsigned rebuild lacks; v2/v3 digests then cover them. v1 is useless at
+#     minSdk 29 (v2/v3 cover API 24+/28+).
+: "${APKSIGNER:=${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Android/Sdk}}/build-tools/34.0.0/apksigner}"
+[ -x "${APKSIGNER}" ] || { echo "ERROR: build-tools 34 apksigner not found at ${APKSIGNER} (set APKSIGNER=/path/to/build-tools/34.0.0/apksigner)" >&2; exit 1; }
+"${APKSIGNER}" sign --ks "${KEYSTORE}" --ks-key-alias "${KS_ALIAS}" \
+  --v1-signing-enabled false \
+  --out "${OUT}" "${UNSIGNED}"
+"${APKSIGNER}" verify --print-certs "${OUT}" | grep -i 'SHA-256'
 echo "Signed APK: ${OUT}"
 echo "Upload this as the v$(grep -oE 'versionName \"[0-9.]+\"' app/build.gradle | grep -oE '[0-9.]+') release asset, named org.p1graph.pitchvis_${VC}.apk"
 echo "Put the cert SHA-256 above (lowercase hex, no colons) into AllowedAPKSigningKeys in the recipe."
