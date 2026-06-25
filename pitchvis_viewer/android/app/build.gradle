@@ -19,8 +19,8 @@ android {
         applicationId "org.p1graph.pitchvis"
         minSdk 29
         targetSdk 36
-        versionCode 27 // Change to a higher number for each new release
-        versionName "1.27" // Change to a higher number for each new release
+        versionCode 28 // Change to a higher number for each new release
+        versionName "1.28" // Change to a higher number for each new release
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }

@@ -1,0 +1,3 @@
+First F-Droid release: built reproducibly from source and signed with our own
+key, so the published APK can be verified against this repository. No functional
+changes from the previous version.
