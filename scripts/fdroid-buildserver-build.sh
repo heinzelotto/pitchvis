@@ -68,6 +68,9 @@ if [ "$(id -u)" != "$VAGRANT_UID" ]; then
     # makes everything the build later creates inherit the grant.
     setfacl -R -m "u:${VAGRANT_UID}:rwX" -m "d:u:${VAGRANT_UID}:rwX" "$FDROIDDATA"
   fi
+  # The recipe gets rewritten by editors/rewritemeta via atomic rename, which drops the
+  # directory's inherited ACL, so the container then can't read it. Re-grant on it each run.
+  setfacl -m "u:${VAGRANT_UID}:rwX" "$RECIPE" 2>/dev/null || true
 fi
 
 # Cleanup on exit: (a) restore the recipe if we backed it up (build mode), and (b) restore HOST
