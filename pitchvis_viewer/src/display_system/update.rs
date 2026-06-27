@@ -162,7 +162,7 @@ fn fade_pitch_balls(
             transform.scale = size * PITCH_BALL_SCALE_FACTOR;
 
             // also make them slightly more transparent when they are smaller
-            if let Some(color_mat) = noisy_color_materials.get_mut(&*color) {
+            if let Some(mut color_mat) = noisy_color_materials.get_mut(&*color) {
                 color_mat.color = color_mat
                     .color
                     .with_alpha((color_mat.color.alpha() * dropoff_factor).max(0.7));
@@ -233,7 +233,7 @@ fn update_pitch_balls(
             let z_ordering_offset = (size / max_size - 1.01) * 12.5;
             transform.translation = Vec3::new(x, y, z_ordering_offset);
 
-            let Some(color_mat) = noisy_color_materials.get_mut(&*color) else {
+            let Some(mut color_mat) = noisy_color_materials.get_mut(&*color) else {
                 continue;
             };
             color_mat.params.time = run_time.elapsed_secs();
@@ -415,7 +415,7 @@ fn update_bass_spiral(
 
             let color_coefficient = 1.0 - (1.0 - size / max_size).powf(2.0);
 
-            if let Some(material) = materials.get_mut(&*color) {
+            if let Some(mut material) = materials.get_mut(&*color) {
                 material.color = Color::srgba(r, g, b, color_coefficient);
             }
 
@@ -630,7 +630,7 @@ fn update_spectrum(
     spectrum_mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
     spectrum_mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, all_colors);
 
-    if let Some(mesh) = meshes.get_mut(&mesh_handle.0) {
+    if let Some(mut mesh) = meshes.get_mut(&mesh_handle.0) {
         *mesh = spectrum_mesh;
     }
 
@@ -735,7 +735,7 @@ pub fn update_scene_calmness_graph(
 
     // Update the mesh
     if let Ok(mesh_handle) = graph_query.single() {
-        if let Some(mesh) = meshes.get_mut(&mesh_handle.0) {
+        if let Some(mut mesh) = meshes.get_mut(&mesh_handle.0) {
             *mesh = new_mesh;
         }
     }
@@ -861,7 +861,7 @@ pub fn update_calmness_histogram(
     new_mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, all_colors);
 
     // Update the mesh
-    if let Some(mesh) = meshes.get_mut(&mesh_handle.0) {
+    if let Some(mut mesh) = meshes.get_mut(&mesh_handle.0) {
         *mesh = new_mesh;
     }
 
@@ -943,7 +943,7 @@ pub fn update_spectrogram_system(
         return;
     };
 
-    let Some(image) = images.get_mut(&spectrogram_res.image_handle) else {
+    let Some(mut image) = images.get_mut(&spectrogram_res.image_handle) else {
         return;
     };
 
@@ -1081,7 +1081,7 @@ pub fn update_spectrogram_system(
     spectrogram_res.write_index = next_idx;
 
     // Update material scroll offset for visual scrolling effect
-    if let Some(material) = spectrogram_materials.get_mut(&spectrogram_res.material_handle) {
+    if let Some(mut material) = spectrogram_materials.get_mut(&spectrogram_res.material_handle) {
         material.scroll_params.scroll_offset = next_idx as f32 / height as f32;
     }
 }

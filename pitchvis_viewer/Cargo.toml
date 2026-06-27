@@ -7,8 +7,9 @@ edition = "2021"
 [features]
 ml = ["dep:tch"]
 
-[package.metadata.wasm-pack.profile.web-release]
-wasm-opt = ['-Oz']
+# wasm-opt is run explicitly by `cargo xtask build wasm` (with the feature flags the
+# Rust wasm target requires), not by wasm-pack — wasm-pack ignores the wasm-opt config of
+# custom cargo profiles like `web-release`. See xtask/src/main.rs::build_wasm.
 
 [lib]
 name = "pitchvis_viewer_lib"
@@ -22,13 +23,13 @@ path = "src/main.rs"
 anyhow = "1.0"
 itertools = "0.14.0"
 log = "0.4.17"
-bevy = { version = "0.18", features = ["tonemapping_luts"] }
+bevy = { version = "0.19", features = ["tonemapping_luts"] }
 nalgebra = "0.34.0"
 pitchvis_analysis = { path = "../pitchvis_analysis" }
 pitchvis_audio = { path = "../pitchvis_audio" }
 pitchvis_colors = { path = "../pitchvis_colors" }
 dagc = { version = "0.1.0", path = "../dagc_fork" } # FIXME: fork and reference fork as patched dependency
-bevy-persistent = { version = "0.10", features = [
+bevy-persistent = { version = "0.11", features = [
     "all",
 ] } # TODO: select storage formats
 serde = "1.0"
@@ -40,7 +41,7 @@ dirs = "6.0"
 android-activity = { version = "0.6.0", features = ["game-activity"] }
 jni = "0.21.0"
 ndk-context = "0.1.1"
-bevy_window = "0.18"
+bevy_window = "0.19"
 oboe = "0.6.1"
 nix = { version = "0.30.1", features = ["time"] }
 

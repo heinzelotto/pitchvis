@@ -148,8 +148,8 @@ pub struct FpsRoot;
 pub fn setup_fps_counter(mut commands: Commands, asset_server: Res<AssetServer>) {
     let font = asset_server.load("fonts/DejaVuSans.ttf");
     let text_font = TextFont {
-        font: font.clone(),
-        font_size: 16.0,
+        font: font.clone().into(),
+        font_size: FontSize::Px(16.0),
         ..Default::default()
     };
 
@@ -347,7 +347,7 @@ pub struct ScreenLockIndicator;
 
 pub fn setup_analysis_text(mut commands: Commands) {
     let text_font = TextFont {
-        font_size: 16.0,
+        font_size: FontSize::Px(16.0),
         ..default()
     };
 
@@ -364,7 +364,7 @@ pub fn setup_analysis_text(mut commands: Commands) {
                 // padding: UiRect::all(Val::Px(4.0)),
                 ..default()
             },
-            TextLayout::new_with_justify(Justify::Center),
+            TextLayout::justify(Justify::Center),
             // give it a dark background for readability
             BackgroundColor(Color::BLACK.with_alpha(0.5)),
             // make it "always on top" by setting the Z index to maximum
@@ -434,7 +434,7 @@ pub fn analysis_text_showhide(
 /// Setup debug text (bottom left)
 pub fn setup_debug_text(mut commands: Commands) {
     let text_font = TextFont {
-        font_size: 14.0,
+        font_size: FontSize::Px(14.0),
         ..default()
     };
 
@@ -450,7 +450,7 @@ pub fn setup_debug_text(mut commands: Commands) {
                 padding: UiRect::all(Val::Px(4.0)),
                 ..default()
             },
-            TextLayout::new_with_justify(Justify::Left),
+            TextLayout::justify(Justify::Left),
             BackgroundColor(Color::BLACK.with_alpha(0.5)),
             ZIndex(i32::MAX),
             Visibility::Visible,
@@ -1167,7 +1167,7 @@ pub fn rebuild_vqt_system(
 /// Setup screen lock indicator
 pub fn setup_screen_lock_indicator(mut commands: Commands) {
     let text_font = TextFont {
-        font_size: 20.0,
+        font_size: FontSize::Px(20.0),
         ..default()
     };
 
@@ -1246,7 +1246,7 @@ pub fn handle_screen_lock_indicator_press(
 //         Text::new(""),
 //         TextColor(Color::WHITE),
 //         TextFont {
-//             font_size: 16.0,
+//             font_size: FontSize::Px(16.0),
 //             ..default()
 //         },
 //         Node {
@@ -1409,7 +1409,7 @@ pub fn setup_buttons(mut commands: Commands, settings: Res<Persistent<SettingsSt
         ..default()
     };
     let text_font = TextFont {
-        font_size: 16.0,
+        font_size: FontSize::Px(16.0),
         ..default()
     };
 
@@ -1521,7 +1521,7 @@ pub fn setup_feature_toggle_buttons(
         ..default()
     };
     let text_font = TextFont {
-        font_size: 16.0,
+        font_size: FontSize::Px(16.0),
         ..default()
     };
 

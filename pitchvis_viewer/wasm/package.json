@@ -5,7 +5,6 @@
     "serve": "webpack-dev-server --host 0.0.0.0"
   },
   "devDependencies": {
-    "@wasm-tool/wasm-pack-plugin": "^1.7.0",
     "text-encoding": "^0.7.0",
     "html-webpack-plugin": "^5.6.3",
     "webpack": "^5.97.0",

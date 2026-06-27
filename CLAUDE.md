@@ -220,11 +220,17 @@ Bevy (the game engine used) is significantly slower in debug mode. Even for deve
 **Prerequisites**:
 - Node.js and npm
 - wasm-pack: `cargo install wasm-pack`
+- binaryen (`wasm-opt`) **≥ 119** on `PATH` — the `cargo install wasm-opt` crate is capped at
+  v116, which is too old (it lacks `--enable-bulk-memory-opt` and rejects the bulk-memory ops the
+  Rust std emits). Install an official binaryen release binary instead (e.g. from
+  github.com/WebAssembly/binaryen/releases) and ensure it shadows any older `wasm-opt`.
 
 **Build process**:
 1. Installs npm dependencies (if needed)
-2. Compiles Rust to WebAssembly
-3. Bundles with webpack to `dist/`
+2. Compiles Rust to WebAssembly (`wasm-pack --no-opt`)
+3. Optimizes with `wasm-opt -Oz` (release only) — run by xtask, not wasm-pack, because wasm-pack
+   ignores the wasm-opt config of custom cargo profiles like `web-release`
+4. Bundles the prebuilt `wasm/pkg` with webpack to `dist/`
 
 **Development workflow**:
 ```bash

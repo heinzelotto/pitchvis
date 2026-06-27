@@ -1,14 +1,20 @@
 const path = require('path');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 const webpack = require('webpack');
-const WasmPackPlugin = require("@wasm-tool/wasm-pack-plugin");
 const CopyPlugin = require('copy-webpack-plugin');
+
+// NOTE: the wasm crate is compiled (wasm-pack) and optimized (wasm-opt) by
+// `cargo xtask build wasm` *before* webpack runs; webpack only bundles the prebuilt
+// `./pkg`. The wasm-pack webpack plugin was removed because it ignored the custom
+// `web-release` cargo profile's wasm-opt config and shipped un-optimized wasm. Always
+// build via `cargo xtask build wasm[ --release]`, then `npm run serve` to preview.
 
 module.exports = {
     entry: ['./index.js'],
     output: {
         path: path.resolve(__dirname, 'dist'),
         filename: '[name].js',
+        clean: true, // purge stale hashed assets (e.g. old *.module.wasm) so dist/ isn't bloated
     },
 
     plugins: [
@@ -19,12 +25,6 @@ module.exports = {
             patterns: [
                 { from: '../assets', to: 'assets' },
             ]
-        }),
-        new WasmPackPlugin({
-            crateDirectory: path.resolve(__dirname, ".."),
-            extraArgs: "--profile web-release",
-            // extraArgs: "--no-opt", // for testing
-            outDir: "wasm/pkg",
         }),
         // Have this example work in Edge which doesn't ship `TextEncoder` or
         // `TextDecoder` at this time.

@@ -128,63 +128,102 @@ fn build_desktop(_release: bool) -> Result<()> {
     Ok(())
 }
 
+// Post-MVP wasm features the Rust wasm32 target (and the precompiled std) emit by
+// default. wasm-opt validates input as MVP unless each is explicitly enabled, so these
+// must be passed or it rejects the bulk-memory ops (`memory.copy`) coming out of std.
+// `--enable-bulk-memory-opt` requires binaryen >= 119.
+const WASM_OPT_FEATURE_ARGS: &[&str] = &[
+    "--enable-bulk-memory",
+    "--enable-bulk-memory-opt",
+    "--enable-sign-ext",
+    "--enable-nontrapping-float-to-int",
+    "--enable-mutable-globals",
+    "--enable-multivalue",
+    "--enable-reference-types",
+];
+
 fn build_wasm(release: bool, rust_only: bool) -> Result<()> {
     println!("🔨 Building pitchvis for WASM...");
 
     let viewer_dir = project_root().join("pitchvis_viewer");
     let wasm_dir = viewer_dir.join("wasm");
+    let profile = if release { "web-release" } else { "dev" };
 
-    if !rust_only {
-        // Build via npm which handles wasm-pack internally
-        println!("📦 Installing npm dependencies...");
-        let status = Command::new("npm")
-            .current_dir(&wasm_dir)
-            .arg("install")
-            .status()
-            .context("Failed to run npm install")?;
-
-        if !status.success() {
-            anyhow::bail!("npm install failed");
-        }
-
-        println!("🏗️  Building with npm...");
-        let status = Command::new("npm")
-            .current_dir(&wasm_dir)
-            .arg("run")
-            .arg("build")
-            .status()
-            .context("Failed to run npm build")?;
-
-        if !status.success() {
-            anyhow::bail!("npm build failed");
-        }
-
-        println!("✅ WASM build complete!");
-        println!("   Output: {}", wasm_dir.join("dist").display());
-    } else {
-        // Just build Rust code
-        println!("🦀 Building Rust code only...");
-        let profile = if release { "web-release" } else { "dev" };
-
-        let status = Command::new("wasm-pack")
-            .current_dir(&viewer_dir)
-            .arg("build")
-            .arg("--target")
-            .arg("web")
-            .arg("--out-dir")
-            .arg("wasm/pkg")
-            .arg("--profile")
-            .arg(profile)
-            .status()
-            .context("Failed to run wasm-pack")?;
-
-        if !status.success() {
-            anyhow::bail!("wasm-pack build failed");
-        }
-
-        println!("✅ Rust WASM build complete!");
+    // 1) Compile Rust -> wasm + wasm-bindgen glue. We pass `--no-opt` and run wasm-opt
+    //    ourselves below: wasm-pack 0.13 ignores the `wasm-opt` config of *custom* cargo
+    //    profiles (such as `web-release`), so it would run a bare `-O` with no feature
+    //    flags and fail to validate the bulk-memory ops std emits. `--target bundler
+    //    --out-name index` matches what webpack imports (`import('./pkg')`).
+    println!("🦀 Compiling Rust to WASM (profile: {profile})...");
+    let status = Command::new("wasm-pack")
+        .current_dir(&viewer_dir)
+        .args([
+            "build",
+            "--target",
+            "bundler",
+            "--out-name",
+            "index",
+            "--out-dir",
+            "wasm/pkg",
+            "--no-opt",
+            "--profile",
+            profile,
+        ])
+        .status()
+        .context("Failed to run wasm-pack")?;
+    if !status.success() {
+        anyhow::bail!("wasm-pack build failed");
     }
 
+    // 2) Optimize with wasm-opt (release only; dev skips it to stay fast). Needs the
+    //    feature flags above and a recent binaryen (>= 119) on PATH.
+    if release {
+        let wasm = wasm_dir.join("pkg").join("index_bg.wasm");
+        let wasm_opt_out = wasm_dir.join("pkg").join("index_bg.opt.wasm");
+        println!("📦 Optimizing with wasm-opt -Oz...");
+        let status = Command::new("wasm-opt")
+            .arg(&wasm)
+            .arg("-o")
+            .arg(&wasm_opt_out)
+            .arg("-Oz")
+            .args(WASM_OPT_FEATURE_ARGS)
+            .status()
+            .context("Failed to run wasm-opt (install binaryen >= 119 and put it on PATH)")?;
+        if !status.success() {
+            anyhow::bail!("wasm-opt failed");
+        }
+        std::fs::rename(&wasm_opt_out, &wasm).context("Failed to replace wasm with optimized output")?;
+    }
+
+    if rust_only {
+        println!("✅ Rust WASM build complete!");
+        return Ok(());
+    }
+
+    // 3) Bundle with webpack (consumes the prebuilt wasm/pkg).
+    println!("📦 Installing npm dependencies...");
+    let status = Command::new("npm")
+        .current_dir(&wasm_dir)
+        .arg("install")
+        .status()
+        .context("Failed to run npm install")?;
+    if !status.success() {
+        anyhow::bail!("npm install failed");
+    }
+
+    println!("🏗️  Bundling with webpack...");
+    let status = Command::new("npm")
+        .current_dir(&wasm_dir)
+        .arg("run")
+        .arg("build")
+        .status()
+        .context("Failed to run npm build")?;
+    if !status.success() {
+        anyhow::bail!("npm build failed");
+    }
+
+    println!("✅ WASM build complete!");
+    println!("   Output: {}", wasm_dir.join("dist").display());
     Ok(())
 }
 

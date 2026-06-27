@@ -12,7 +12,7 @@ use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::image::ImageSampler;
 use bevy::post_process::bloom::{Bloom, BloomCompositeMode, BloomPrefilter};
 use bevy::prelude::*;
-use bevy::render::view::Hdr;
+use bevy::camera::Hdr;
 use itertools::Itertools;
 use nalgebra::{Rotation3, Vector3};
 use std::f32::consts::PI;
@@ -326,7 +326,7 @@ fn spawn_light(commands: &mut Commands) {
             // Shadows makes some Android devices segfault, this is under investigation
             // https://github.com/bevyengine/bevy/issues/8214
             #[cfg(not(target_os = "android"))]
-            shadows_enabled: true,
+            shadow_maps_enabled: true,
             ..default()
         },
         Transform::from_xyz(0.0, 0.0, 9.0),
@@ -337,7 +337,7 @@ fn spawn_light(commands: &mut Commands) {
             //  Shadows makes some Android devices segfault, this is under investigation
             //https://github.com/bevyengine/bevy/issues/8214
             #[cfg(not(target_os = "android"))]
-            shadows_enabled: true,
+            shadow_maps_enabled: true,
             ..default()
         },
         Transform::from_xyz(0.0, 0.0, -29.0),
@@ -390,8 +390,8 @@ fn spawn_pitch_names_text(
 ) {
     let font = asset_server.load("fonts/DejaVuSans.ttf");
     let text_font = TextFont {
-        font: font.clone(),
-        font_size: 40.0,
+        font: font.clone().into(),
+        font_size: FontSize::Px(40.0),
         ..Default::default()
     };
     let text_spiral_points = calculate_spiral_points(range.octaves, 12);
@@ -408,7 +408,7 @@ fn spawn_pitch_names_text(
             Text2d::new(PITCH_NAMES[pitch_idx]),
             TextColor(Color::srgb(r, g, b)),
             text_font.clone(),
-            TextLayout::new_with_justify(Justify::Center),
+            TextLayout::justify(Justify::Center),
             Transform::from_xyz(x, y, -0.02).with_scale(vec3(0.02, 0.02, 1.0)),
             Visibility::Visible,
         ));
