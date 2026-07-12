@@ -1,21 +1,16 @@
-PitchVis listens to your microphone and turns the musical pitches it hears into a
-colorful, real-time visualization.
+PitchVis listens to your microphone and turns the musical pitches it hears into a colorful, real-time visualization.
 
-Under the hood it runs a Variable-Q Transform (VQT) over the live audio signal, which
-gives high frequency resolution in the low registers where music lives, then detects the
-prominent pitches and maps each one to a color. The result is an animated picture of the
-harmony, melody and tuning of whatever you play or sing.
+Under the hood it runs a Variable-Q Transform (VQT) over the live audio signal, which gives high frequency resolution in the low registers where music lives, then detects the prominent pitches and maps each one to a color. The result is an animated picture of the harmony, melody and tuning of whatever you play or sing. It is displayed in a spiral, 12 pitches per octave, one octave per spiral rotation.
 
 Features:
 
 * Real-time pitch analysis of live microphone input
-* Variable-Q Transform tuned for musical signals
+* Variable-Q Transform tuned for musical signals (especially choir singing)
 * Pitch-to-color mapping in a perceptual color space
 * Several visual modes (Full, Zen, Performance, Galaxy)
 * Tuning drift display in cents
-* Runs fully offline — no network access, no tracking, no ads
+* Runs fully offline
 
-PitchVis is useful for musicians, singers, music students and anyone curious about the
-structure of the sounds around them. It works with any instrument or voice.
+PitchVis is useful for musicians, singers, music students and anyone curious about the structure of the sounds around them. It works with any instrument or voice.
 
 The app requires only the microphone permission and does not connect to the internet.
