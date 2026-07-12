@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- API-29+ overrides. android:enforceNavigationBarContrast was added in API 29 (Q);
+         it disables the system-drawn protective scrim behind our transparent navigation bar.
+         Before API 29 that scrim doesn't exist, so the attribute is meaningless there and must
+         not appear in the base theme (it fails lint's NewApi check at minSdk 28). -->
+    <style name="AppTheme" parent="BaseAppTheme">
+        <item name="android:enforceNavigationBarContrast">false</item>
+    </style>
+
+    <style name="AppTheme.Night" parent="BaseAppThemeNight">
+        <item name="android:enforceNavigationBarContrast">false</item>
+    </style>
+</resources>

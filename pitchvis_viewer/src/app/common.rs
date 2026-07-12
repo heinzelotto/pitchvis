@@ -1799,6 +1799,42 @@ fn cycle_vqt_smoothing_mode(mode: &mut display_system::VQTSmoothingMode) {
     }
 }
 
+/// Logical-pixel inset of the system bars from the window's top-left origin.
+///
+/// On Android in multi-window/split-screen the touch stream is delivered in window
+/// space (which includes the top status-bar region), while the render surface and
+/// `bevy_ui` layout exclude that region — so raw touches land offset by the bar height.
+/// This resource carries that inset so [`correct_touch_insets`] can realign them. It stays
+/// at the `Default` (zero) in fullscreen, making the correction a no-op. Android-only:
+/// desktop/web never have a system-bar inset, so both this and its system are gated out.
+#[cfg(target_os = "android")]
+#[derive(Resource, Default)]
+pub struct SystemBarInset {
+    pub top: f32,
+    pub left: f32,
+}
+
+/// Subtracts the [`SystemBarInset`] from incoming touch positions so they share the same
+/// coordinate frame as `bevy_ui`'s layout/hit-testing and our own input handling.
+///
+/// Registered (from `android_app.rs`) in `PreUpdate` before `InputSystems`, so every
+/// downstream touch consumer — `bevy_input`'s `Touches` aggregation, `bevy_ui`'s
+/// focus/interaction, and [`user_input_system`] — observes the corrected coordinates.
+/// Uses [`MessageMutator`] to edit the events in place rather than draining/re-emitting.
+#[cfg(target_os = "android")]
+pub fn correct_touch_insets(
+    inset: Res<SystemBarInset>,
+    mut touch_events: MessageMutator<TouchInput>,
+) {
+    if inset.top == 0.0 && inset.left == 0.0 {
+        return;
+    }
+    for touch in touch_events.read() {
+        touch.position.x -= inset.left;
+        touch.position.y -= inset.top;
+    }
+}
+
 pub fn user_input_system(
     mut touch_events: MessageReader<TouchInput>,
     mut keyboard_input_events: MessageReader<KeyboardInput>,

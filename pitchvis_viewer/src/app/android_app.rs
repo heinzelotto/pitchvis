@@ -1,5 +1,6 @@
 use android_activity::AndroidApp;
 use bevy::diagnostic::LogDiagnosticsPlugin;
+use bevy::input::InputSystems;
 use bevy::log::LogPlugin;
 use bevy::prelude::*;
 use bevy::window::AppLifecycle;
@@ -16,7 +17,8 @@ use oboe::{
 use std::path::PathBuf;
 
 use super::common::{
-    build_common_app, register_common_update_systems, register_startup_systems, PlatformConfig,
+    build_common_app, correct_touch_insets, register_common_update_systems,
+    register_startup_systems, PlatformConfig, SystemBarInset,
 };
 use crate::analysis_system;
 use crate::app::common::ScreenLockState;
@@ -124,6 +126,30 @@ fn handle_android_ui_visibility(
     //         android_activity::WindowManagerFlags::LAYOUT_NO_LIMITS,
     //     );
     // }
+}
+
+/// Refreshes [`SystemBarInset`] (in logical pixels) from the current Android content rect.
+///
+/// The content rect is the window area not covered by system UI; its top/left origin is the
+/// system-bar inset in *physical* pixels, so we divide by the window scale factor to match
+/// the logical coordinates Bevy uses for touch positions and UI layout. In fullscreen the
+/// inset is zero, so [`correct_touch_insets`] does nothing; it only bites in split-screen /
+/// multi-window, where Android refuses to let us hide the bars.
+fn update_system_bar_inset(mut inset: ResMut<SystemBarInset>, windows: Query<&Window>) {
+    let Some(app) = bevy::android::ANDROID_APP.get() else {
+        return;
+    };
+    let scale_factor = windows
+        .iter()
+        .next()
+        .map(|w| w.resolution.scale_factor())
+        .unwrap_or(1.0);
+    if scale_factor <= 0.0 {
+        return;
+    }
+    let rect = app.content_rect();
+    inset.top = rect.top.max(0) as f32 / scale_factor;
+    inset.left = rect.left.max(0) as f32 / scale_factor;
 }
 
 fn microphone_permission_granted(perm: &str) -> bool {
@@ -365,6 +391,19 @@ fn main() -> AppExit {
     app.add_systems(
         Update,
         (handle_lifetime_events_system, handle_android_ui_visibility),
+    );
+
+    // Android-specific: realign touch coordinates for the system-bar inset in
+    // split-screen/multi-window. `update_system_bar_inset` refreshes the inset, then
+    // `correct_touch_insets` subtracts it; both run in PreUpdate before InputSystems so
+    // bevy_input's Touches aggregation, bevy_ui focus, and user_input_system all see the
+    // corrected coordinates.
+    app.insert_resource(SystemBarInset::default());
+    app.add_systems(
+        PreUpdate,
+        (update_system_bar_inset, correct_touch_insets)
+            .chain()
+            .before(InputSystems),
     );
 
     app.run()

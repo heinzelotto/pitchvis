@@ -1,7 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Base application theme -->
-    <style name="AppTheme" parent="Theme.AppCompat.Light.NoActionBar">
+    <!-- Base application theme.
+         API-29-only attributes (android:enforceNavigationBarContrast) are NOT set here;
+         they live in values-v29/themes.xml so the app builds and runs on Android 9 (API 28).
+         The AppTheme / AppTheme.Night styles referenced by the manifest are thin aliases so
+         the v29 variant only needs to add the API-29 delta instead of duplicating everything. -->
+    <style name="BaseAppTheme" parent="Theme.AppCompat.Light.NoActionBar">
         <!-- Primary brand color -->
         <item name="colorPrimary">@color/purple_500</item>
         <item name="colorPrimaryVariant">@color/purple_700</item>
@@ -21,19 +25,22 @@
 
         <!-- Edge-to-edge display -->
         <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
-        <item name="android:enforceNavigationBarContrast">false</item>
 
-        <!-- Fullscreen settings -->
+        <!-- Fullscreen settings.
+             Immersive/edge-to-edge is driven entirely from MainActivity.hideSystemUI()
+             (setDecorFitsSystemWindows(false) + WindowInsetsController). The legacy
+             android:windowFullscreen flag is intentionally NOT set here: it is ignored in
+             multi-window/split-screen and fights the WindowInsetsController path. -->
         <item name="android:windowNoTitle">true</item>
-        <item name="android:windowFullscreen">true</item>
         <item name="android:windowContentOverlay">@null</item>
         <item name="android:fitsSystemWindows">false</item>
         <item name="android:windowDrawsSystemBarBackgrounds">true</item>
-
     </style>
 
+    <style name="AppTheme" parent="BaseAppTheme" />
+
     <!-- Night mode theme -->
-    <style name="AppTheme.Night" parent="Theme.AppCompat.Light.NoActionBar">
+    <style name="BaseAppThemeNight" parent="Theme.AppCompat.Light.NoActionBar">
         <!-- Primary brand color -->
         <item name="colorPrimary">@color/purple_200</item>
         <item name="colorPrimaryVariant">@color/purple_700</item>
@@ -53,14 +60,17 @@
 
         <!-- Edge-to-edge display -->
         <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
-        <item name="android:enforceNavigationBarContrast">false</item>
 
-        <!-- Fullscreen settings -->
+        <!-- Fullscreen settings.
+             Immersive/edge-to-edge is driven entirely from MainActivity.hideSystemUI()
+             (setDecorFitsSystemWindows(false) + WindowInsetsController). The legacy
+             android:windowFullscreen flag is intentionally NOT set here: it is ignored in
+             multi-window/split-screen and fights the WindowInsetsController path. -->
         <item name="android:windowNoTitle">true</item>
-        <item name="android:windowFullscreen">true</item>
         <item name="android:windowContentOverlay">@null</item>
         <item name="android:fitsSystemWindows">false</item>
         <item name="android:windowDrawsSystemBarBackgrounds">true</item>
-
     </style>
+
+    <style name="AppTheme.Night" parent="BaseAppThemeNight" />
 </resources>

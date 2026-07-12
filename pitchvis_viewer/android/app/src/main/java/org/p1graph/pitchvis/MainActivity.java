@@ -29,19 +29,27 @@ public class MainActivity extends GameActivity {
     }
 
     private void hideSystemUI() {
-        // This will put the game behind any cutouts and waterfalls on devices which have
-        // them, so the corresponding insets will be non-zero.
+        // Draw edge-to-edge: the game SurfaceView fills the ENTIRE window, including the
+        // area behind the status/navigation bars and any display cutout. This is essential
+        // for correct input on GameActivity: touches are delivered in surface-local
+        // coordinates, so if the surface were inset by the status-bar height (the default
+        // when decor "fits" system windows) every touch would land offset by that height.
+        // That is exactly the split-screen bug (white bar at top, touches shifted down).
+        WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
+
+        // Put the game behind any cutouts/waterfalls on devices that have them, so the
+        // corresponding insets are non-zero and we render under them.
         if (VERSION.SDK_INT >= VERSION_CODES.P) {
             getWindow().getAttributes().layoutInDisplayCutoutMode
                     = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS;
         }
         // From API 30 onwards, this is the recommended way to hide the system UI, rather than
-        // using View.setSystemUiVisibility.
+        // using View.setSystemUiVisibility. Hide BOTH bars (systemBars = status + navigation);
+        // let them reappear transiently on a swipe from the edge.
         View decorView = getWindow().getDecorView();
         WindowInsetsControllerCompat controller = new WindowInsetsControllerCompat(getWindow(),
                 decorView);
-        controller.hide(WindowInsetsCompat.Type.statusBars());
-        controller.hide(WindowInsetsCompat.Type.displayCutout());
+        controller.hide(WindowInsetsCompat.Type.systemBars());
         controller.setSystemBarsBehavior(
                 WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
     }
@@ -51,9 +59,7 @@ public class MainActivity extends GameActivity {
         super.onCreate(savedInstanceState);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
-        // WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
         hideSystemUI();
-
     }
 
     @Override
@@ -69,5 +75,11 @@ public class MainActivity extends GameActivity {
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
+        // The system re-shows the bars whenever we regain focus (returning from the
+        // recents/permission dialog, resizing or entering/leaving split-screen, etc.),
+        // so re-assert the immersive state each time.
+        if (hasFocus) {
+            hideSystemUI();
+        }
     }
 }
