@@ -5,7 +5,7 @@
 #
 # This MIRRORS the F-Droid recipe's `prebuild` + `gradle: assembleRelease` steps
 # (metadata/org.p1graph.pitchvis.yml). The reproducibility-critical settings — Rust
-# 1.94.0, cargo-ndk 4.1.2, NDK r28c, and the --remap-path-prefix flags — must stay
+# 1.97.0, cargo-ndk 4.1.2, NDK r28c, and the --remap-path-prefix flags — must stay
 # in sync with the recipe; the recipe is the source of truth that F-Droid CI runs.
 #
 # For a byte-match against F-Droid's build, run this INSIDE the official buildserver
@@ -38,8 +38,24 @@ fi
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${REPO_ROOT}"
 
-# --- toolchain (release-only pin; does not touch your everyday default) ----------
-rustup default 1.94.0
+# Resolve a relative KEYSTORE against the repo root NOW, before we cd into subdirs to build
+# — otherwise apksigner (which runs from pitchvis_viewer/android) can't find e.g.
+# ./pitchvis-fdroid.jks. Mirrors how OUT already defaults to a REPO_ROOT-anchored path.
+if [ -n "${KEYSTORE:-}" ]; then
+  case "${KEYSTORE}" in
+    /*) : ;;                                    # already absolute
+    *)  KEYSTORE="${REPO_ROOT}/${KEYSTORE}" ;;  # e.g. ./pitchvis-fdroid.jks
+  esac
+fi
+
+# --- toolchain (release-only pin; does NOT change your global `rustup default`) ---
+# Use RUSTUP_TOOLCHAIN (a per-process override, scoped to this script's process tree)
+# rather than `rustup default`, which would clobber your everyday default toolchain.
+# Install the pinned toolchain first if it is missing. The F-Droid recipe uses
+# `rustup default 1.97.0` in its prebuild instead — equivalent there, since it runs in a
+# throwaway buildserver container; reproducibility depends on the version, not the mechanism.
+rustup toolchain install 1.97.0
+export RUSTUP_TOOLCHAIN=1.97.0
 rustup target add aarch64-linux-android
 cargo install cargo-ndk --version 4.1.2 --locked
 
