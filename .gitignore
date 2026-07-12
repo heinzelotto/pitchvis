@@ -27,6 +27,11 @@ flamegraph.svg
 
 # local secrets
 keystore.properties
+
+# local dev environment (machine-specific SDK/NDK paths; never commit)
+.envrc
+.envrc.local
+.direnv/
 # release signing keystores — NEVER commit these
 *.jks
 *.keystore
