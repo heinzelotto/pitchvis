@@ -91,7 +91,15 @@ trap cleanup EXIT
 # 5) Binaries: toggle for build mode (restored by cleanup() on exit).
 if [ "$MODE" = "build" ]; then
   cp "$RECIPE" "${RECIPE}.bsbak"
-  sed -i 's|^Binaries:|# Binaries:  # disabled for build-only pass by fdroid-buildserver-build.sh|' "$RECIPE"
+  # Comment out the ENTIRE Binaries: block — the key line PLUS its indented continuation
+  # line(s) that hold the URL. Commenting only the `Binaries:` key line orphans the indented
+  # URL scalar and yields invalid YAML (ruamel: "expected <block end>"). Read the pristine
+  # copy from .bsbak so re-runs are idempotent.
+  awk '
+    /^Binaries:/ { print "# " $0; inblk=1; next }
+    inblk && /^[[:space:]]/ { print "# " $0; next }
+    { inblk=0; print }
+  ' "${RECIPE}.bsbak" > "$RECIPE"
 fi
 
 # Build/verify steps run inside the container.
