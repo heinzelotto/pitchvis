@@ -5,12 +5,12 @@ Watch a demo video here:
 
 [![PitchVis Demo Video](https://img.youtube.com/vi/7B4tVcVmOgg/sddefault.jpg)](https://youtu.be/7B4tVcVmOgg)
 
+More resources and demo videos on the [Website](https://www.p1graph.org/pitchvis/)
+
 Get the Android App:
 
 [<img src="docs/img/get-it-on-google-play.png" alt="Get it on Google Play" height="80">](https://play.google.com/store/apps/details?id=org.p1graph.pitchvis)
 [<img src="docs/img/get-it-on-fdroid.png" alt="Get it on F-Droid" height="80">](https://f-droid.org/packages/org.p1graph.pitchvis/)
-
-More resources on the [Website](https://www.p1graph.org/pitchvis/)
 
 # Building and Running
 
