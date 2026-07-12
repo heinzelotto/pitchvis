@@ -27,3 +27,9 @@ flamegraph.svg
 
 # local secrets
 keystore.properties
+# release signing keystores — NEVER commit these
+*.jks
+*.keystore
+# built/signed release artifacts (F-Droid rejects prebuilt blobs; keep them out of git)
+*.apk
+*.apk.idsig

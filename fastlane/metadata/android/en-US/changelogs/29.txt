@@ -1,0 +1,3 @@
+Ported the viewer to Bevy 0.19, which fixes the screen flickering seen on many
+Android devices (a missing-synchronization bug in the Vulkan renderer, now fixed
+upstream in wgpu). Lowered the minimum requirement to Android 9 (API 28).
