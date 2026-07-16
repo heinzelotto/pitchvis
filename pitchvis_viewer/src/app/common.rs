@@ -1931,8 +1931,24 @@ pub fn user_input_system(
     active_touches: Res<ActiveTouches>,
     indicator_pressed: Res<ScreenLockIndicatorPressed>,
     mut commands: Commands,
+    mut last_run: Local<Option<Instant>>,
 ) {
     const LONG_PRESS_DURATION: f32 = 1.5;
+    /// The longest gap between frames that still counts as a running UI. Anything above it means
+    /// the main loop was frozen (e.g. Android's MediaProjection consent dialog blocks it for the
+    /// whole time the dialog is up), and the wall-clock ages of held touches are meaningless.
+    const FRAME_FREEZE_THRESHOLD: f32 = 0.5;
+
+    // Drop all tracked touches after a freeze: a touch held across it would otherwise "age" past
+    // LONG_PRESS_DURATION and activate the screen lock, which is how tapping the system-audio
+    // button used to lock the screen.
+    let now = Instant::now();
+    let frozen = last_run
+        .is_some_and(|t| now.duration_since(t).as_secs_f32() > FRAME_FREEZE_THRESHOLD);
+    *last_run = Some(now);
+    if frozen {
+        active_touches.0.lock().unwrap().clear();
+    }
 
     // Check for long presses that are still held
     active_touches.0.lock().unwrap().retain(|_, touch_start| {
@@ -1981,6 +1997,13 @@ pub fn user_input_system(
                 }
                 // reset the consumed state for the next frame
                 commands.insert_resource(PressEventConsumed(false));
+            }
+            TouchPhase::Canceled => {
+                // Android cancels (not ends) the touch stream when something steals focus, e.g.
+                // the MediaProjection consent dialog opened by the system-audio button. Ignoring
+                // this left the touch in `active_touches` forever, guaranteeing a false long
+                // press -- i.e. an unwanted screen lock -- once the dialog closed.
+                active_touches.0.lock().unwrap().remove(&touch.id);
             }
             _ => {}
         }
