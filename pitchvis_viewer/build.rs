@@ -2,6 +2,23 @@ fn main() {
     use std::env;
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
 
+    // Expose the release version to the code (debug overlay) as PITCHVIS_VERSION. The Android
+    // versionName is the authoritative version -- it is what release bumps update and what
+    // F-Droid checks -- so parse it from build.gradle on every target rather than duplicating it
+    // in Cargo.toml, where it would inevitably drift. Falls back to the crate version if the
+    // gradle file ever moves or the line changes shape.
+    println!("cargo:rerun-if-changed=android/app/build.gradle");
+    let version = std::fs::read_to_string("android/app/build.gradle")
+        .ok()
+        .and_then(|gradle| {
+            gradle.lines().find_map(|line| {
+                let rest = line.trim().strip_prefix("versionName")?.trim();
+                rest.strip_prefix('"')?.split('"').next().map(str::to_owned)
+            })
+        })
+        .unwrap_or_else(|| env::var("CARGO_PKG_VERSION").unwrap());
+    println!("cargo:rustc-env=PITCHVIS_VERSION={version}");
+
     if target_os == "android" {
         // The Android system stub libraries (libaaudio.so, libOpenSLES.so, ...)
         // live in an API-versioned subdir of the NDK sysroot. Derive that path

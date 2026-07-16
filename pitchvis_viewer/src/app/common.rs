@@ -226,6 +226,13 @@ pub fn setup_fps_counter(mut commands: Commands, asset_server: Res<AssetServer>)
                 TextColor(Color::WHITE),
                 text_font.clone(),
             ));
+            // Static, so appended last: update_fps_text_system addresses the spans above by
+            // index. PITCHVIS_VERSION is the Android versionName, see build.rs.
+            builder.spawn((
+                TextSpan::new(concat!("\nVersion: ", env!("PITCHVIS_VERSION"))),
+                TextColor(Color::srgb(0.7, 0.7, 0.7)),
+                text_font.clone(),
+            ));
         });
 }
 

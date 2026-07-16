@@ -13,10 +13,6 @@
 - discover -laaudio instead of having to hardcode it
 - make the NDK sysroot link-search path in pitchvis_viewer/build.rs configurable (e.g. derive from ANDROID_NDK_ROOT) instead of hardcoding the home directory and NDK version
 
-# general
-
-- display version string in debug view
-
 # analysis
 
 - make "short" vqt smoothing shorter, either absolutely or with the calmness influence
