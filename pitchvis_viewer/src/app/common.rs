@@ -1651,7 +1651,16 @@ pub fn update_button_system(
     mut border_color_query: Query<&mut BorderColor>,
     mut mouse_consumed: ResMut<PressEventConsumed>,
     mut system_audio: ResMut<SystemAudioState>,
+    lock_state: Res<ScreenLockState>,
 ) {
+    // A locked screen must be touch-safe as a whole, so the debug buttons are inert too. The
+    // unlock control is a separate entity ([`ScreenLockIndicator`]) with its own system and is
+    // not affected. Not consuming the press here also lets it fall through to
+    // [`user_input_system`], which surfaces the "long press to unlock" hint.
+    if lock_state.0 {
+        return;
+    }
+
     for (entity, interaction, button_action, children) in &interaction_query {
         if *interaction == Interaction::Pressed {
             mouse_consumed.0 = true;
