@@ -1,11 +1,13 @@
 package org.p1graph.pitchvis;
 
+import android.Manifest;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.content.pm.ServiceInfo;
 import android.media.AudioAttributes;
 import android.media.AudioFormat;
@@ -64,6 +66,23 @@ public class SystemAudioCaptureService extends Service {
         if (intent == null) {
             Log.w(TAG, "SystemAudioCapture: restarted with null intent, stopping");
             stopSelf();
+            return START_NOT_STICKY;
+        }
+
+        // The Rust caller (is_supported) only starts this service on API 29+, but lint cannot see
+        // across the JNI boundary -- this guard makes the AudioPlaybackCapture requirement
+        // explicit for its NewApi analysis.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            fail("AudioPlaybackCapture requires Android 10+");
+            return START_NOT_STICKY;
+        }
+
+        // AudioPlaybackCapture needs RECORD_AUDIO just like the mic. The Rust side blocks app
+        // startup until the user grants it, so this is normally always true -- the explicit check
+        // guards against mid-session revocation and satisfies lint's MissingPermission analysis.
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO)
+                != PackageManager.PERMISSION_GRANTED) {
+            fail("RECORD_AUDIO permission not granted");
             return START_NOT_STICKY;
         }
 
