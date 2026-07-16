@@ -1391,6 +1391,9 @@ pub enum ButtonAction {
     VQTSmoothing,
     ToggleBloom,
     ToggleAnalysisConfig,
+    /// Android system-audio capture. Spawned only when [`SystemAudioState::supported`], so this
+    /// is unreachable on desktop/wasm/API-28.
+    ToggleSystemAudio,
 }
 
 #[derive(Component)]
@@ -1511,6 +1514,7 @@ pub fn setup_buttons(mut commands: Commands, settings: Res<Persistent<SettingsSt
 pub fn setup_feature_toggle_buttons(
     mut commands: Commands,
     settings: Res<Persistent<SettingsState>>,
+    system_audio: Res<SystemAudioState>,
 ) {
     let button_node = Node {
         justify_content: JustifyContent::Center,
@@ -1608,6 +1612,31 @@ pub fn setup_feature_toggle_buttons(
                     TextColor(Color::WHITE),
                     text_font.clone(),
                 ));
+
+            // System-audio capture (Android API 29+ only). Spawned only when supported, so the
+            // button never appears on desktop, wasm, or Android 9. Its label and colors are
+            // driven by `update_system_audio_button_system`, not written here — the state
+            // arrives asynchronously (consent can be denied), so a click-time label would lie.
+            if system_audio.supported {
+                let (bg_color, border_color) = button_colors(system_audio.enabled);
+                parent
+                    .spawn((
+                        Button,
+                        Node {
+                            border_radius: BorderRadius::MAX,
+                            ..button_node.clone()
+                        },
+                        bg_color,
+                        border_color,
+                        ButtonAction::ToggleSystemAudio,
+                    ))
+                    .insert(ConsumesPressEvents)
+                    .with_child((
+                        Text::new("System Audio: Off"),
+                        TextColor(Color::WHITE),
+                        text_font.clone(),
+                    ));
+            }
         });
 }
 
@@ -1621,6 +1650,7 @@ pub fn update_button_system(
     mut bg_color_query: Query<&mut BackgroundColor>,
     mut border_color_query: Query<&mut BorderColor>,
     mut mouse_consumed: ResMut<PressEventConsumed>,
+    mut system_audio: ResMut<SystemAudioState>,
 ) {
     for (entity, interaction, button_action, children) in &interaction_query {
         if *interaction == Interaction::Pressed {
@@ -1709,8 +1739,63 @@ pub fn update_button_system(
                         &mut border_color_query,
                     );
                 }
+                ButtonAction::ToggleSystemAudio => {
+                    // Unlike the other arms, do NOT write the label or colors here: consent can
+                    // be denied and the system can stop capture on its own, so the label must be
+                    // state-driven (see `update_system_audio_button_system`). We only record the
+                    // request; the platform driver picks it up and reports the real outcome back.
+                    if !system_audio.pending {
+                        system_audio.desired = !system_audio.enabled;
+                        system_audio.pending = true;
+                        system_audio.last_error = None;
+                    }
+                }
             }
         }
+    }
+}
+
+/// Keeps the system-audio button's label and colors in sync with [`SystemAudioState`], which the
+/// platform driver updates asynchronously. Uses a snapshot in a `Local` rather than
+/// `resource_changed`: the Android driver takes `ResMut<SystemAudioState>` every frame (marking
+/// the resource changed unconditionally), so change-detection would fire every frame.
+pub fn update_system_audio_button_system(
+    system_audio: Res<SystemAudioState>,
+    buttons: Query<(Entity, &ButtonAction, &Children)>,
+    mut text_query: Query<&mut Text>,
+    mut bg_color_query: Query<&mut BackgroundColor>,
+    mut border_color_query: Query<&mut BorderColor>,
+    mut last: Local<Option<(bool, bool, bool)>>,
+) {
+    let snapshot = (
+        system_audio.enabled,
+        system_audio.pending || (system_audio.desired && !system_audio.enabled),
+        system_audio.last_error.is_some(),
+    );
+    if *last == Some(snapshot) {
+        return;
+    }
+    *last = Some(snapshot);
+
+    let (enabled, waiting, failed) = snapshot;
+    let label = if waiting {
+        "System Audio: Waiting…"
+    } else if failed {
+        "System Audio: Failed"
+    } else if enabled {
+        "System Audio: On"
+    } else {
+        "System Audio: Off"
+    };
+
+    for (entity, action, children) in &buttons {
+        if !matches!(action, ButtonAction::ToggleSystemAudio) {
+            continue;
+        }
+        if let Ok(mut text) = text_query.get_mut(children[0]) {
+            **text = label.to_string();
+        }
+        update_toggle_button_colors(entity, enabled, &mut bg_color_query, &mut border_color_query);
     }
 }
 
@@ -1983,6 +2068,31 @@ pub struct PlatformConfig {
     pub window_config: Window,
     /// Platform-specific additional plugins
     pub additional_plugins: Vec<Box<dyn Plugin>>,
+    /// Whether this platform/device can capture system audio (Android API 29+). Gates the
+    /// system-audio debug button on data rather than `cfg`, keeping this module platform-clean.
+    pub system_audio_supported: bool,
+}
+
+/// Runtime state for the Android system-audio capture button.
+///
+/// Deliberately **not** part of [`SettingsState`]: MediaProjection consent is single-use and does
+/// not survive a restart, so a persisted "on" would either silently lie or ambush the user with a
+/// consent dialog on next launch. This is transient runtime state that follows what is actually
+/// running.
+#[derive(Resource, Default)]
+pub struct SystemAudioState {
+    /// True on platforms/devices where capture is possible (Android API 29+). When false, the
+    /// button is never spawned.
+    pub supported: bool,
+    /// What the user last asked for (target state).
+    pub desired: bool,
+    /// What is actually running — follows the platform's ground truth, including a stop initiated
+    /// from outside the app.
+    pub enabled: bool,
+    /// A toggle is waiting to be pushed to the platform layer.
+    pub pending: bool,
+    /// Last error to surface on the button, if any.
+    pub last_error: Option<String>,
 }
 
 /// Creates persistent settings with platform-specific configuration
@@ -2088,6 +2198,7 @@ pub fn register_common_update_systems<M1, M2, M3>(
             update_fps_text_system,
             fps_counter_showhide,
             update_button_system,
+            update_system_audio_button_system,
             button_showhide,
             button_showhide_right,
             user_input_system.after(update_button_system),
@@ -2170,6 +2281,11 @@ pub fn build_common_app(
         persistent_settings,
         default_fps,
     );
+
+    app.insert_resource(SystemAudioState {
+        supported: config.system_audio_supported,
+        ..default()
+    });
 
     app
 }

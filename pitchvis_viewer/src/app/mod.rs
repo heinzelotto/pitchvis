@@ -1,5 +1,7 @@
 #[cfg(target_os = "android")]
 pub(crate) mod android_app;
+#[cfg(target_os = "android")]
+pub(crate) mod android_system_audio;
 mod common;
 #[cfg(not(any(target_os = "android", target_arch = "wasm32")))]
 pub(crate) mod desktop_app;

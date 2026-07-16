@@ -44,6 +44,9 @@ ndk-context = "0.1.1"
 bevy_window = "0.19"
 oboe = "0.6.1"
 nix = { version = "0.30.1", features = ["time"] }
+# System-audio capture resamples the device-native rate (usually 48k) down to 22050.
+# Pinned to 0.12 to match pitchvis_audio, so the build links one copy rather than two.
+rubato = "0.12"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 env_logger = "0.11.5"

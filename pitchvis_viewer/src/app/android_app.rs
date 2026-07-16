@@ -10,15 +10,13 @@ use jni::{
     sys::{jobject, jstring},
     JavaVM,
 };
-use oboe::{
-    AudioInputCallback, AudioInputStreamSafe, AudioStream, AudioStreamBuilder, DataCallbackResult,
-    Input, InputPreset, Mono, PerformanceMode, SampleRateConversionQuality, SharingMode,
-};
 use std::path::PathBuf;
+use std::sync::atomic::Ordering;
 
+use super::android_system_audio;
 use super::common::{
     build_common_app, correct_touch_insets, register_common_update_systems,
-    register_startup_systems, PlatformConfig, SystemBarInset,
+    register_startup_systems, PlatformConfig, SystemAudioState, SystemBarInset,
 };
 use crate::analysis_system;
 use crate::app::common::ScreenLockState;
@@ -47,6 +45,20 @@ fn handle_lifetime_events_system(
             // Upon receiving the `Suspended` event, the application has 1 frame before it is paused
             // As audio happens in an independent thread, it needs to be stopped
             AppLifecycle::WillSuspend | AppLifecycle::Suspended => {
+                // The MediaProjection consent dialog is a separate activity. If showing it makes
+                // Bevy emit a suspend event, exiting here would kill the app the instant the
+                // popup appears. Suppress the exit while the dialog is up.
+                //
+                // The flag is cleared by `nativeConsentDialogFinished` on both the granted and
+                // the denied path, and by a timeout in the driver system, so it cannot stick.
+                if android_system_audio::AWAITING_CONSENT.load(Ordering::Acquire) {
+                    log::warn!(
+                        "PITCHVIS_PROBE: suspend event during MediaProjection consent \
+                         — suppressing exit"
+                    );
+                    continue;
+                }
+
                 // FIXME: suspending audio does not seem to be good enough, we still get crashes
                 // that block the entire android UI and sometimes seem to require a reboot.
                 // audio_control_tx.0.send(AudioControl::Pause).unwrap();
@@ -69,6 +81,56 @@ fn handle_lifetime_events_system(
             // `Idle`, `Running`
             _ => (),
         }
+    }
+}
+
+/// Bridges the platform-agnostic [`SystemAudioState`] resource (driven by the debug button) to
+/// the Android statics in [`android_system_audio`].
+///
+/// - Pushes a pending toggle to Java (consent request or stop).
+/// - Pulls the ground truth back from `SYS_AUDIO_ACTIVE` and `LAST_ERROR`, so the button follows
+///   what is actually running — including a stop initiated from outside the app (the system
+///   "Stop sharing" chip).
+/// - Fail-safes the suspend guard: if `onActivityResult` is ever lost, clears `AWAITING_CONSENT`
+///   after a timeout so it cannot wedge the app into never-suspend.
+fn drive_system_audio_system(
+    mut sa: ResMut<SystemAudioState>,
+    mut requested_at: Local<Option<std::time::Instant>>,
+) {
+    let Some(app) = bevy::android::ANDROID_APP.get() else {
+        return;
+    };
+
+    // Push a pending toggle out to Java.
+    if sa.pending {
+        sa.pending = false;
+        if sa.desired {
+            android_system_audio::request_consent(app);
+            *requested_at = Some(std::time::Instant::now());
+        } else {
+            android_system_audio::request_stop(app);
+        }
+    }
+
+    // Fail-safe: never let the suspend guard stick if the consent result is lost.
+    if let Some(t) = *requested_at {
+        if t.elapsed() > std::time::Duration::from_secs(60) {
+            android_system_audio::AWAITING_CONSENT.store(false, Ordering::Release);
+            *requested_at = None;
+        }
+    }
+
+    // Pull ground truth back.
+    let active = android_system_audio::is_active();
+    if sa.enabled != active {
+        sa.enabled = active;
+        sa.desired = active;
+        *requested_at = None;
+    }
+    if let Some(err) = android_system_audio::take_error() {
+        sa.last_error = Some(err);
+        sa.desired = false;
+        *requested_at = None;
     }
 }
 
@@ -211,67 +273,8 @@ pub fn request_microphone_permission(android_app: &AndroidApp, permission: &str)
 // #[derive(Resource)]
 // struct AudioControlChannelResource(std::sync::mpsc::Sender<AudioControl>);
 
-struct AudioCallback {
-    ring_buffer: std::sync::Arc<std::sync::Mutex<pitchvis_audio::RingBuffer>>,
-    agc: dagc::MonoAgc,
-}
-
-impl AudioInputCallback for AudioCallback {
-    type FrameType = (f32, Mono);
-
-    fn on_audio_ready(
-        &mut self,
-        stream: &mut dyn AudioInputStreamSafe,
-        data: &[f32],
-    ) -> DataCallbackResult {
-        // check for invalid samples
-        if let Some(x) = data.iter().find(|x| !x.is_finite()) {
-            log::warn!("bad audio sample encountered: {x}");
-            return DataCallbackResult::Continue;
-        }
-
-        // agc processing
-        let sample_sq_sum = data.iter().map(|x| x.powi(2)).sum::<f32>();
-        self.agc.freeze_gain(sample_sq_sum < 1e-6);
-
-        // update ring buffer
-        let mut rb = self.ring_buffer.lock().expect("locking failed");
-        rb.buf.drain(..data.len());
-        rb.buf.extend_from_slice(data);
-        let begin = rb.buf.len() - data.len();
-        self.agc.process(&mut rb.buf[begin..]);
-        rb.gain = self.agc.gain();
-
-        // calculate latency
-        // use nix::time::{clock_gettime, ClockId};
-        // if let Ok(ts) = stream.get_timestamp(ClockId::CLOCK_MONOTONIC.into()) {
-        //     let app_frame_index = stream.get_frames_read();
-
-        //     // ts is a snapshot. We use the sample rate to calculate the corresponding
-        //     // time of the latest sample we are currently handling.
-        //     let frame_delta = app_frame_index - ts.position;
-        //     let frame_time_delta = frame_delta as f64 / SR as f64 * 1e9;
-        //     let app_frame_in_hardware_time = ts.timestamp + frame_time_delta as i64;
-
-        //     // We assume that the frame we are currently handling is being processed
-        //     // NOW, and calculate the latency by comparing this to the time it originated
-        //     // from the hardware.
-        //     let app_frame_time =
-        //         std::time::Duration::from(clock_gettime(ClockId::CLOCK_MONOTONIC).unwrap())
-        //             .as_nanos();
-        //     let latency_nanos = app_frame_time - app_frame_in_hardware_time as u128;
-
-        //     rb.latency_ms = Some((latency_nanos as f64 / 1e6) as f32);
-        // } else {
-        //     rb.latency_ms = None;
-        // }
-
-        rb.latency_ms = stream.calculate_latency_millis().ok().map(|x| x as f32);
-        rb.chunk_size_ms = data.len() as f32 / stream.get_sample_rate() as f32 * 1000.0;
-
-        DataCallbackResult::Continue
-    }
-}
+// The microphone oboe stream and its `AudioCallback` now live in `android_system_audio`, which
+// owns the source switch between the mic and system-audio capture.
 
 // android main function
 #[bevy_main]
@@ -308,7 +311,8 @@ fn main() -> AppExit {
     let vqt = pitchvis_analysis::vqt::Vqt::new(&vqt_parameters)
         .expect("Failed to create VQT with default parameters");
 
-    // Android-specific: Setup Oboe audio stream with custom callback
+    // Android-specific: set up the shared ring buffer and start the microphone. The oboe stream
+    // and the mic <-> system-audio switch are owned by `android_system_audio`.
     let mut ring_buffer = pitchvis_audio::RingBuffer {
         buf: Vec::new(),
         gain: 0.0,
@@ -316,30 +320,9 @@ fn main() -> AppExit {
         chunk_size_ms: 0.0,
     };
     ring_buffer.buf.resize(BUFSIZE, 0f32);
-    let ring_buffer = std::sync::Mutex::from(ring_buffer);
-    let ring_buffer = std::sync::Arc::new(ring_buffer);
+    let ring_buffer = std::sync::Arc::new(std::sync::Mutex::new(ring_buffer));
 
-    let agc = dagc::MonoAgc::new(0.07, 0.0001).expect("mono-agc creation failed");
-
-    let callback = AudioCallback {
-        ring_buffer: ring_buffer.clone(),
-        agc,
-    };
-
-    let mut audio_stream = AudioStreamBuilder::default()
-        .set_direction::<Input>()
-        .set_performance_mode(PerformanceMode::LowLatency)
-        .set_sample_rate(vqt_parameters.sr as i32)
-        .set_channel_count::<Mono>()
-        .set_format::<f32>()
-        .set_sharing_mode(SharingMode::Exclusive)
-        .set_input_preset(InputPreset::Unprocessed)
-        .set_sample_rate_conversion_quality(SampleRateConversionQuality::Best)
-        .set_callback(callback)
-        .open_stream()
-        .unwrap();
-
-    audio_stream.request_start().unwrap();
+    android_system_audio::init(ring_buffer.clone());
 
     // Create system closures with BUFSIZE
     let update_vqt_system = vqt_system::update_vqt_to_system(BUFSIZE);
@@ -372,6 +355,7 @@ fn main() -> AppExit {
                 Box::new(LogDiagnosticsPlugin::default()),
                 Box::new(log_plugin),
             ],
+            system_audio_supported: android_system_audio::is_supported(),
         },
         DEFAULT_FPS,
     );
@@ -390,7 +374,13 @@ fn main() -> AppExit {
     // Android-specific: Add lifecycle event handler and UI visibility handler
     app.add_systems(
         Update,
-        (handle_lifetime_events_system, handle_android_ui_visibility),
+        (
+            handle_lifetime_events_system,
+            handle_android_ui_visibility,
+            // Bridges the debug button to the system-audio statics; runs before the button's
+            // label-sync system so the button reflects state within the same frame.
+            drive_system_audio_system.before(super::common::update_system_audio_button_system),
+        ),
     );
 
     // Android-specific: realign touch coordinates for the system-bar inset in

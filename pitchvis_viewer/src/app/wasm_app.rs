@@ -67,6 +67,8 @@ pub async fn main_fun() -> Result<(), JsValue> {
             audio_buffer: audio_stream.ring_buffer.clone(),
             window_config,
             additional_plugins: vec![Box::new(LogDiagnosticsPlugin::default())],
+            // System-audio capture is Android-only.
+            system_audio_supported: false,
         },
         DEFAULT_FPS,
     );

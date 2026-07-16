@@ -69,6 +69,8 @@ pub fn main_fun() -> Result<()> {
             audio_buffer: audio_stream.ring_buffer,
             window_config,
             additional_plugins: vec![],
+            // System-audio capture is Android-only.
+            system_audio_supported: false,
         },
         DEFAULT_FPS,
     );

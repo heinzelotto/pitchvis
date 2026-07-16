@@ -3,6 +3,20 @@
 
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
 
+    <!--
+      System-audio capture (MediaProjection / AudioPlaybackCapture). Used for AUDIO ONLY:
+      PitchVis never creates a VirtualDisplay and never captures the screen. Nothing is
+      transmitted anywhere - the app has no INTERNET permission.
+
+      FOREGROUND_SERVICE is required from API 28 (= minSdk) to call startForeground().
+      FOREGROUND_SERVICE_MEDIA_PROJECTION is only enforced from API 34 but is harmless below.
+      POST_NOTIFICATIONS (API 33+) only controls whether the mandatory foreground-service
+      notification is visible; capture works either way, so it is never blocked on.
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION"/>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
@@ -21,6 +35,18 @@
 
             <meta-data android:name="android.app.lib_name" android:value="pitchvis_viewer_lib" />
         </activity>
+
+        <!--
+          stopWithTask: swiping the task away must kill the service and its notification.
+          The service shares the process with the app, which calls std::process::exit(0) on
+          suspend - see START_NOT_STICKY in SystemAudioCaptureService for why that matters.
+        -->
+        <service
+            android:name=".SystemAudioCaptureService"
+            android:enabled="true"
+            android:exported="false"
+            android:stopWithTask="true"
+            android:foregroundServiceType="mediaProjection" />
     </application>
 
 </manifest>

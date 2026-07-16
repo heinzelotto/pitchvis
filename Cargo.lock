@@ -5324,6 +5324,7 @@ dependencies = [
  "pitchvis_audio",
  "pitchvis_colors",
  "regex",
+ "rubato",
  "serde",
  "tch",
  "wasm-bindgen",
