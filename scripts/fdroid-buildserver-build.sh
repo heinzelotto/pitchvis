@@ -133,10 +133,26 @@ ${COPY_STEP}
 "
 
 if [ "$MODE" = "build" ]; then
+  # Keep these flags in sync with scripts/fdroid-release-build.sh, which documents why:
+  #   * build-tools 34 apksigner — 35+ re-zipaligns the APK and breaks the apksigcopier match.
+  #   * --v1-signing-enabled false — v1 (JAR) signing injects META-INF/{MANIFEST.MF,*.SF,*.RSA},
+  #     which is extra non-signature content F-Droid's rebuild does not have.
+  APKSIGNER="${APKSIGNER:-${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Android/Sdk}}/build-tools/34.0.0/apksigner}"
   echo
   echo "Next: sign out-of-band with the dedicated F-Droid key (run in a real terminal —"
   echo "apksigner prompts for the passphrase, which must NOT enter scripts/logs):"
   echo
-  echo "  apksigner sign --ks ${REPO_ROOT}/pitchvis-fdroid.jks --ks-key-alias pitchvis \\"
+  echo "  ${APKSIGNER} sign \\"
+  echo "    --ks ${REPO_ROOT}/pitchvis-fdroid.jks --ks-key-alias pitchvis \\"
+  echo "    --v1-signing-enabled false \\"
   echo "    --out ${REPO_ROOT}/${APPID}_${VC}.apk ${FDROIDDATA}/${OUT_NAME}"
+  echo
+  echo "Then confirm the signer matches AllowedAPKSigningKeys in the recipe (a different key"
+  echo "means existing users cannot update and must reinstall):"
+  echo
+  echo "  ${APKSIGNER} verify --print-certs ${REPO_ROOT}/${APPID}_${VC}.apk | grep -i SHA-256"
+  echo "  grep AllowedAPKSigningKeys ${RECIPE}"
+  echo
+  echo "Publish as ${APPID}_${VC}.apk on the v<versionName> GitHub release (the recipe's"
+  echo "Binaries: URL is …/download/v%v/${APPID}_%c.apk), then re-run:  $0 verify"
 fi
