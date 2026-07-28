@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 #[derive(Parser)]
@@ -192,7 +192,8 @@ fn build_wasm(release: bool, rust_only: bool) -> Result<()> {
         if !status.success() {
             anyhow::bail!("wasm-opt failed");
         }
-        std::fs::rename(&wasm_opt_out, &wasm).context("Failed to replace wasm with optimized output")?;
+        std::fs::rename(&wasm_opt_out, &wasm)
+            .context("Failed to replace wasm with optimized output")?;
     }
 
     if rust_only {
@@ -390,59 +391,109 @@ fn build_android(release: bool, skip_setup: bool) -> Result<()> {
     } else {
         "./gradlew"
     };
-    let gradle_task = if release {
-        "bundleRelease"
-    } else {
-        "assembleDebug"
-    };
-
-    let (artifact_label, artifact_path) = if release {
+    // Release builds produce both: the .aab is what Play wants, the .apk is what you can
+    // actually sideload to test the very same build.
+    let (gradle_tasks, artifacts): (&[&str], Vec<(&str, PathBuf)>) = if release {
         (
-            "Bundle",
-            android_dir.join("app/build/outputs/bundle/release/app-release.aab"),
+            &["bundleRelease", "assembleRelease"],
+            vec![
+                (
+                    "Bundle",
+                    android_dir.join("app/build/outputs/bundle/release/app-release.aab"),
+                ),
+                (
+                    "APK",
+                    android_dir.join("app/build/outputs/apk/release/app-release.apk"),
+                ),
+            ],
         )
     } else {
         (
-            "APK",
-            android_dir.join("app/build/outputs/apk/debug/app-debug.apk"),
+            &["assembleDebug"],
+            vec![(
+                "APK",
+                android_dir.join("app/build/outputs/apk/debug/app-debug.apk"),
+            )],
         )
     };
 
-    // Delete the previous artifact first. Gradle overwrites it on success, but a failed or
-    // aborted run leaves the old file in place, where it is easily mistaken for fresh output --
+    // Delete the previous artifacts first. Gradle overwrites them on success, but a failed or
+    // aborted run leaves the old files in place, where they are easily mistaken for fresh output --
     // and shipping a stale artifact is exactly the mistake that is expensive to notice later.
-    if artifact_path.exists() {
-        std::fs::remove_file(&artifact_path)
-            .with_context(|| format!("Failed to remove stale {}", artifact_path.display()))?;
+    for (_, path) in &artifacts {
+        if path.exists() {
+            std::fs::remove_file(path)
+                .with_context(|| format!("Failed to remove stale {}", path.display()))?;
+        }
     }
 
-    let status = Command::new(gradle_cmd)
-        .current_dir(&android_dir)
-        .arg(gradle_task)
-        .status()
-        .context("Failed to execute gradlew")?;
+    let mut cmd = Command::new(gradle_cmd);
+    cmd.current_dir(&android_dir);
+    cmd.args(gradle_tasks);
+    let status = cmd.status().context("Failed to execute gradlew")?;
 
     if !status.success() {
         anyhow::bail!("Gradle build failed");
     }
 
-    let size = std::fs::metadata(&artifact_path)
-        .with_context(|| {
-            format!(
-                "Gradle reported success but produced no {}",
-                artifact_path.display()
-            )
-        })?
-        .len();
-
     println!("✅ Android build complete!");
-    println!(
-        "   {artifact_label}: {} ({:.1} MiB)",
-        artifact_path.display(),
-        size as f64 / (1024.0 * 1024.0)
-    );
+    for (label, path) in &artifacts {
+        let size = std::fs::metadata(path)
+            .with_context(|| format!("Gradle reported success but produced no {}", path.display()))?
+            .len();
+        println!(
+            "   {label}: {} ({:.1} MiB)",
+            path.display(),
+            size as f64 / (1024.0 * 1024.0)
+        );
+        if let Some(signer) = apk_signer(&android_sdk, path) {
+            println!("      signed by: {signer}");
+        }
+    }
+
+    if release {
+        // Which key signed it decides whether the APK can be installed over an existing copy at
+        // all: Android refuses to update a package across signing keys. This build uses the key
+        // in android/keystore.properties (the Play *upload* key), which differs from the F-Droid
+        // distribution key AND from the key Play itself re-signs with, so an install over either
+        // of those fails with INSTALL_FAILED_UPDATE_INCOMPATIBLE until the old copy is removed.
+        println!("   Note: sideloading this APK over an F-Droid or Play install fails on the");
+        println!("         signature check — `adb uninstall org.p1graph.pitchvis` first.");
+    }
 
     Ok(())
+}
+
+/// Report the signing certificate of an APK, so the build says out loud which key it used.
+/// Best-effort: returns None for non-APKs or when no apksigner is present.
+fn apk_signer(android_sdk: &str, path: &Path) -> Option<String> {
+    if path.extension()? != "apk" {
+        return None;
+    }
+    // Pick the newest installed build-tools; any version can *read* a signature.
+    let mut build_tools: Vec<PathBuf> =
+        std::fs::read_dir(PathBuf::from(android_sdk).join("build-tools"))
+            .ok()?
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .collect();
+    build_tools.sort();
+    let apksigner = build_tools
+        .iter()
+        .rev()
+        .map(|dir| dir.join("apksigner"))
+        .find(|p| p.exists())?;
+
+    let out = Command::new(apksigner)
+        .arg("verify")
+        .arg("--print-certs")
+        .arg(path)
+        .output()
+        .ok()?;
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .find_map(|l| l.split("certificate SHA-256 digest:").nth(1))
+        .map(|digest| digest.trim().to_string())
 }
 
 fn run(extra_args: Vec<String>) -> Result<()> {
