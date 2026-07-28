@@ -227,6 +227,87 @@ fn build_wasm(release: bool, rust_only: bool) -> Result<()> {
     Ok(())
 }
 
+/// Resolve a machine-specific path variable, falling back to the repo-root `.envrc`.
+///
+/// The Android SDK/NDK paths are machine-specific, so this repo keeps them in the gitignored
+/// `.envrc`. direnv exports them in interactive shells, but plain shells, editors, cron jobs and
+/// background tasks do not — and that failure is easy to misread, because the *previous* build's
+/// `.aab`/`.apk` is still sitting in `build/outputs/` and looks like fresh output. Reading
+/// `.envrc` as a fallback (never overriding an exported value) makes the build behave the same
+/// everywhere without changing what CI or the F-Droid buildserver see.
+///
+/// Returns the value plus where it came from, so the build log says which one was used.
+fn env_or_envrc(keys: &[&str]) -> Option<(String, String)> {
+    for key in keys {
+        if let Ok(val) = std::env::var(key) {
+            if !val.is_empty() {
+                return Some((val, format!("${key}")));
+            }
+        }
+    }
+    envrc_lookup(keys, 0).map(|val| (val, ".envrc".to_string()))
+}
+
+/// Find `export KEY=value` in `.envrc`. `depth` bounds the recursion through `$VAR` references.
+fn envrc_lookup(keys: &[&str], depth: u8) -> Option<String> {
+    if depth > 3 {
+        return None;
+    }
+    let envrc = std::fs::read_to_string(project_root().join(".envrc")).ok()?;
+    for key in keys {
+        for line in envrc.lines() {
+            let Some(rest) = line.trim().strip_prefix("export ") else {
+                continue;
+            };
+            let Some((name, raw)) = rest.split_once('=') else {
+                continue;
+            };
+            if name.trim() != *key {
+                continue;
+            }
+            let raw = raw.trim().trim_matches('"').trim_matches('\'');
+            return Some(expand_env_refs(raw, depth));
+        }
+    }
+    None
+}
+
+/// Expand `$VAR` / `${VAR}` in an `.envrc` value — the file chains its own definitions
+/// (`ANDROID_NDK_ROOT="$ANDROID_HOME/ndk/..."`), so a raw read would yield a broken path.
+fn expand_env_refs(value: &str, depth: u8) -> String {
+    let mut out = String::new();
+    let mut chars = value.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c != '$' {
+            out.push(c);
+            continue;
+        }
+        let braced = chars.peek() == Some(&'{');
+        if braced {
+            chars.next();
+        }
+        let mut name = String::new();
+        while let Some(&c) = chars.peek() {
+            if c.is_ascii_alphanumeric() || c == '_' {
+                name.push(c);
+                chars.next();
+            } else {
+                break;
+            }
+        }
+        if braced && chars.peek() == Some(&'}') {
+            chars.next();
+        }
+        let resolved = std::env::var(&name)
+            .ok()
+            .filter(|v| !v.is_empty())
+            .or_else(|| envrc_lookup(&[name.as_str()], depth + 1))
+            .unwrap_or_default();
+        out.push_str(&resolved);
+    }
+    out
+}
+
 fn build_android(release: bool, skip_setup: bool) -> Result<()> {
     println!("🔨 Building pitchvis for Android...");
 
@@ -234,15 +315,18 @@ fn build_android(release: bool, skip_setup: bool) -> Result<()> {
     let android_dir = viewer_dir.join("android");
 
     // Check for required environment variables
-    let android_sdk = std::env::var("ANDROID_SDK_ROOT")
-        .or_else(|_| std::env::var("ANDROID_HOME"))
-        .context("ANDROID_SDK_ROOT or ANDROID_HOME environment variable not set")?;
+    let (android_sdk, sdk_source) = env_or_envrc(&["ANDROID_SDK_ROOT", "ANDROID_HOME"]).context(
+        "ANDROID_SDK_ROOT / ANDROID_HOME is not set and no `export` for it was found in .envrc.\n\
+         Set it, or load the repo env:  set -a && . ./.envrc && set +a   (direnv: `direnv allow`)",
+    )?;
 
-    let android_ndk = std::env::var("ANDROID_NDK_ROOT")
-        .context("ANDROID_NDK_ROOT environment variable not set")?;
+    let (android_ndk, ndk_source) = env_or_envrc(&["ANDROID_NDK_ROOT"]).context(
+        "ANDROID_NDK_ROOT is not set and no `export` for it was found in .envrc.\n\
+         Set it, or load the repo env:  set -a && . ./.envrc && set +a   (direnv: `direnv allow`)",
+    )?;
 
-    println!("📱 Using Android SDK: {}", android_sdk);
-    println!("🔧 Using Android NDK: {}", android_ndk);
+    println!("📱 Using Android SDK: {android_sdk} (from {sdk_source})");
+    println!("🔧 Using Android NDK: {android_ndk} (from {ndk_source})");
 
     if !skip_setup {
         println!("📦 Setting up native libraries and assets...");
@@ -312,6 +396,26 @@ fn build_android(release: bool, skip_setup: bool) -> Result<()> {
         "assembleDebug"
     };
 
+    let (artifact_label, artifact_path) = if release {
+        (
+            "Bundle",
+            android_dir.join("app/build/outputs/bundle/release/app-release.aab"),
+        )
+    } else {
+        (
+            "APK",
+            android_dir.join("app/build/outputs/apk/debug/app-debug.apk"),
+        )
+    };
+
+    // Delete the previous artifact first. Gradle overwrites it on success, but a failed or
+    // aborted run leaves the old file in place, where it is easily mistaken for fresh output --
+    // and shipping a stale artifact is exactly the mistake that is expensive to notice later.
+    if artifact_path.exists() {
+        std::fs::remove_file(&artifact_path)
+            .with_context(|| format!("Failed to remove stale {}", artifact_path.display()))?;
+    }
+
     let status = Command::new(gradle_cmd)
         .current_dir(&android_dir)
         .arg(gradle_task)
@@ -322,14 +426,21 @@ fn build_android(release: bool, skip_setup: bool) -> Result<()> {
         anyhow::bail!("Gradle build failed");
     }
 
+    let size = std::fs::metadata(&artifact_path)
+        .with_context(|| {
+            format!(
+                "Gradle reported success but produced no {}",
+                artifact_path.display()
+            )
+        })?
+        .len();
+
     println!("✅ Android build complete!");
-    if release {
-        let bundle_path = android_dir.join("app/build/outputs/bundle/release/app-release.aab");
-        println!("   Bundle: {}", bundle_path.display());
-    } else {
-        let apk_path = android_dir.join("app/build/outputs/apk/debug/app-debug.apk");
-        println!("   APK: {}", apk_path.display());
-    }
+    println!(
+        "   {artifact_label}: {} ({:.1} MiB)",
+        artifact_path.display(),
+        size as f64 / (1024.0 * 1024.0)
+    );
 
     Ok(())
 }
