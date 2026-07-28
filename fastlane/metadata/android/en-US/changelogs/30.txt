@@ -1,0 +1,9 @@
+New: PitchVis can now analyze the audio your phone is playing instead of the
+microphone. Turn on "System Audio" in the debug screen (tap the visualization to
+open it) and confirm Android's capture prompt. Audio only — no screen content is
+captured and nothing leaves the device. Playback has to be running already,
+since PitchVis stops when it goes to the background.
+
+Fixes: the screen lock no longer engages when a system dialog interrupts a
+touch, and the debug buttons no longer react while the screen is locked. The
+debug overlay now shows the app version.

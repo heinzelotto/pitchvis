@@ -13,4 +13,4 @@ Features:
 
 PitchVis is useful for musicians, singers, music students and anyone curious about the structure of the sounds around them. It works with any instrument or voice.
 
-The app requires only the microphone permission and does not connect to the internet.
+PitchVis works fully offline and never connects to the internet. It uses the microphone permission for normal operation; the notification and foreground-service permissions are used only by an optional advanced mode that analyzes audio played by the device itself — audio only, never screen content.
